@@ -127,28 +127,71 @@ After changing source, rerun `npm run build`.
 > readable by your account. For a private repo, ensure `git`/`gh` are authenticated (Method A/B use
 > your ambient git credentials to clone).
 
-## Tools
+## MCP surface
 
-| Tool | Purpose |
+The server exposes **17 tools** and **4 prompts**. It does **not** expose any MCP resources
+(`resources/list` is not served) — pack files are reached via the filesystem path returned by
+`pack_path`, not as MCP resources.
+
+### Tools (17)
+
+**Catalog**
+
+| Tool | Arguments | Purpose |
+| --- | --- | --- |
+| `catalog_list` | — | List catalog entries with state + origin. |
+| `catalog_add` | `slug`, `repoUrl`, `subpath?`, `ref?` | Register a pack without installing. `subpath` defaults to `knowledge`; pass `.` for a root pack. |
+
+**Pack lifecycle**
+
+| Tool | Arguments | Purpose |
+| --- | --- | --- |
+| `pack_install` | `slug`, `repoUrl?`, `subpath?`, `ref?` | Clone a pack's origin. Registers + installs in one step when `repoUrl` is given. |
+| `pack_uninstall` | `slug`, `force?`, `purge?` | Remove a pack's clone. Blocks on unpushed commits unless `force`; `purge` drops the entry. |
+| `pack_status` | `slug` | Branch, dirty state, ahead/behind, unpushed commits. |
+| `pack_pull` | `slug` | Fast-forward from origin; local changes auto-stashed and restored. |
+| `pack_path` | `slug` | Resolve an installed pack's root path. |
+
+**Authoring & publishing**
+
+| Tool | Arguments | Purpose |
+| --- | --- | --- |
+| `pack_create` | `slug`, `title?`, `description?`, `subpath?` | Scaffold a new local pack (dir + `git init` + skeleton `index.md` under `knowledge/`). |
+| `pack_publish` | `slug`, `repoName`, `visibility?`, `description?` | Create the GitHub repo for a new pack and push `main`. |
+
+**PR write flow**
+
+| Tool | Arguments | Purpose |
+| --- | --- | --- |
+| `pack_begin_change` | `slug`, `topic` | Create the working branch `okh/<slug>/<topic>`. Refuses on a dirty tree. |
+| `pack_commit` | `slug`, `message` | Stage all changes + commit. |
+| `pack_diff` | `slug`, `ref?` | Diffstat (default vs `HEAD`) for summarising changes before a PR. |
+| `pack_open_pr` | `slug`, `title`, `body` | Push the change branch and open a PR into the default branch. |
+
+**Flows** (discipline text; mirror the prompts below)
+
+| Tool | Arguments | Purpose |
+| --- | --- | --- |
+| `ask` | `slug`, `question?` | Instructions to answer a question from a pack (okf-ask). |
+| `learn` | `slug`, `knowledge?` | Instructions to fold new knowledge into a pack (okf-learn + PR write flow). |
+| `review_update` | `slug`, `focus?` | Instructions to review a pack against its scope and update it (PR write flow). |
+| `create` | `slug?`, `sourceRepo?` | Instructions to author a brand-new pack (okf-new-from-repo + scaffold/publish policy). |
+
+### Prompts (4)
+
+The four flows are also registered as first-class MCP prompts (for clients with a prompt UI). Same
+behaviour as the flow tools of the same name.
+
+| Prompt | Arguments |
 | --- | --- |
-| `catalog_list` | List catalog entries with state + origin. |
-| `catalog_add` | Register a pack (slug, repoUrl, subpath?, ref?) without installing. Subpath defaults to `knowledge`; pass `.` for a root pack. |
-| `pack_install` | Clone a pack's origin. Can register + install in one step via `repoUrl`. |
-| `pack_uninstall` | Remove a pack's clone. Blocks on unpushed commits unless `force`; `purge` drops the entry. |
-| `pack_status` | Branch, dirty state, ahead/behind, unpushed commits. |
-| `pack_pull` | Fast-forward from origin; local changes auto-stashed and restored. |
-| `pack_path` | Resolve an installed pack's root path. |
-| `pack_create` | Scaffold a new local pack (dir + `git init` + skeleton `index.md` under `knowledge/`). |
-| `pack_publish` | Create the GitHub repo for a new pack and push `main`. |
-| `pack_begin_change` | Create the working branch `okh/<slug>/<topic>`. |
-| `pack_commit` | Stage all + commit. |
-| `pack_diff` | Diffstat for summarising changes before a PR. |
-| `pack_open_pr` | Push the change branch and open a PR. |
-| `ask` / `learn` / `review_update` / `create` | Flow tools returning OKF discipline text. |
+| `ask` | `slug` (required), `question?` |
+| `learn` | `slug` (required), `knowledge?` |
+| `review_update` | `slug` (required), `focus?` |
+| `create` | `slug?`, `sourceRepo?` |
 
-## Prompts
+### Resources
 
-`ask`, `learn`, `review_update`, `create` — the same flows as first-class MCP prompts.
+None. The server implements the MCP **tools** and **prompts** capabilities only.
 
 ## Typical usage
 
