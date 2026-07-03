@@ -38,12 +38,13 @@ npm run eval:setup -- setup ask-grounded
 
 This copies the scenario's fixture into a throwaway temp **Root** and builds an
 isolated `COPILOT_HOME` whose `mcp-config.json` points Copilot at the OKH server
-running against an isolated `OKH_HOME`. It prints:
+running against an isolated `OKH_HOME`. The run is **recorded**, so the follow-up
+commands below need no path. It prints:
 
-- **Root** / **Workspace** paths (note the `Root` — you reuse it below),
-- a ready-to-run headless **`copilot -p '…'`** command,
+- **Root** / **Workspace** paths (informational — you no longer copy them),
+- the `enter` / headless-run commands,
 - an **expected-outcome checklist**,
-- the **check** and **clean** commands.
+- the path-free **check** and **clean** commands.
 
 Nothing is spawned yet; no premium requests are used by `setup`.
 
@@ -51,24 +52,26 @@ Nothing is spawned yet; no premium requests are used by `setup`.
 
 ## 3. Run the case — interactively
 
-The printed `Run:` line is a headless `copilot -p '…'`. For interactive running
-(easier to inspect), open a session in the **same isolated env** instead:
+Drop straight into an interactive session in the isolated env (no env vars, no
+`Set-Location`, no pasted path):
 
 ```powershell
-$root = "<paste the Root path from step 2>"
-$env:COPILOT_HOME = "$root\copilot-home"
-Set-Location "$root\workspace"
-copilot --allow-all
+npm run eval:setup -- enter
 ```
 
-Inside the session:
+`enter` targets the most-recently provisioned run; pass a scenario name to pick a
+specific one (`npm run eval:setup -- enter ask-grounded`) or `--model <M>` to
+override the model. Inside the session:
 
 - `/mcp` — confirm **open-knowledge-hub** is loaded and list its tools.
-- Paste the scenario prompt (the quoted text from the `Run:` line, or from
-  `eval\scenarios\<name>\test.yaml` → `vars.prompt`). Example (ask-grounded):
+- Paste the scenario prompt (from `eval\scenarios\<name>\test.yaml` → `vars.prompt`).
+  Example (ask-grounded):
   > Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
   > from its knowledge module: How does auth work?
 - Watch it call the OKH tool(s) and produce an answer.
+
+(The headless `copilot -p '…'` command printed by `setup` remains available if you
+prefer a one-shot run.)
 
 ---
 
@@ -78,26 +81,21 @@ Judge the **answer quality** yourself against the printed checklist (e.g.
 ask-grounded expects: uses `ask`, mentions tokens, cites the Auth concept, invents
 nothing).
 
-Then inspect the container on disk and run the objective checks:
+Then run the objective side-effect checks — no path needed (resolves the most
+recent run; pass a scenario name to target a specific one):
 
 ```powershell
-# What changed in the container:
-Get-ChildItem -Recurse "$root\okh-home\containers\kb-hub"
-#   remember-*      -> new dated file under \mem
-#   learn-integrates-> new/changed concept under \kb  (git container: git-hub)
-
-# Objective side-effect assertions (files/git) — no Copilot, prints PASS/FAIL:
-npm run eval:setup -- check $root --scenario ask-grounded
+npm run eval:setup -- check
 ```
 
 `check` runs only the deterministic assertions (`okf-valid`, `memory-append`,
 `git-committed`, `module-unchanged`). Answer grounding/quality is what you eyeball
 here (the automated `npm run eval` adds a Copilot-CLI judge for that).
 
-For a git-backed case, confirm the push to the throwaway origin:
+The explicit form still works if you want to point at a specific directory:
 
 ```powershell
-git -C "$root\okh-home\containers\git-hub" log --oneline
+npm run eval:setup -- check <root> --scenario ask-grounded
 ```
 
 ---
@@ -105,10 +103,13 @@ git -C "$root\okh-home\containers\git-hub" log --oneline
 ## 5. Clean up
 
 ```powershell
-npm run eval:setup -- clean $root
+npm run eval:setup -- clean
 ```
 
-Repeat steps 2–5 for other cases. Good ones to watch interactively:
+`clean` removes the most-recent run's temp directory and drops it from the run
+state; pass a scenario name to clean a specific one, or an explicit path
+(`npm run eval:setup -- clean <root>`) as before. Repeat steps 2–5 for other
+cases. Good ones to watch interactively:
 
 - **`learn-integrates`** — the agent writes OKF knowledge and calls `sync`, which
   commits **and pushes** to a bare git origin (`git-committed` verifies it).
@@ -126,10 +127,7 @@ interactive session, and throw your own prompts at it:
 
 ```powershell
 npm run eval:setup -- setup context-assembly    # uses the kb-hub fixture
-$root = "<Root>"
-$env:COPILOT_HOME = "$root\copilot-home"
-Set-Location "$root\workspace"
-copilot --allow-all
+npm run eval:setup -- enter                      # interactive session, isolated env
 ```
 
 Prompt ideas to probe behavior and edge cases:
@@ -146,8 +144,8 @@ Prompt ideas to probe behavior and edge cases:
   container/module; ask it to rewrite an existing memory entry (should stay
   append-only).
 
-After each, inspect `"$root\okh-home\containers\kb-hub"` (files + `git`) to see
-exactly what happened. `clean` when done.
+After each, inspect `"<Root>\okh-home\containers\kb-hub"` (files + `git`) to see
+exactly what happened, then `npm run eval:setup -- clean` when done.
 
 ### Option B — dogfood against a real hub
 
