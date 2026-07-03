@@ -35,16 +35,17 @@ npm run eval                  # runs promptfoo under `node --import tsx` (see no
 npm run eval:view             # open the report + side-by-side comparison UI
 ```
 
-> **Why `node --import tsx`?** The provider (`provider/copilotProvider.ts`) and its
-> imports use NodeNext `.js` specifiers that point at sibling `.ts` files (and at
-> `../src/*.js`). promptfoo loads the provider via Node's native TypeScript support,
-> which does **not** remap `.js`→`.ts`, so a plain `promptfoo eval` fails with
-> `ERR_MODULE_NOT_FOUND: ...provision.js`. Preloading `tsx` (already a devDependency)
-> registers a loader that resolves the whole graph. The `npm run eval` script does
-> this for you; the promptfoo version-mismatch warning it prints is cosmetic.
+> **Why a JS provider shim?** The implementation lives in
+> `provider/copilotProvider.ts` and uses NodeNext `.js` specifiers that point at
+> sibling `.ts` files (and at `../src/*.js`). promptfoo's native TypeScript import
+> does **not** remap those `.js` specifiers, so the config points at
+> `provider/copilotProvider.js`, a tiny shim that registers `tsx/cjs` and loads the
+> TypeScript provider. This keeps bare `promptfoo validate -c eval/promptfooconfig.yaml`
+> working. The `npm run eval` script still preloads `tsx` for the rest of the eval
+> graph; the promptfoo version-mismatch warning it prints is cosmetic.
 
 **Model matrix (goal 1):** add more `providers` entries in `promptfooconfig.yaml`,
-each pointing at `file://provider/copilotProvider.ts` (paths are relative to `eval/`)
+each pointing at `file://provider/copilotProvider.js` (paths are relative to `eval/`)
 with a different `config.model`. Default is a single pinned model.
 
 **Optimization (goal 2):** run the suite against two OKH builds (git branches),

@@ -17,7 +17,10 @@ export default async function wakePhraseSet(_output: string, context: Ctx) {
       return { pass: true, score: 1, reason: `wake phrase set to "${prefs.wakePhrase}"` };
     }
     return { pass: false, score: 0, reason: `wake phrase unchanged (${prefs.wakePhrase ?? "none"})` };
-  } catch {
-    return { pass: false, score: 0, reason: "preferences.json not written" };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { pass: false, score: 0, reason: "preferences.json not written" };
+    }
+    return { pass: false, score: 0, reason: `invalid preferences.json: ${(err as Error).message}` };
   }
 }

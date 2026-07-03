@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { listScenarios, loadScenario, setupScenario, runChecks, clean, buildEnterInvocation } from "../eval/okh-eval.js";
 import { type RunRecord } from "../eval/run-state.js";
@@ -45,6 +45,13 @@ describe("okh-eval manual CLI", () => {
     roots.push(res.root);
     expect(res.scenario).toBe("ask-grounded");
     expect(res.backend).toBe("local");
+  });
+
+  it("setup registers both containers for the multi-container scenario", async () => {
+    const res = await setupScenario("ask-multi-container", { model: "test-model" });
+    roots.push(res.root);
+    const reg = JSON.parse(await readFile(join(res.root, "okh-home", "registry.json"), "utf8"));
+    expect(reg.containers.map((c: { name: string }) => c.name).sort()).toEqual(["git-hub", "kb-hub"]);
   });
 
   it("buildEnterInvocation targets the isolated env and workspace", () => {

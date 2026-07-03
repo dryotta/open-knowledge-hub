@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFile, stat, readdir } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,6 +15,11 @@ describe("promptfooconfig.yaml", () => {
     expect(providerId.startsWith("file://")).toBe(true);
     expect(await exists(join(EVAL, providerId.replace("file://", "")))).toBe(true);
     expect(String(cfg.tests)).toContain("scenarios");
+  });
+
+  it("provider shim loads the TypeScript provider for bare promptfoo validation", async () => {
+    const mod = await import(pathToFileURL(join(EVAL, "provider", "copilotProvider.js")).href) as { default: unknown };
+    expect(typeof mod.default).toBe("function");
   });
 });
 
