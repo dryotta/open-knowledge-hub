@@ -9,13 +9,13 @@
       public keys are rotated weekly." Then sync.
   assert:
     - type: javascript
-      value: file://eval/assertions/tools-called.ts
+      value: file://assertions/tools-called.ts
       config: { expect: [learn, sync] }
     - type: javascript
-      value: file://eval/assertions/okf-valid.ts
+      value: file://assertions/okf-valid.ts
       config: { module: kb, requireCitations: false }
     - type: javascript
-      value: file://eval/assertions/git-committed.ts
+      value: file://assertions/git-committed.ts
       config: { minCommits: 2 }
     - type: llm-rubric
       value: |

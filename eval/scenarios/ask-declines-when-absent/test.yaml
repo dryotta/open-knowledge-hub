@@ -8,7 +8,7 @@
       from its knowledge module: What is the company's paid vacation policy?
   assert:
     - type: javascript
-      value: file://eval/assertions/tools-called.ts
+      value: file://assertions/tools-called.ts
       config: { expect: [ask] }
     - type: llm-rubric
       value: |

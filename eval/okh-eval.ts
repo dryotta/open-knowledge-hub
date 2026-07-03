@@ -60,7 +60,7 @@ export async function setupScenario(
   const checklist = scenario.assert.map((a) =>
     a.type === "llm-rubric"
       ? `rubric: ${String(a.value).trim().split("\n")[0]} …`
-      : `${a.type} ${a.value ? a.value.replace("file://eval/assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
+      : `${a.type} ${a.value ? a.value.replace("file://assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
   );
   return { root: prov.root, workspace: prov.workspace, copilotHome: prov.copilotHome, containerPath: prov.containerPath, command, checklist };
 }
@@ -89,7 +89,7 @@ export async function runChecks(root: string, name: string): Promise<CheckResult
     if (a.type !== "javascript" || !a.value) continue;
     const rel = a.value.replace("file://", "");
     if (!SIDE_EFFECT_ASSERTIONS.some((s) => rel.endsWith(s))) continue;
-    const mod = await import(pathToFileURL(join(REPO_ROOT, rel)).href);
+    const mod = await import(pathToFileURL(join(EVAL_ROOT, rel)).href);
     const fn = mod.default as (output: string, ctx: unknown) => unknown;
     const out = fn("", { providerResponse: { metadata }, config: a.config ?? {} });
     const r = (out instanceof Promise ? await out : out) as { pass: boolean; reason?: string };

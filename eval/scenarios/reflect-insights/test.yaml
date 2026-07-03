@@ -8,7 +8,7 @@
       container "kb-hub" and produce lessons and proposed updates.
   assert:
     - type: javascript
-      value: file://eval/assertions/tools-called.ts
+      value: file://assertions/tools-called.ts
       config: { expect: [reflect] }
     - type: llm-rubric
       value: |

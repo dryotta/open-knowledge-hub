@@ -8,10 +8,10 @@
       from its knowledge module: How does auth work?
   assert:
     - type: javascript
-      value: file://eval/assertions/tools-called.ts
+      value: file://assertions/tools-called.ts
       config: { expect: [ask] }
     - type: javascript
-      value: file://eval/assertions/transcript.ts
+      value: file://assertions/transcript.ts
       config: { mustContain: ["auth"], mustNotContain: [] }
     - type: llm-rubric
       value: |

@@ -13,7 +13,7 @@ describe("promptfooconfig.yaml", () => {
     const cfg = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
     const providerId: string = cfg.providers[0].id;
     expect(providerId.startsWith("file://")).toBe(true);
-    expect(await exists(join(REPO, providerId.replace("file://", "")))).toBe(true);
+    expect(await exists(join(EVAL, providerId.replace("file://", "")))).toBe(true);
     expect(cfg.defaultTest.options.provider).toBeTruthy();
     expect(String(cfg.tests)).toContain("scenarios");
   });
@@ -46,7 +46,7 @@ describe("scenarios", () => {
       expect(rubrics.length).toBeGreaterThanOrEqual(1);
       for (const a of test.assert) {
         if (a.type === "javascript") {
-          expect(await exists(join(REPO, String(a.value).replace("file://", "")))).toBe(true);
+          expect(await exists(join(EVAL, String(a.value).replace("file://", "")))).toBe(true);
         }
       }
     }

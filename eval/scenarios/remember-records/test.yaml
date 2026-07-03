@@ -8,10 +8,10 @@
       "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
   assert:
     - type: javascript
-      value: file://eval/assertions/tools-called.ts
+      value: file://assertions/tools-called.ts
       config: { expect: [remember] }
     - type: javascript
-      value: file://eval/assertions/memory-append.ts
+      value: file://assertions/memory-append.ts
       config: { module: mem, baselineFileCount: 1 }
     - type: llm-rubric
       value: |
