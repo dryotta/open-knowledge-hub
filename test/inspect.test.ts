@@ -90,6 +90,6 @@ describe("inspect", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub" });
-    await expect(service.inspect("hub", "ghost")).rejects.toBeTruthy();
+    await expect(service.inspect("hub", "ghost")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

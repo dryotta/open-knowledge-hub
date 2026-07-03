@@ -117,6 +117,16 @@ export type InspectResult =
       items: Item[];
     };
 
+export interface SyncResult {
+  name: string;
+  backend: Backend;
+  validation: { ok: boolean; issues: string[] };
+  action: "committed-pushed" | "pulled" | "up-to-date" | "pr-opened" | "validated" | "skipped";
+  committed?: boolean;
+  pushed?: boolean;
+  prUrl?: string;
+}
+
 /**
  * High-level operations over the container registry. Combines the registry
  * (state), git (working trees), and gh (remote) layers. Registry read-modify-write
@@ -128,7 +138,7 @@ export class ContainerService {
   constructor(
     private readonly paths: OkhPaths,
     private readonly git: Git = new Git(),
-    _gh: Gh = new Gh(),
+    private readonly gh: Gh = new Gh(),
   ) {}
 
   async list(): Promise<ContainerEntry[]> {
@@ -253,6 +263,102 @@ export class ContainerService {
       module: { path: mod.path, type: mod.type, ...(mod.config ? { config: mod.config } : {}) },
       items,
     };
+  }
+
+  sync(name?: string, message?: string): Promise<SyncResult[]> {
+    return this.mutex.run(() => this.syncImpl(name, message));
+  }
+
+  private async syncImpl(name: string | undefined, message: string | undefined): Promise<SyncResult[]> {
+    const reg = await loadRegistry(this.paths);
+    const targets = name ? [requireContainer(reg, name)] : reg.containers;
+    const results: SyncResult[] = [];
+    for (const entry of targets) {
+      results.push(await this.syncOne(entry, message));
+    }
+    return results;
+  }
+
+  private async syncOne(entry: ContainerEntry, message?: string): Promise<SyncResult> {
+    const validation = await this.validate(entry.name);
+    if (entry.backend !== "git") {
+      return { name: entry.name, backend: entry.backend, validation, action: "validated" };
+    }
+    let manifest: ContainerManifest;
+    try {
+      manifest = await loadContainerManifest(entry.localPath);
+    } catch {
+      return { name: entry.name, backend: entry.backend, validation, action: "skipped" };
+    }
+    return manifest.sync === "pr"
+      ? this.syncPr(entry, validation, message)
+      : this.syncAuto(entry, validation, message);
+  }
+
+  private async syncAuto(
+    entry: ContainerEntry,
+    validation: { ok: boolean; issues: string[] },
+    message?: string,
+  ): Promise<SyncResult> {
+    const root = entry.localPath;
+    await this.git.stageAll(root);
+    let committed = false;
+    if (await this.git.hasStagedChanges(root)) {
+      await this.git.commit(root, message ?? `okh: sync ${entry.name}`);
+      committed = true;
+    }
+    try {
+      await this.git.pull(root);
+    } catch (err) {
+      throw new OkhError(
+        "GIT_ERROR",
+        `sync pull failed for "${entry.name}": ${(err as Error).message}`,
+        "The branch may have diverged from its upstream; resolve it manually.",
+      );
+    }
+    const remote = await this.git.defaultRemote(root);
+    const branch = await this.git.currentBranch(root);
+    await this.git.push(root, remote, branch);
+    return {
+      name: entry.name,
+      backend: entry.backend,
+      validation,
+      action: committed ? "committed-pushed" : "pulled",
+      committed,
+      pushed: true,
+    };
+  }
+
+  private async syncPr(
+    entry: ContainerEntry,
+    validation: { ok: boolean; issues: string[] },
+    message?: string,
+  ): Promise<SyncResult> {
+    const root = entry.localPath;
+    const dirty = await this.git.isDirty(root);
+    const unpushed = await this.git.hasCurrentBranchUnpushedCommits(root);
+    if (!dirty && !unpushed) {
+      return { name: entry.name, backend: entry.backend, validation, action: "up-to-date" };
+    }
+    const current = await this.git.currentBranch(root);
+    if (current === "main" || current === "master") {
+      await this.git.createBranch(root, `okh/${entry.name}/sync-${Date.now()}`);
+    }
+    await this.git.stageAll(root);
+    let committed = false;
+    if (await this.git.hasStagedChanges(root)) {
+      await this.git.commit(root, message ?? `okh: sync ${entry.name}`);
+      committed = true;
+    }
+    const remote = await this.git.defaultRemote(root);
+    const branch = await this.git.currentBranch(root);
+    await this.git.push(root, remote, branch);
+    const prUrl = await this.gh.createPr({
+      cwd: root,
+      title: message ?? `okh sync: ${entry.name}`,
+      body: "Automated OKH sync.",
+    });
+    return { name: entry.name, backend: entry.backend, validation, action: "pr-opened", committed, pushed: true, prUrl };
   }
 
   addContainer(input: AddContainerInput): Promise<ContainerEntry> {
