@@ -1,0 +1,161 @@
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join, resolve, isAbsolute } from "node:path";
+import { readdir, readFile, rm } from "node:fs/promises";
+import { parse as parseYaml } from "yaml";
+import { provision, type EvalBackend } from "./provision.js";
+import { loadRegistry, requireContainer } from "../src/registry/registry.js";
+
+const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
+const REPO_ROOT = resolve(EVAL_ROOT, "..");
+
+/** Manual-mode check assertions: only objective filesystem/git side-effects (need no transcript). */
+const SIDE_EFFECT_ASSERTIONS = ["okf-valid.ts", "memory-append.ts", "git-committed.ts"];
+
+function shellQuote(value: string): string {
+  if (process.platform === "win32") return `'${value.replace(/'/g, "''")}'`;
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+export interface ScenarioTest {
+  vars: { scenario: string; backend: EvalBackend; container: string; fixture: string; prompt: string };
+  assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }>;
+}
+
+export async function listScenarios(): Promise<string[]> {
+  const dirs = await readdir(join(EVAL_ROOT, "scenarios"), { withFileTypes: true });
+  return dirs.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+}
+
+export async function loadScenario(name: string): Promise<ScenarioTest> {
+  const raw = await readFile(join(EVAL_ROOT, "scenarios", name, "test.yaml"), "utf8");
+  const list = parseYaml(raw);
+  if (!Array.isArray(list) || list.length === 0) throw new Error(`scenario "${name}": expected a non-empty test list`);
+  return list[0] as ScenarioTest;
+}
+
+export interface SetupResult {
+  root: string;
+  workspace: string;
+  copilotHome: string;
+  containerPath: string;
+  command: string;
+  checklist: string[];
+}
+
+export async function setupScenario(
+  name: string,
+  opts: { model?: string; backend?: EvalBackend } = {},
+): Promise<SetupResult> {
+  const scenario = await loadScenario(name);
+  const backend = opts.backend ?? scenario.vars.backend;
+  const fixtureRaw = scenario.vars.fixture;
+  const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
+  const prov = await provision({ scenario: name, backend, container: scenario.vars.container, fixtureDir, repoRoot: REPO_ROOT });
+  const model = opts.model ?? "claude-sonnet-4.5";
+  const prompt = shellQuote(scenario.vars.prompt.trim());
+  const command =
+    process.platform === "win32"
+      ? `Set-Location -LiteralPath ${shellQuote(prov.workspace)}; $env:COPILOT_HOME=${shellQuote(prov.copilotHome)}; copilot -p ${prompt} --allow-all --model ${model}`
+      : `COPILOT_HOME=${shellQuote(prov.copilotHome)} copilot -p ${prompt} --allow-all --model ${model}   # run from cwd: ${prov.workspace}`;
+  const checklist = scenario.assert.map((a) =>
+    a.type === "llm-rubric"
+      ? `rubric: ${String(a.value).trim().split("\n")[0]} …`
+      : `${a.type} ${a.value ? a.value.replace("file://eval/assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
+  );
+  return { root: prov.root, workspace: prov.workspace, copilotHome: prov.copilotHome, containerPath: prov.containerPath, command, checklist };
+}
+
+export interface CheckResult {
+  name: string;
+  pass: boolean;
+  reason: string;
+}
+
+/** Re-run objective side-effect assertions against a workspace you drove by hand. */
+export async function runChecks(root: string, name: string): Promise<CheckResult[]> {
+  const scenario = await loadScenario(name);
+  const okhHome = join(root, "okh-home");
+  const reg = await loadRegistry({ home: okhHome, containersDir: join(okhHome, "containers"), registryFile: join(okhHome, "registry.json") });
+  const entry = requireContainer(reg, scenario.vars.container);
+  const metadata = {
+    workspace: root,
+    okhHome,
+    containerPath: entry.localPath,
+    originPath: entry.backend === "git" ? entry.origin : undefined,
+    toolCalls: [] as string[],
+  };
+  const results: CheckResult[] = [];
+  for (const a of scenario.assert) {
+    if (a.type !== "javascript" || !a.value) continue;
+    const rel = a.value.replace("file://", "");
+    if (!SIDE_EFFECT_ASSERTIONS.some((s) => rel.endsWith(s))) continue;
+    const mod = await import(pathToFileURL(join(REPO_ROOT, rel)).href);
+    const fn = mod.default as (output: string, ctx: unknown) => unknown;
+    const out = fn("", { providerResponse: { metadata }, config: a.config ?? {} });
+    const r = (out instanceof Promise ? await out : out) as { pass: boolean; reason?: string };
+    results.push({ name: rel, pass: !!r.pass, reason: r.reason ?? "" });
+  }
+  return results;
+}
+
+/** Remove the temp run (accepts the temp root or the workspace path). */
+export async function clean(workspaceOrRoot: string): Promise<void> {
+  const root = workspaceOrRoot.replace(/[\\/]workspace$/, "");
+  await rm(root, { recursive: true, force: true });
+}
+
+export async function main(argv: string[]): Promise<number> {
+  const [cmd, ...rest] = argv;
+  if (cmd === "list") {
+    for (const s of await listScenarios()) console.log(s);
+    return 0;
+  }
+  if (cmd === "setup") {
+    const name = rest[0];
+    if (!name) throw new Error("usage: okh-eval setup <scenario> [--backend local|git-auto] [--model M]");
+    const bi = rest.indexOf("--backend");
+    const mi = rest.indexOf("--model");
+    const res = await setupScenario(name, {
+      backend: bi >= 0 ? (rest[bi + 1] as EvalBackend) : undefined,
+      model: mi >= 0 ? rest[mi + 1] : undefined,
+    });
+    console.log(`Root      : ${res.root}`);
+    console.log(`Workspace : ${res.workspace}`);
+    console.log(`\nRun:\n${res.command}`);
+    console.log("\nExpected-outcome checklist:");
+    for (const c of res.checklist) console.log(`  - ${c}`);
+    console.log(`\nAfter running, verify side-effects:\n  npm run eval:setup -- check ${res.root} --scenario ${name}`);
+    console.log(`Clean up:\n  npm run eval:setup -- clean ${res.root}`);
+    return 0;
+  }
+  if (cmd === "check") {
+    const root = rest[0];
+    const si = rest.indexOf("--scenario");
+    const name = si >= 0 ? rest[si + 1] : undefined;
+    if (!root || !name) throw new Error("usage: okh-eval check <root> --scenario <name>");
+    const results = await runChecks(root, name);
+    let ok = true;
+    for (const r of results) {
+      console.log(`${r.pass ? "PASS" : "FAIL"} ${r.name} — ${r.reason}`);
+      if (!r.pass) ok = false;
+    }
+    return ok ? 0 : 1;
+  }
+  if (cmd === "clean") {
+    if (!rest[0]) throw new Error("usage: okh-eval clean <root|workspace>");
+    await clean(rest[0]);
+    console.log("cleaned");
+    return 0;
+  }
+  throw new Error(`unknown command: ${cmd ?? "(none)"} — use list | setup | check | clean`);
+}
+
+const invokedDirectly = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main(process.argv.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    });
+}

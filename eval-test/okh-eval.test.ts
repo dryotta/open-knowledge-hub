@@ -1,0 +1,64 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { listScenarios, loadScenario, setupScenario, runChecks, clean } from "../eval/okh-eval.js";
+import { makeTempDir } from "../test/helpers.js";
+
+const roots: string[] = [];
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((r) => clean(r)));
+});
+
+describe("okh-eval manual CLI", () => {
+  it("lists all 8 scenarios", async () => {
+    expect((await listScenarios()).length).toBe(8);
+  });
+
+  it("loads a scenario's prompt + backend", async () => {
+    const s = await loadScenario("ask-grounded");
+    expect(s.vars.backend).toBe("local");
+    expect(s.vars.prompt).toMatch(/auth/i);
+  });
+
+  it("setup provisions a workspace and prints a copilot command", async () => {
+    const res = await setupScenario("ask-grounded", { model: "test-model" });
+    roots.push(res.root);
+    expect(res.command).toContain("copilot -p");
+    expect(res.command).toContain("--allow-all");
+    expect(res.checklist.length).toBeGreaterThan(0);
+  });
+
+  it("setup prints a command that matches the host shell", async () => {
+    const res = await setupScenario("ask-grounded", { model: "test-model" });
+    roots.push(res.root);
+    if (process.platform === "win32") {
+      expect(res.command).toContain("$env:COPILOT_HOME=");
+      expect(res.command).toContain("Set-Location -LiteralPath");
+    } else {
+      expect(res.command).toContain("COPILOT_HOME=");
+    }
+  });
+
+  it("runChecks evaluates filesystem side-effects (memory append)", async () => {
+    const res = await setupScenario("remember-records");
+    roots.push(res.root);
+    // simulate the agent adding a new dated memory entry
+    await mkdir(join(res.containerPath, "mem"), { recursive: true });
+    await writeFile(join(res.containerPath, "mem", "2026-07-02.md"), "## new\n", "utf8");
+    const results = await runChecks(res.root, "remember-records");
+    const mem = results.find((r) => r.name.endsWith("memory-append.ts"));
+    expect(mem?.pass).toBe(true);
+    // transcript/tools checks are skipped in manual mode (no transcript)
+    expect(results.some((r) => r.name.endsWith("tools-called.ts"))).toBe(false);
+  });
+
+  it("runChecks reports a clear error when the scenario container is not registered", async () => {
+    const root = await makeTempDir("okh-eval-empty-");
+    roots.push(root);
+    const okhHome = join(root, "okh-home");
+    await mkdir(okhHome, { recursive: true });
+    await writeFile(join(okhHome, "registry.json"), JSON.stringify({ version: 1, containers: [] }), "utf8");
+
+    await expect(runChecks(root, "ask-grounded")).rejects.toThrow('No container named "kb-hub"');
+  });
+});
