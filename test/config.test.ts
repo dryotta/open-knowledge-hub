@@ -1,27 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { resolvePaths, packCloneDir } from "../src/config.js";
 import { join } from "node:path";
+import { resolvePaths, containerCloneDir } from "../src/config.js";
 
 describe("resolvePaths", () => {
   it("defaults to ~/.open-knowledge-hub", () => {
-    const p = resolvePaths({}, "/home/alice");
-    expect(p.home).toBe("/home/alice/.open-knowledge-hub");
-    expect(p.packsDir).toBe("/home/alice/.open-knowledge-hub/packs");
-    expect(p.manifestFile).toBe("/home/alice/.open-knowledge-hub/catalog.json");
+    const p = resolvePaths({}, "/home/me");
+    expect(p.home).toBe(join("/home/me", ".open-knowledge-hub"));
+    expect(p.containersDir).toBe(join("/home/me", ".open-knowledge-hub", "containers"));
+    expect(p.registryFile).toBe(join("/home/me", ".open-knowledge-hub", "registry.json"));
   });
 
   it("honours an absolute OKH_HOME", () => {
-    const p = resolvePaths({ OKH_HOME: "/opt/okh" }, "/home/alice");
-    expect(p.home).toBe("/opt/okh");
+    const p = resolvePaths({ OKH_HOME: "/data/okh" }, "/home/me");
+    expect(p.home).toBe("/data/okh");
+    expect(p.registryFile).toBe(join("/data/okh", "registry.json"));
   });
 
-  it("resolves a relative OKH_HOME against cwd", () => {
-    const p = resolvePaths({ OKH_HOME: "rel/okh" }, "/home/alice");
-    expect(p.home).toBe(join(process.cwd(), "rel/okh"));
-  });
-
-  it("computes the clone dir for a slug", () => {
-    const p = resolvePaths({ OKH_HOME: "/opt/okh" });
-    expect(packCloneDir(p, "my-pack")).toBe("/opt/okh/packs/my-pack");
+  it("containerCloneDir joins under containersDir", () => {
+    const p = resolvePaths({ OKH_HOME: "/data/okh" }, "/home/me");
+    expect(containerCloneDir(p, "my-hub")).toBe(join("/data/okh", "containers", "my-hub"));
   });
 });
