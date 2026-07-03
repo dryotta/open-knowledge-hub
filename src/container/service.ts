@@ -1,5 +1,5 @@
 import { mkdir, rm, stat, readdir } from "node:fs/promises";
-import { resolve, relative, basename } from "node:path";
+import { resolve, relative, basename, join } from "node:path";
 import type { ZodType } from "zod";
 import type { OkhPaths } from "../config.js";
 import { containerCloneDir } from "../config.js";
@@ -28,8 +28,9 @@ import {
   modulePathSchema,
   type ContainerManifest,
   type ModuleEntry,
+  type SyncMode,
 } from "./manifest.js";
-import { moduleTypeSchema, type ModuleType } from "../modules/types.js";
+import { moduleTypeSchema, type ModuleType, type Item } from "../modules/types.js";
 import { getLoader } from "../modules/registry.js";
 
 function validate<T>(schema: ZodType<T>, value: unknown, field: string): T {
@@ -72,6 +73,50 @@ export interface AddModuleInput {
   config?: Record<string, unknown>;
 }
 
+export interface GitStatus {
+  branch: string;
+  dirty: boolean;
+  ahead: number;
+  behind: number;
+  hasUnpushedCommits: boolean;
+}
+
+export interface ModuleStatus {
+  path: string;
+  type: ModuleType;
+  items: number;
+}
+
+export interface ContainerStatus {
+  name: string;
+  backend: Backend;
+  sync?: SyncMode;
+  localPath: string;
+  manifestValid: boolean;
+  manifestError?: string;
+  modules: ModuleStatus[];
+  git?: GitStatus;
+}
+
+export type InspectResult =
+  | {
+      kind: "containers";
+      containers: Array<{
+        name: string;
+        backend: Backend;
+        sync?: SyncMode;
+        moduleCount: number;
+        manifestValid: boolean;
+        localPath: string;
+      }>;
+    }
+  | { kind: "container"; status: ContainerStatus }
+  | {
+      kind: "module";
+      module: { path: string; type: ModuleType; config?: Record<string, unknown> };
+      items: Item[];
+    };
+
 /**
  * High-level operations over the container registry. Combines the registry
  * (state), git (working trees), and gh (remote) layers. Registry read-modify-write
@@ -83,11 +128,131 @@ export class ContainerService {
   constructor(
     private readonly paths: OkhPaths,
     private readonly git: Git = new Git(),
-    private readonly gh: Gh = new Gh(),
+    _gh: Gh = new Gh(),
   ) {}
 
   async list(): Promise<ContainerEntry[]> {
     return (await loadRegistry(this.paths)).containers;
+  }
+
+  /** Enumerate a module's items, swallowing loader errors to an empty list. */
+  private async safeEnumerate(type: ModuleType, moduleRoot: string): Promise<Item[]> {
+    try {
+      return await getLoader(type).enumerate(moduleRoot);
+    } catch {
+      return [];
+    }
+  }
+
+  async status(name: string): Promise<ContainerStatus> {
+    const reg = await loadRegistry(this.paths);
+    const entry = requireContainer(reg, name);
+    const root = entry.localPath;
+
+    let manifest: ContainerManifest | undefined;
+    let manifestValid = true;
+    let manifestError: string | undefined;
+    try {
+      manifest = await loadContainerManifest(root);
+    } catch (err) {
+      manifestValid = false;
+      manifestError = err instanceof OkhError ? err.message : String(err);
+    }
+
+    const modules: ModuleStatus[] = manifest
+      ? await Promise.all(
+          manifest.modules.map(async (m) => ({
+            path: m.path,
+            type: m.type,
+            items: (await this.safeEnumerate(m.type, this.moduleRoot(root, m.path))).length,
+          })),
+        )
+      : [];
+
+    let git: GitStatus | undefined;
+    if (entry.backend === "git") {
+      const [branch, dirty, ab, unpushed] = await Promise.all([
+        this.git.currentBranch(root),
+        this.git.isDirty(root),
+        this.git.aheadBehind(root),
+        this.git.hasUnpushedCommits(root),
+      ]);
+      git = { branch, dirty, ahead: ab?.ahead ?? 0, behind: ab?.behind ?? 0, hasUnpushedCommits: unpushed };
+    }
+
+    return {
+      name,
+      backend: entry.backend,
+      sync: manifest?.sync,
+      localPath: root,
+      manifestValid,
+      manifestError,
+      modules,
+      git,
+    };
+  }
+
+  /** Structural validation: manifest parses, module folders exist, knowledge has index.md. */
+  async validate(name: string): Promise<{ ok: boolean; issues: string[] }> {
+    const reg = await loadRegistry(this.paths);
+    const entry = requireContainer(reg, name);
+    const root = entry.localPath;
+    let manifest: ContainerManifest;
+    try {
+      manifest = await loadContainerManifest(root);
+    } catch (err) {
+      return { ok: false, issues: [err instanceof OkhError ? err.message : String(err)] };
+    }
+    const issues: string[] = [];
+    for (const m of manifest.modules) {
+      const moduleRoot = this.moduleRoot(root, m.path);
+      const s = await stat(moduleRoot).catch(() => null);
+      if (!s || !s.isDirectory()) {
+        issues.push(`module "${m.path}" (${m.type}): folder is missing`);
+      }
+      if (m.type === "knowledge") {
+        const idx = await stat(join(moduleRoot, "index.md")).catch(() => null);
+        if (!idx) issues.push(`knowledge module "${m.path}": missing index.md`);
+      }
+    }
+    return { ok: issues.length === 0, issues };
+  }
+
+  async inspect(container?: string, module?: string): Promise<InspectResult> {
+    const reg = await loadRegistry(this.paths);
+    if (!container) {
+      const containers = await Promise.all(
+        reg.containers.map(async (c) => {
+          const st = await this.status(c.name).catch(() => undefined);
+          return {
+            name: c.name,
+            backend: c.backend,
+            sync: st?.sync,
+            moduleCount: st?.modules.length ?? 0,
+            manifestValid: st?.manifestValid ?? false,
+            localPath: c.localPath,
+          };
+        }),
+      );
+      return { kind: "containers", containers };
+    }
+
+    const entry = requireContainer(reg, container);
+    if (!module) {
+      return { kind: "container", status: await this.status(container) };
+    }
+
+    const manifest = await loadContainerManifest(entry.localPath);
+    const mod = manifest.modules.find((m) => m.path === module);
+    if (!mod) {
+      throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+    }
+    const items = await this.safeEnumerate(mod.type, this.moduleRoot(entry.localPath, mod.path));
+    return {
+      kind: "module",
+      module: { path: mod.path, type: mod.type, ...(mod.config ? { config: mod.config } : {}) },
+      items,
+    };
   }
 
   addContainer(input: AddContainerInput): Promise<ContainerEntry> {
