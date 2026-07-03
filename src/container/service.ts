@@ -160,6 +160,20 @@ export interface SyncResult {
   error?: string;
 }
 
+export interface ResolvedModule {
+  type: ModuleType;
+  path: string;
+  absPath: string;
+}
+
+export interface ResolvedContainer {
+  name: string;
+  backend: Backend;
+  sync: SyncMode;
+  root: string;
+  modules: ResolvedModule[];
+}
+
 /**
  * High-level operations over the container registry. Combines the registry
  * (state), git (working trees), and gh (remote) layers. Registry read-modify-write
@@ -296,6 +310,47 @@ export class ContainerService {
       module: { path: mod.path, type: mod.type, ...(mod.config ? { config: mod.config } : {}) },
       items,
     };
+  }
+
+  /**
+   * Resolve container/module filters to concrete paths for prompt context.
+   * No filter => all containers. Skips containers whose manifest can't be read,
+   * unless a specific container was requested (then it errors).
+   */
+  async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {
+    const reg = await loadRegistry(this.paths);
+    const entries = container ? [requireContainer(reg, container)] : reg.containers;
+    const out: ResolvedContainer[] = [];
+    for (const entry of entries) {
+      let manifest: ContainerManifest;
+      try {
+        manifest = await loadContainerManifest(entry.localPath);
+      } catch (err) {
+        if (container) {
+          throw err instanceof OkhError
+            ? err
+            : new OkhError("INVALID_MANIFEST", `Container "${entry.name}" has an invalid manifest.`);
+        }
+        continue;
+      }
+      let modules = manifest.modules;
+      if (module) modules = modules.filter((m) => m.path === module);
+      if (container && module && modules.length === 0) {
+        throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+      }
+      out.push({
+        name: entry.name,
+        backend: entry.backend,
+        sync: manifest.sync,
+        root: entry.localPath,
+        modules: modules.map((m) => ({
+          type: m.type,
+          path: m.path,
+          absPath: this.moduleRoot(entry.localPath, m.path),
+        })),
+      });
+    }
+    return out;
   }
 
   sync(name?: string, message?: string): Promise<SyncResult[]> {
