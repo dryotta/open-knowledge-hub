@@ -135,6 +135,10 @@ export class Git {
     await this.git(["commit", "-m", message], cwd);
   }
 
+  async resetSoft(cwd: string, ref: string): Promise<void> {
+    await this.git(["reset", "--soft", ref], cwd);
+  }
+
   /** True if there is anything staged to commit. */
   async hasStagedChanges(cwd: string): Promise<boolean> {
     try {

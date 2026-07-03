@@ -1,9 +1,9 @@
 import { mkdir, rm, stat, readdir } from "node:fs/promises";
-import { resolve, relative, basename, join } from "node:path";
+import { resolve, relative, basename, join, isAbsolute } from "node:path";
 import type { ZodType } from "zod";
 import type { OkhPaths } from "../config.js";
 import { containerCloneDir } from "../config.js";
-import { OkhError } from "../errors.js";
+import { OkhError, isOkhError } from "../errors.js";
 import { Git } from "../git/git.js";
 import { Gh } from "../git/gh.js";
 import { Mutex } from "../util/mutex.js";
@@ -56,6 +56,38 @@ function deriveName(source: string): string {
   const base = basename(source.replace(/\.git$/, "").replace(/[\\/]+$/, ""));
   const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug || "container";
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function withPrCleanupFailure(
+  primary: unknown,
+  restore: unknown | undefined,
+  checkout: unknown | undefined,
+  base: string,
+): unknown {
+  const details = [
+    restore ? `Failed to restore pending changes on base branch "${base}": ${errorMessage(restore)}` : undefined,
+    checkout ? `Failed to return to base branch "${base}": ${errorMessage(checkout)}` : undefined,
+  ].filter(Boolean);
+  const cleanupMessage = `Also encountered cleanup failure: ${details.join("; ")}`;
+  if (isOkhError(primary)) {
+    return new OkhError(primary.code, `${primary.message}\n${cleanupMessage}`, primary.hint);
+  }
+  return new AggregateError(
+    [primary, restore, checkout].filter((err) => err !== undefined),
+    `${errorMessage(primary)}\n${cleanupMessage}`,
+  );
+}
+
+function withOpenedPrCheckoutFailure(prUrl: string, checkout: unknown, base: string): OkhError {
+  return new OkhError(
+    "GIT_ERROR",
+    `Opened PR ${prUrl}, but failed to return to base branch "${base}": ${errorMessage(checkout)}`,
+    "The PR was created; manually check out the base branch before retrying.",
+  );
 }
 
 export interface AddContainerInput {
@@ -121,10 +153,11 @@ export interface SyncResult {
   name: string;
   backend: Backend;
   validation: { ok: boolean; issues: string[] };
-  action: "committed-pushed" | "pulled" | "up-to-date" | "pr-opened" | "validated" | "skipped";
+  action: "committed-pushed" | "pulled" | "up-to-date" | "pr-opened" | "validated" | "skipped" | "error";
   committed?: boolean;
   pushed?: boolean;
   prUrl?: string;
+  error?: string;
 }
 
 /**
@@ -271,10 +304,22 @@ export class ContainerService {
 
   private async syncImpl(name: string | undefined, message: string | undefined): Promise<SyncResult[]> {
     const reg = await loadRegistry(this.paths);
-    const targets = name ? [requireContainer(reg, name)] : reg.containers;
+    if (name) return [await this.syncOne(requireContainer(reg, name), message)];
+
     const results: SyncResult[] = [];
-    for (const entry of targets) {
-      results.push(await this.syncOne(entry, message));
+    for (const entry of reg.containers) {
+      try {
+        results.push(await this.syncOne(entry, message));
+      } catch (err) {
+        if (!isOkhError(err)) throw err;
+        results.push({
+          name: entry.name,
+          backend: entry.backend,
+          validation: { ok: false, issues: [err.message] },
+          action: "error",
+          error: err.message,
+        });
+      }
     }
     return results;
   }
@@ -335,30 +380,66 @@ export class ContainerService {
     message?: string,
   ): Promise<SyncResult> {
     const root = entry.localPath;
+    const base = await this.git.currentBranch(root);
+    if (base.startsWith(`okh/${entry.name}/sync-`)) {
+      throw new OkhError(
+        "GIT_ERROR",
+        `Container "${entry.name}" is on generated sync branch "${base}". Check out the intended base branch before syncing.`,
+      );
+    }
     const dirty = await this.git.isDirty(root);
     const unpushed = await this.git.hasCurrentBranchUnpushedCommits(root);
     if (!dirty && !unpushed) {
       return { name: entry.name, backend: entry.backend, validation, action: "up-to-date" };
     }
-    const current = await this.git.currentBranch(root);
-    if (current === "main" || current === "master") {
-      await this.git.createBranch(root, `okh/${entry.name}/sync-${Date.now()}`);
+    const branch = `okh/${entry.name}/sync-${Date.now()}`;
+    let createdBranch = false;
+    let operationError: unknown;
+    let restoreError: unknown;
+    let checkoutError: unknown;
+    let result: SyncResult | undefined;
+    try {
+      await this.git.createBranch(root, branch);
+      createdBranch = true;
+      await this.git.stageAll(root);
+      let committed = false;
+      if (await this.git.hasStagedChanges(root)) {
+        await this.git.commit(root, message ?? `okh: sync ${entry.name}`);
+        committed = true;
+      }
+      const remote = await this.git.defaultRemote(root);
+      await this.git.push(root, remote, branch);
+      const prUrl = await this.gh.createPr({
+        cwd: root,
+        base,
+        title: message ?? `okh sync: ${entry.name}`,
+        body: "Automated OKH sync.",
+      });
+      result = { name: entry.name, backend: entry.backend, validation, action: "pr-opened", committed, pushed: true, prUrl };
+    } catch (err) {
+      operationError = err;
     }
-    await this.git.stageAll(root);
-    let committed = false;
-    if (await this.git.hasStagedChanges(root)) {
-      await this.git.commit(root, message ?? `okh: sync ${entry.name}`);
-      committed = true;
+    if (createdBranch) {
+      if (operationError) {
+        try {
+          await this.git.resetSoft(root, base);
+        } catch (err) {
+          restoreError = err;
+        }
+      }
+      try {
+        await this.git.checkout(root, base);
+      } catch (err) {
+        checkoutError = err;
+      }
     }
-    const remote = await this.git.defaultRemote(root);
-    const branch = await this.git.currentBranch(root);
-    await this.git.push(root, remote, branch);
-    const prUrl = await this.gh.createPr({
-      cwd: root,
-      title: message ?? `okh sync: ${entry.name}`,
-      body: "Automated OKH sync.",
-    });
-    return { name: entry.name, backend: entry.backend, validation, action: "pr-opened", committed, pushed: true, prUrl };
+    if (operationError) {
+      throw restoreError || checkoutError
+        ? withPrCleanupFailure(operationError, restoreError, checkoutError, base)
+        : operationError;
+    }
+    if (checkoutError) throw result?.prUrl ? withOpenedPrCheckoutFailure(result.prUrl, checkoutError, base) : checkoutError;
+    return result!;
   }
 
   addContainer(input: AddContainerInput): Promise<ContainerEntry> {
@@ -444,7 +525,13 @@ export class ContainerService {
     const moduleRoot = this.moduleRoot(root, input.path);
     await mkdir(moduleRoot, { recursive: true });
     const loader = getLoader(input.type);
-    if (loader.scaffold) await loader.scaffold(moduleRoot);
+    if (loader.scaffold) {
+      try {
+        await loader.scaffold(moduleRoot);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      }
+    }
     const entry: ModuleEntry = {
       path: input.path,
       type: input.type,
@@ -463,7 +550,7 @@ export class ContainerService {
   protected moduleRoot(containerRoot: string, modulePath: string): string {
     const root = resolve(containerRoot, modulePath);
     const rel = relative(containerRoot, root);
-    if (rel.startsWith("..") || resolve(containerRoot, rel) !== root) {
+    if (isAbsolute(rel) || rel.startsWith("..") || resolve(containerRoot, rel) !== root) {
       throw new OkhError("INVALID_ARGUMENT", `module path "${modulePath}" escapes the container.`);
     }
     return root;

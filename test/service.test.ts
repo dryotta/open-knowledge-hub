@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, readFile, stat } from "node:fs/promises";
+import { mkdir, rm, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
@@ -12,6 +12,12 @@ class FakeGh {
   prCalls: unknown[] = [];
   async createRepo(): Promise<string> { return "https://github.com/test/x"; }
   async createPr(opts: unknown): Promise<string> { this.prCalls.push(opts); return "https://github.com/test/x/pull/1"; }
+}
+
+class TestService extends ContainerService {
+  exposeModuleRoot(containerRoot: string, modulePath: string): string {
+    return this.moduleRoot(containerRoot, modulePath);
+  }
 }
 
 const cleanups: string[] = [];
@@ -115,5 +121,31 @@ describe("addModule", () => {
   it("rejects a module on an unknown container", async () => {
     const { service } = await setup();
     await expect(service.addModule({ container: "ghost", path: "kb", type: "knowledge" })).rejects.toBeInstanceOf(OkhError);
+  });
+
+  it("treats an existing knowledge index as already scaffolded", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub" });
+    await mkdir(join(dir, "kb"), { recursive: true });
+    await writeFile(join(dir, "kb", "index.md"), "# Existing\n", "utf8");
+
+    const { moduleRoot } = await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+
+    expect(moduleRoot).toBe(join(dir, "kb"));
+    expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toBe("# Existing\n");
+    const m = await loadContainerManifest(dir);
+    expect(m.modules).toEqual([{ path: "kb", type: "knowledge" }]);
+  });
+});
+
+describe("moduleRoot", () => {
+  const itOnWindows = process.platform === "win32" ? it : it.skip;
+
+  itOnWindows("rejects absolute paths on a different drive", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    const service = new TestService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
+
+    expect(() => service.exposeModuleRoot("C:\\container", "D:\\escape")).toThrow(OkhError);
   });
 });

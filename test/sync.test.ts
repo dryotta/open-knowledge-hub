@@ -9,8 +9,78 @@ import { makePaths, makeTempDir, makeOrigin, pushToOrigin, testRun, writeManifes
 
 class FakeGh {
   prCalls: unknown[] = [];
+  failNextCreatePr: Error | undefined;
   async createRepo(): Promise<string> { return "x"; }
-  async createPr(opts: unknown): Promise<string> { this.prCalls.push(opts); return "https://github.com/test/x/pull/1"; }
+  async createPr(opts: unknown): Promise<string> {
+    this.prCalls.push(opts);
+    if (this.failNextCreatePr) {
+      const err = this.failNextCreatePr;
+      this.failNextCreatePr = undefined;
+      throw err;
+    }
+    return "https://github.com/test/x/pull/1";
+  }
+}
+
+class CheckoutFailingGit {
+  async currentBranch(): Promise<string> { return "main"; }
+  async isDirty(): Promise<boolean> { return true; }
+  async hasCurrentBranchUnpushedCommits(): Promise<boolean> { return false; }
+  async createBranch(): Promise<void> {}
+  async stageAll(): Promise<void> {}
+  async hasStagedChanges(): Promise<boolean> { return true; }
+  async commit(): Promise<void> {}
+  async defaultRemote(): Promise<string> { return "origin"; }
+  async push(): Promise<void> {}
+  async resetSoft(): Promise<void> {}
+  async checkout(): Promise<void> { throw new OkhError("GIT_ERROR", "checkout failed"); }
+}
+
+class ResetFailingGit {
+  checkoutCalls = 0;
+  async currentBranch(): Promise<string> { return "main"; }
+  async isDirty(): Promise<boolean> { return true; }
+  async hasCurrentBranchUnpushedCommits(): Promise<boolean> { return false; }
+  async createBranch(): Promise<void> {}
+  async stageAll(): Promise<void> {}
+  async hasStagedChanges(): Promise<boolean> { return true; }
+  async commit(): Promise<void> {}
+  async defaultRemote(): Promise<string> { return "origin"; }
+  async push(): Promise<void> {}
+  async resetSoft(): Promise<void> { throw new OkhError("GIT_ERROR", "reset failed"); }
+  async checkout(): Promise<void> { this.checkoutCalls += 1; }
+}
+
+class StaleSyncBranchGit {
+  async currentBranch(): Promise<string> { return "okh/team/sync-123"; }
+  async isDirty(): Promise<boolean> { return true; }
+  async hasCurrentBranchUnpushedCommits(): Promise<boolean> { return false; }
+  async createBranch(): Promise<void> {}
+  async stageAll(): Promise<void> {}
+  async hasStagedChanges(): Promise<boolean> { return true; }
+  async commit(): Promise<void> {}
+  async defaultRemote(): Promise<string> { return "origin"; }
+  async push(): Promise<void> {}
+  async resetSoft(): Promise<void> {}
+  async checkout(): Promise<void> {}
+}
+
+class FailingCreatePrGh {
+  async createRepo(): Promise<string> { return "x"; }
+  async createPr(): Promise<string> { throw new OkhError("GH_ERROR", "create PR failed"); }
+}
+
+async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: string): Promise<void> {
+  await writeFile(paths.registryFile, `${JSON.stringify({
+    version: 1,
+    containers: [{
+      name: "team",
+      backend: "git",
+      origin: "https://example.com/team.git",
+      localPath: root,
+      addedAt: new Date().toISOString(),
+    }],
+  })}\n`, "utf8");
 }
 const cleanups: string[] = [];
 async function setup() {
@@ -59,6 +129,28 @@ describe("sync (auto)", () => {
     await pushToOrigin(origin, "remote.md", "x"); // remote advances
     await expect(service.sync("hub")).rejects.toMatchObject({ code: "GIT_ERROR" }); // commit local -> diverged -> ff-only fails
   });
+
+  it("continues syncing other containers when one container fails during sync-all", async () => {
+    const divergedOrigin = await makeOrigin();
+    const cleanOrigin = await makeOrigin();
+    const { service } = await setup();
+    await service.addContainer({ source: divergedOrigin, name: "diverged" }); // local manifest uncommitted
+    await service.addContainer({ source: cleanOrigin, name: "clean" }); // local manifest uncommitted
+    await pushToOrigin(divergedOrigin, "remote.md", "x"); // remote advances before local manifest commit
+
+    const results = await service.sync();
+
+    expect(results).toHaveLength(2);
+    expect(results.find((r) => r.name === "diverged")).toMatchObject({
+      action: "error",
+      error: expect.stringContaining("sync pull failed"),
+      validation: { ok: false, issues: [expect.stringContaining("sync pull failed")] },
+    });
+    expect(results.find((r) => r.name === "clean")).toMatchObject({
+      action: "committed-pushed",
+      pushed: true,
+    });
+  });
 });
 
 describe("sync (pr)", () => {
@@ -88,6 +180,126 @@ describe("sync (pr)", () => {
 
     const [res] = await service.sync("team");
     expect(res!.action).toBe("up-to-date");
+    expect(gh.prCalls).toHaveLength(0);
+  });
+
+  it("opens PRs from fresh sync branches and returns to the base branch after each sync", async () => {
+    const origin = await makeOrigin({
+      "README.md": "# origin\n",
+      ".okh/okh.yaml": "name: team\nsync: pr\nmodules: []\n",
+    });
+    const { service, gh } = await setup();
+    const entry = await service.addContainer({ source: origin, name: "team", sync: "pr" });
+
+    await writeFile(join(entry.localPath, "note-1.md"), "first", "utf8");
+    const [first] = await service.sync("team");
+
+    expect(first).toMatchObject({ action: "pr-opened", pushed: true });
+    expect((await service.status("team")).git?.branch).toBe("main");
+
+    await writeFile(join(entry.localPath, "note-2.md"), "second", "utf8");
+    const [second] = await service.sync("team");
+
+    expect(second).toMatchObject({ action: "pr-opened", pushed: true });
+    expect((await service.status("team")).git?.branch).toBe("main");
+    expect(gh.prCalls).toHaveLength(2);
+    expect(gh.prCalls).toEqual([
+      expect.objectContaining({ base: "main" }),
+      expect.objectContaining({ base: "main" }),
+    ]);
+  });
+
+  it("restores pending changes to the base branch so a failed PR create can be retried", async () => {
+    const origin = await makeOrigin({
+      "README.md": "# origin\n",
+      ".okh/okh.yaml": "name: team\nsync: pr\nmodules: []\n",
+    });
+    const { service, gh } = await setup();
+    const entry = await service.addContainer({ source: origin, name: "team", sync: "pr" });
+    gh.failNextCreatePr = new OkhError("GH_ERROR", "create PR failed");
+    await writeFile(join(entry.localPath, "note.md"), "pending", "utf8");
+
+    await expect(service.sync("team")).rejects.toMatchObject({ code: "GH_ERROR" });
+    expect((await service.status("team")).git).toMatchObject({ branch: "main", dirty: true });
+
+    const [retry] = await service.sync("team");
+
+    expect(retry).toMatchObject({ action: "pr-opened", pushed: true });
+    expect((await service.status("team")).git?.branch).toBe("main");
+    expect(gh.prCalls).toHaveLength(2);
+  });
+
+  it("preserves the primary PR error when returning to base also fails", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    const root = await makeTempDir(); cleanups.push(root);
+    const paths = makePaths(home);
+    await writeManifest(root, "name: team\nsync: pr\nmodules: []\n");
+    await registerGitContainer(paths, root);
+    const service = new ContainerService(
+      paths,
+      new CheckoutFailingGit() as unknown as Git,
+      new FailingCreatePrGh() as unknown as Gh,
+    );
+
+    await expect(service.sync("team")).rejects.toMatchObject({ code: "GH_ERROR" });
+  });
+
+  it("still tries to return to base when restoring pending changes fails", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    const root = await makeTempDir(); cleanups.push(root);
+    const paths = makePaths(home);
+    await writeManifest(root, "name: team\nsync: pr\nmodules: []\n");
+    await registerGitContainer(paths, root);
+    const git = new ResetFailingGit();
+    const service = new ContainerService(
+      paths,
+      git as unknown as Git,
+      new FailingCreatePrGh() as unknown as Gh,
+    );
+
+    await expect(service.sync("team")).rejects.toMatchObject({
+      code: "GH_ERROR",
+      message: expect.stringContaining("restore pending changes"),
+    });
+    expect(git.checkoutCalls).toBe(1);
+  });
+
+  it("reports the PR URL when opening the PR succeeds but returning to base fails", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    const root = await makeTempDir(); cleanups.push(root);
+    const paths = makePaths(home);
+    await writeManifest(root, "name: team\nsync: pr\nmodules: []\n");
+    await registerGitContainer(paths, root);
+    const service = new ContainerService(
+      paths,
+      new CheckoutFailingGit() as unknown as Git,
+      new FakeGh() as unknown as Gh,
+    );
+
+    await expect(service.sync("team")).rejects.toMatchObject({
+      code: "GIT_ERROR",
+      message: expect.stringContaining("https://github.com/test/x/pull/1"),
+      hint: expect.stringContaining("manually check out"),
+    });
+  });
+
+  it("refuses to treat a generated sync branch as the PR base", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    const root = await makeTempDir(); cleanups.push(root);
+    const paths = makePaths(home);
+    await writeManifest(root, "name: team\nsync: pr\nmodules: []\n");
+    await registerGitContainer(paths, root);
+    const gh = new FakeGh();
+    const service = new ContainerService(
+      paths,
+      new StaleSyncBranchGit() as unknown as Git,
+      gh as unknown as Gh,
+    );
+
+    await expect(service.sync("team")).rejects.toMatchObject({
+      code: "GIT_ERROR",
+      message: expect.stringContaining("generated sync branch"),
+    });
     expect(gh.prCalls).toHaveLength(0);
   });
 });
