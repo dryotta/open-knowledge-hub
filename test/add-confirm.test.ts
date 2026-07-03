@@ -48,3 +48,25 @@ describe("addContainer preview/confirm", () => {
     expect((await loadRegistry(paths)).containers[0]!.name).toBe("new-hub");
   });
 });
+
+describe("addModule preview/confirm", () => {
+  it("previews (no side effects) without create", async () => {
+    const { service, paths } = await setup();
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    expect(out.kind).toBe("plan");
+    await expect(stat(join(dir, "kb"))).rejects.toBeTruthy(); // folder NOT created
+  });
+
+  it("creates folder + scaffold + manifest entry with create:true", async () => {
+    const { service } = await setup();
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
+    expect(out.kind).toBe("applied");
+    if (out.kind === "applied") {
+      expect((await stat(join(out.moduleRoot, "index.md"))).isFile()).toBe(true);
+    }
+  });
+});

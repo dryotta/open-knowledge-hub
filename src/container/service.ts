@@ -120,11 +120,28 @@ export type AddContainerOutcome =
   | { kind: "plan"; plan: AddContainerPlan }
   | { kind: "applied"; entry: ContainerEntry };
 
+export type ModuleAction = "init-manifest" | "create-folder" | "scaffold";
+
+export interface AddModulePlan {
+  kind: "module";
+  actions: ModuleAction[];
+  container: string;
+  path: string;
+  type: ModuleType;
+  moduleRoot: string;
+  config?: Record<string, unknown>;
+}
+
+export type AddModuleOutcome =
+  | { kind: "plan"; plan: AddModulePlan }
+  | { kind: "applied"; entry: ModuleEntry; moduleRoot: string };
+
 export interface AddModuleInput {
   container: string;
   path: string;
   type: ModuleType;
   config?: Record<string, unknown>;
+  create?: boolean;
 }
 
 export interface GitStatus {
@@ -608,19 +625,17 @@ export class ContainerService {
     return entry;
   }
 
-  addModule(input: AddModuleInput): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
+  addModule(input: AddModuleInput): Promise<AddModuleOutcome> {
     return this.mutex.run(() => this.addModuleImpl(input));
   }
 
-  private async addModuleImpl(
-    input: AddModuleInput,
-  ): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
+  async planAddModule(input: AddModuleInput): Promise<AddModulePlan> {
     validate(modulePathSchema, input.path, "module path");
     validate(moduleTypeSchema, input.type, "module type");
     const reg = await loadRegistry(this.paths);
     const container = requireContainer(reg, input.container);
     const root = container.localPath;
-    const manifest = await this.loadOrScaffold(root, container.name);
+    const manifest = await this.loadManifestOrEmpty(root, container.name);
     if (manifest.modules.some((m) => m.path === input.path)) {
       throw new OkhError(
         "ALREADY_EXISTS",
@@ -628,22 +643,55 @@ export class ContainerService {
       );
     }
     const moduleRoot = this.moduleRoot(root, input.path);
-    await mkdir(moduleRoot, { recursive: true });
-    const loader = getLoader(input.type);
+    const actions: ModuleAction[] = [];
+    if (!(await manifestExists(root))) actions.push("init-manifest");
+    const modDir = await stat(moduleRoot).then((s) => s.isDirectory()).catch(() => false);
+    if (!modDir) actions.push("create-folder");
+    if (getLoader(input.type).scaffold) actions.push("scaffold");
+    return {
+      kind: "module",
+      actions,
+      container: input.container,
+      path: input.path,
+      type: input.type,
+      moduleRoot,
+      ...(input.config ? { config: input.config } : {}),
+    };
+  }
+
+  private async addModuleImpl(input: AddModuleInput): Promise<AddModuleOutcome> {
+    const plan = await this.planAddModule(input);
+    if (plan.actions.length > 0 && !input.create) return { kind: "plan", plan };
+    return { kind: "applied", ...(await this.applyAddModule(plan)) };
+  }
+
+  private async applyAddModule(plan: AddModulePlan): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
+    const reg = await loadRegistry(this.paths);
+    const container = requireContainer(reg, plan.container);
+    const root = container.localPath;
+    const manifest = await this.loadOrScaffold(root, container.name);
+    if (manifest.modules.some((m) => m.path === plan.path)) {
+      throw new OkhError(
+        "ALREADY_EXISTS",
+        `Module path "${plan.path}" already exists in container "${plan.container}".`,
+      );
+    }
+    await mkdir(plan.moduleRoot, { recursive: true });
+    const loader = getLoader(plan.type);
     if (loader.scaffold) {
       try {
-        await loader.scaffold(moduleRoot);
+        await loader.scaffold(plan.moduleRoot);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
     }
     const entry: ModuleEntry = {
-      path: input.path,
-      type: input.type,
-      ...(input.config ? { config: input.config } : {}),
+      path: plan.path,
+      type: plan.type,
+      ...(plan.config ? { config: plan.config } : {}),
     };
     await saveContainerManifest(root, { ...manifest, modules: [...manifest.modules, entry] });
-    return { entry, moduleRoot };
+    return { entry, moduleRoot: plan.moduleRoot };
   }
 
   /** Absolute path to a container's root on disk. */
@@ -666,6 +714,12 @@ export class ContainerService {
     const m = scaffoldManifest(name);
     await saveContainerManifest(root, m);
     return m;
+  }
+
+  /** In-memory manifest for planning: never writes. Missing file => empty scaffold. */
+  protected async loadManifestOrEmpty(root: string, name: string): Promise<ContainerManifest> {
+    if (await manifestExists(root)) return loadContainerManifest(root);
+    return scaffoldManifest(name);
   }
 
   private async assertDirAvailable(dir: string): Promise<void> {
