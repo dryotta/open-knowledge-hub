@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, readFile } from "node:fs/promises";
+import { rm, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "./helpers.js";
 import {
@@ -37,6 +37,24 @@ describe("container manifest", () => {
     expect(await readFile(manifestPath(root), "utf8")).toContain("type: knowledge");
     const back = await loadContainerManifest(root);
     expect(back).toEqual(m);
+  });
+
+  it("leaves no manifest temp files when replacing an existing manifest", async () => {
+    const root = await makeTempDir(); cleanups.push(root);
+    await saveContainerManifest(root, { name: "before", sync: "auto", modules: [] });
+
+    const replacement: ContainerManifest = {
+      name: "after",
+      sync: "pr",
+      modules: [{ path: "skills", type: "skills" }],
+    };
+    await saveContainerManifest(root, replacement);
+
+    expect(await readdir(join(root, ".okh"))).toEqual(["okh.yaml"]);
+    const raw = await readFile(manifestPath(root), "utf8");
+    expect(raw).toContain("name: after");
+    expect(raw).not.toContain("name: before");
+    expect(await loadContainerManifest(root)).toEqual(replacement);
   });
 
   it("defaults sync to auto and modules to [] when omitted", async () => {

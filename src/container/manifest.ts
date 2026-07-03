@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat, rename } from "node:fs/promises";
 import { join, dirname, isAbsolute, normalize } from "node:path";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { OkhError } from "../errors.js";
@@ -96,7 +97,9 @@ export async function saveContainerManifest(
   const validated = containerManifestSchema.parse(manifest);
   const file = manifestPath(containerRoot);
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, stringifyYaml(validated), "utf8");
+  const tmp = `${file}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
+  await writeFile(tmp, stringifyYaml(validated), "utf8");
+  await rename(tmp, file);
 }
 
 export function scaffoldManifest(name: string): ContainerManifest {

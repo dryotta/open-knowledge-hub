@@ -367,10 +367,16 @@ export class ContainerService {
         results.push(await this.syncOne(entry, message));
       } catch (err) {
         if (!isOkhError(err)) throw err;
+        let validation: SyncResult["validation"];
+        try {
+          validation = await this.validate(entry.name);
+        } catch {
+          validation = { ok: false, issues: [] };
+        }
         results.push({
           name: entry.name,
           backend: entry.backend,
-          validation: { ok: false, issues: [err.message] },
+          validation,
           action: "error",
           error: err.message,
         });

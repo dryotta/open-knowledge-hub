@@ -144,7 +144,7 @@ describe("sync (auto)", () => {
     expect(results.find((r) => r.name === "diverged")).toMatchObject({
       action: "error",
       error: expect.stringContaining("sync pull failed"),
-      validation: { ok: false, issues: [expect.stringContaining("sync pull failed")] },
+      validation: { ok: true, issues: [] },
     });
     expect(results.find((r) => r.name === "clean")).toMatchObject({
       action: "committed-pushed",
