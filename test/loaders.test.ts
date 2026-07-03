@@ -5,6 +5,9 @@ import { makeTempDir } from "./helpers.js";
 import { knowledgeLoader } from "../src/modules/loaders/knowledge.js";
 import { skillsLoader } from "../src/modules/loaders/skills.js";
 import { toolsLoader } from "../src/modules/loaders/tools.js";
+import { memoryLoader } from "../src/modules/loaders/memory.js";
+import { projectLoader } from "../src/modules/loaders/project.js";
+import { getLoader } from "../src/modules/registry.js";
 
 const cleanups: string[] = [];
 
@@ -127,5 +130,44 @@ describe("tools loader", () => {
     await write(root, "widget/README.md", "Does widget things.\n");
     const items = await toolsLoader.enumerate(root);
     expect(items[0]).toMatchObject({ title: "widget", description: "Does widget things." });
+  });
+});
+
+describe("memory/project loaders (thin file listing)", () => {
+  it("lists files (excluding README.md) and prepends README in overview", async () => {
+    const root = await tmp();
+    await write(root, "README.md", "How this memory works.");
+    await write(root, "2026-07-02.md", "an entry");
+    await write(root, "notes.txt", "x");
+
+    const items = await memoryLoader.enumerate(root);
+
+    expect(items.map((i) => i.path).sort()).toEqual(["2026-07-02.md", "notes.txt"]);
+    expect(items[0]!.type).toBe("memory");
+    const ov = await memoryLoader.overview(root);
+    expect(ov).toContain("How this memory works.");
+    expect(ov).toContain("2026-07-02.md");
+  });
+
+  it("propagates read errors for an existing README.md path", async () => {
+    const root = await tmp();
+    await mkdir(join(root, "README.md"), { recursive: true });
+    await expect(memoryLoader.overview(root)).rejects.toBeTruthy();
+  });
+
+  it("project loader tags items as project", async () => {
+    const root = await tmp();
+    await write(root, "spec.md", "x");
+    const items = await projectLoader.enumerate(root);
+    expect(items[0]).toMatchObject({ path: "spec.md", type: "project" });
+  });
+});
+
+describe("getLoader dispatch", () => {
+  it("returns a loader for every module type", () => {
+    for (const t of ["knowledge", "skills", "tools", "memory", "project"] as const) {
+      expect(typeof getLoader(t).enumerate).toBe("function");
+      expect(typeof getLoader(t).overview).toBe("function");
+    }
   });
 });
