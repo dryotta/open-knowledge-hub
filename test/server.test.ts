@@ -117,6 +117,8 @@ describe("MCP server surface", () => {
     expect(byName.ask!.readOnlyHint).toBe(true);
     expect(byName.add!.openWorldHint).toBe(true);
     expect(byName.sync!.openWorldHint).toBe(true);
+    expect(byName.onboard!.readOnlyHint).toBe(false);
+    expect(byName.onboard!.openWorldHint).toBe(false);
   });
 
   it("add -> inspect round-trips through the tool interface", async () => {

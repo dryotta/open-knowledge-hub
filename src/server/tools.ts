@@ -104,7 +104,7 @@ function formatSync(rs: SyncResult[]): string {
     .join("\n");
 }
 
-/** Register the three operational tools + five cognitive prompt-tools. */
+/** Register the four operational/setup tools + five cognitive prompt-tools. */
 export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
@@ -236,7 +236,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
           .optional()
           .describe("Set a custom wake phrase (1-32 chars: a letter then letters, digits or dashes)."),
       },
-      annotations: { openWorldHint: false },
+      annotations: { readOnlyHint: false, openWorldHint: false },
     },
     handler(async (args: { wakePhrase?: string }) => {
       if (args.wakePhrase !== undefined) {

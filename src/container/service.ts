@@ -617,7 +617,9 @@ export class ContainerService {
       await saveContainerManifest(plan.target, { ...scaffoldManifest(plan.name), sync: plan.sync });
     } else if (plan.syncExplicit) {
       const m = await loadContainerManifest(plan.target);
-      await saveContainerManifest(plan.target, { ...m, sync: plan.sync });
+      if (m.sync !== plan.sync) {
+        await saveContainerManifest(plan.target, { ...m, sync: plan.sync });
+      }
     }
 
     const entry: ContainerEntry = {
@@ -667,7 +669,7 @@ export class ContainerService {
 
   private async addModuleImpl(input: AddModuleInput): Promise<AddModuleOutcome> {
     const plan = await this.planAddModule(input);
-    if (plan.actions.length > 0 && !input.create) return { kind: "plan", plan };
+    if (!input.create) return { kind: "plan", plan };
     return { kind: "applied", ...(await this.applyAddModule(plan)) };
   }
 

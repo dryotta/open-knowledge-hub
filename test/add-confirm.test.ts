@@ -59,6 +59,18 @@ describe("addModule preview/confirm", () => {
     await expect(stat(join(dir, "kb"))).rejects.toBeTruthy(); // folder NOT created
   });
 
+  it("previews an existing non-scaffold module folder without mutating the manifest", async () => {
+    const { service } = await setup();
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await mkdir(join(dir, "myskills"));
+
+    const out = await service.addModule({ container: "hub", path: "myskills", type: "skills" });
+
+    expect(out.kind).toBe("plan");
+    expect((await loadContainerManifest(dir)).modules).not.toContainEqual({ path: "myskills", type: "skills" });
+  });
+
   it("creates folder + scaffold + manifest entry with create:true", async () => {
     const { service } = await setup();
     const dir = await makeTempDir(); cleanups.push(dir);

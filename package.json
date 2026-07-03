@@ -1,7 +1,7 @@
 {
   "name": "open-knowledge-hub",
   "version": "0.2.0",
-  "description": "A minimalist MCP that organizes agent knowledge and capabilities into containers of typed modules (knowledge, skills, tools, memory, project), with five cognitive prompts and three operational tools.",
+  "description": "A minimalist MCP that organizes agent knowledge and capabilities into containers of typed modules, with five cognitive prompts, an onboarding prompt, and four operational/setup tools.",
   "license": "MIT",
   "type": "module",
   "bin": {
