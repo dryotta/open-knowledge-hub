@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { listScenarios, loadScenario, setupScenario, runChecks, clean } from "../eval/okh-eval.js";
+import { listScenarios, loadScenario, setupScenario, runChecks, clean, buildEnterInvocation } from "../eval/okh-eval.js";
+import { type RunRecord } from "../eval/run-state.js";
 import { makeTempDir } from "../test/helpers.js";
 
 const roots: string[] = [];
@@ -37,6 +38,41 @@ describe("okh-eval manual CLI", () => {
     } else {
       expect(res.command).toContain("COPILOT_HOME=");
     }
+  });
+
+  it("setup returns the scenario name and backend for state tracking", async () => {
+    const res = await setupScenario("ask-grounded", { model: "test-model" });
+    roots.push(res.root);
+    expect(res.scenario).toBe("ask-grounded");
+    expect(res.backend).toBe("local");
+  });
+
+  it("buildEnterInvocation targets the isolated env and workspace", () => {
+    const rec: RunRecord = {
+      scenario: "ask-grounded",
+      root: "/r",
+      workspace: "/r/ws",
+      copilotHome: "/r/ch",
+      backend: "local",
+      createdAt: "t",
+    };
+    const inv = buildEnterInvocation(rec, "test-model");
+    expect(inv.command).toBe("copilot");
+    expect(inv.args).toEqual(["--allow-all", "--model", "test-model"]);
+    expect(inv.cwd).toBe("/r/ws");
+    expect(inv.env.COPILOT_HOME).toBe("/r/ch");
+  });
+
+  it("buildEnterInvocation omits --model when not given", () => {
+    const rec: RunRecord = {
+      scenario: "s",
+      root: "/r",
+      workspace: "/r/ws",
+      copilotHome: "/r/ch",
+      backend: "local",
+      createdAt: "t",
+    };
+    expect(buildEnterInvocation(rec).args).toEqual(["--allow-all"]);
   });
 
   it("runChecks evaluates filesystem side-effects (memory append)", async () => {

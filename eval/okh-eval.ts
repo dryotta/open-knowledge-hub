@@ -4,6 +4,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import { provision, type EvalBackend } from "./provision.js";
 import { loadRegistry, requireContainer } from "../src/registry/registry.js";
+import type { RunRecord } from "./run-state.js";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
@@ -38,6 +39,8 @@ export interface SetupResult {
   workspace: string;
   copilotHome: string;
   containerPath: string;
+  scenario: string;
+  backend: EvalBackend;
   command: string;
   checklist: string[];
 }
@@ -62,7 +65,21 @@ export async function setupScenario(
       ? `rubric: ${String(a.value).trim().split("\n")[0]} …`
       : `${a.type} ${a.value ? a.value.replace("file://assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
   );
-  return { root: prov.root, workspace: prov.workspace, copilotHome: prov.copilotHome, containerPath: prov.containerPath, command, checklist };
+  return { root: prov.root, workspace: prov.workspace, copilotHome: prov.copilotHome, containerPath: prov.containerPath, scenario: name, backend, command, checklist };
+}
+
+export interface EnterInvocation {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+}
+
+/** Build the interactive `copilot --allow-all` invocation for a provisioned run. */
+export function buildEnterInvocation(rec: RunRecord, model?: string): EnterInvocation {
+  const args = ["--allow-all"];
+  if (model) args.push("--model", model);
+  return { command: "copilot", args, cwd: rec.workspace, env: { COPILOT_HOME: rec.copilotHome } };
 }
 
 export interface CheckResult {
