@@ -9,7 +9,7 @@ const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
 
 /** Manual-mode check assertions: only objective filesystem/git side-effects (need no transcript). */
-const SIDE_EFFECT_ASSERTIONS = ["okf-valid.ts", "memory-append.ts", "git-committed.ts"];
+const SIDE_EFFECT_ASSERTIONS = ["okf-valid.ts", "memory-append.ts", "git-committed.ts", "module-unchanged.ts"];
 
 function shellQuote(value: string): string {
   if (process.platform === "win32") return `'${value.replace(/'/g, "''")}'`;
@@ -77,10 +77,13 @@ export async function runChecks(root: string, name: string): Promise<CheckResult
   const okhHome = join(root, "okh-home");
   const reg = await loadRegistry({ home: okhHome, containersDir: join(okhHome, "containers"), registryFile: join(okhHome, "registry.json") });
   const entry = requireContainer(reg, scenario.vars.container);
+  const fixtureRaw = scenario.vars.fixture;
+  const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
   const metadata = {
     workspace: root,
     okhHome,
     containerPath: entry.localPath,
+    fixtureDir,
     originPath: entry.backend === "git" ? entry.origin : undefined,
     toolCalls: [] as string[],
   };

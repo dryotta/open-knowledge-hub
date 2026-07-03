@@ -3,8 +3,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { parseFrontmatter, stringField } from "../../src/util/frontmatter.js";
 
 interface Ctx {
-  config?: { module?: string; requireCitations?: boolean };
-  providerResponse?: { metadata?: { containerPath?: string } };
+  config?: { module?: string; requireCitations?: boolean; requireIndexUpdated?: boolean };
+  providerResponse?: { metadata?: { containerPath?: string; fixtureDir?: string } };
 }
 const RESERVED = new Set(["index.md", "log.md"]);
 
@@ -47,6 +47,16 @@ export default async function okfValid(_output: string, context: Ctx) {
     if (/^#\s*Citations/im.test(body)) hasCitations = true;
   }
   if (context.config?.requireCitations && !hasCitations) problems.push("no concept has a # Citations section");
+  if (context.config?.requireIndexUpdated) {
+    const fixtureDir = context.providerResponse?.metadata?.fixtureDir;
+    if (!fixtureDir) {
+      problems.push("cannot verify index.md update: no fixtureDir in metadata");
+    } else {
+      const now = await readFile(join(root, "index.md"), "utf8").catch(() => "");
+      const orig = await readFile(join(fixtureDir, module, "index.md"), "utf8").catch(() => "");
+      if (now === orig) problems.push("index.md was not updated to reference the new concept");
+    }
+  }
   const pass = problems.length === 0;
   return { pass, score: pass ? 1 : 0, reason: pass ? `OKF valid (${concepts.length} concepts)` : problems.join("; ") };
 }

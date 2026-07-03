@@ -7,6 +7,7 @@ import transcript from "../eval/assertions/transcript.js";
 import okfValid from "../eval/assertions/okf-valid.js";
 import memoryAppend from "../eval/assertions/memory-append.js";
 import gitCommitted from "../eval/assertions/git-committed.js";
+import moduleUnchanged from "../eval/assertions/module-unchanged.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -40,16 +41,63 @@ describe("okf-valid", () => {
     await writeFile(join(c, "kb", "bad.md"), "no frontmatter here\n", "utf8");
     expect((await okfValid("", ctx({ containerPath: c }, { module: "kb" }))).pass).toBe(false);
   });
+
+  it("with requireIndexUpdated, fails when index.md is unchanged and passes when it changed", async () => {
+    const fx = await makeTempDir("okf-fx-"); cleanups.push(fx);
+    const c = await makeTempDir("okf-c-"); cleanups.push(c);
+    await mkdir(join(fx, "kb"), { recursive: true });
+    await mkdir(join(c, "kb"), { recursive: true });
+    await writeFile(join(fx, "kb", "index.md"), "# Knowledge\n", "utf8");
+    await writeFile(join(c, "kb", "index.md"), "# Knowledge\n", "utf8");
+    await writeFile(join(c, "kb", "auth.md"), "---\ntype: Concept\n---\nbody\n", "utf8");
+    const meta = { containerPath: c, fixtureDir: fx };
+    expect((await okfValid("", ctx(meta, { module: "kb", requireIndexUpdated: true }))).pass).toBe(false);
+    await writeFile(join(c, "kb", "index.md"), "# Knowledge\n* [Auth](auth.md)\n", "utf8");
+    expect((await okfValid("", ctx(meta, { module: "kb", requireIndexUpdated: true }))).pass).toBe(true);
+  });
 });
 
 describe("memory-append", () => {
-  it("passes when memory file count grew beyond baseline", async () => {
+  async function pair(): Promise<{ fx: string; c: string }> {
+    const fx = await makeTempDir("mem-fx-"); cleanups.push(fx);
     const c = await makeTempDir("mem-"); cleanups.push(c);
+    await mkdir(join(fx, "mem"), { recursive: true });
     await mkdir(join(c, "mem"), { recursive: true });
-    await writeFile(join(c, "mem", "2026-01-01.md"), "old\n", "utf8");
+    await writeFile(join(fx, "mem", "2026-01-01.md"), "old\n", "utf8");
+    await writeFile(join(c, "mem", "2026-01-01.md"), "old\n", "utf8"); // container starts as a copy
+    return { fx, c };
+  }
+
+  it("passes when a new entry is added and prior entries are unchanged (append-only)", async () => {
+    const { fx, c } = await pair();
     await writeFile(join(c, "mem", "2026-07-02.md"), "new\n", "utf8");
-    expect((await memoryAppend("", ctx({ containerPath: c }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(true);
-    expect((await memoryAppend("", ctx({ containerPath: c }, { module: "mem", baselineFileCount: 2 }))).pass).toBe(false);
+    expect((await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(true);
+  });
+
+  it("fails when a prior entry was rewritten (append-only violated)", async () => {
+    const { fx, c } = await pair();
+    await writeFile(join(c, "mem", "2026-01-01.md"), "REWRITTEN\n", "utf8"); // history changed
+    await writeFile(join(c, "mem", "2026-07-02.md"), "new\n", "utf8");
+    expect((await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(false);
+  });
+
+  it("fails when no new entry was added", async () => {
+    const { fx, c } = await pair();
+    expect((await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(false);
+  });
+});
+
+describe("module-unchanged", () => {
+  it("passes when the module equals the fixture, fails when a file was added", async () => {
+    const fx = await makeTempDir("mu-fx-"); cleanups.push(fx);
+    const c = await makeTempDir("mu-"); cleanups.push(c);
+    await mkdir(join(fx, "kb"), { recursive: true });
+    await mkdir(join(c, "kb"), { recursive: true });
+    await writeFile(join(fx, "kb", "index.md"), "# k\n", "utf8");
+    await writeFile(join(c, "kb", "index.md"), "# k\n", "utf8");
+    expect((await moduleUnchanged("", ctx({ containerPath: c, fixtureDir: fx }, { module: "kb" }))).pass).toBe(true);
+    await writeFile(join(c, "kb", "sky.md"), "the sky is blue\n", "utf8"); // unwanted write
+    expect((await moduleUnchanged("", ctx({ containerPath: c, fixtureDir: fx }, { module: "kb" }))).pass).toBe(false);
   });
 });
 

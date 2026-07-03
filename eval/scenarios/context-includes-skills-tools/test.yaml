@@ -1,0 +1,22 @@
+- vars:
+    scenario: context-includes-skills-tools
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Assemble the context needed to debug a
+      failing test that parses a CSV file, in container "kb-hub".
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [context] }
+    - type: javascript
+      value: file://assertions/transcript.ts
+      config: { mustContain: ["debugging", "csv2json"], mustNotContain: [] }
+    - type: llm-rubric
+      value: |
+        PASS iff the working set selects the Debugging skill and the csv2json tool
+        by path, notes one line on why each matters, and does NOT pad the set with
+        the unrelated Auth knowledge concept. FAIL if it returns only knowledge,
+        dumps whole files, or omits either the skill or the tool.
+      threshold: 0.8

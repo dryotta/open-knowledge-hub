@@ -12,7 +12,7 @@
       config: { expect: [remember] }
     - type: javascript
       value: file://assertions/memory-append.ts
-      config: { module: mem, baselineFileCount: 1 }
+      config: { module: mem, baselineFileCount: 2 }
     - type: llm-rubric
       value: |
         PASS iff a factual, timestamped memory entry capturing the 500s incident

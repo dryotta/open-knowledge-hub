@@ -12,6 +12,8 @@
       config: { expect: [reflect] }
     - type: llm-rubric
       value: |
-        PASS iff the reflection cites the existing memory entry (the 2026-01-01
-        auth spike), draws a high-signal lesson, and proposes concrete updates.
+        PASS iff the reflection identifies the RECURRING token-refresh / clock-skew
+        pattern across BOTH memory entries (2026-01-01 and 2026-02-15), citing each,
+        draws a high-signal lesson from the recurrence, and proposes a concrete
+        update. FAIL if it only restates a single entry.
       threshold: 0.8

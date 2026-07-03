@@ -12,9 +12,11 @@
       config: { expect: [ask] }
     - type: javascript
       value: file://assertions/transcript.ts
-      config: { mustContain: ["auth"], mustNotContain: [] }
+      config: { mustContain: ["token"], mustNotContain: [] }
     - type: llm-rubric
       value: |
         PASS iff the answer is grounded ONLY in the container's knowledge module
-        (the Auth concept), reflects token-based auth, and invents nothing.
+        (the Auth concept) — it reflects token-based auth (e.g. session tokens,
+        24-hour expiry, or refresh rotation) AND cites the Auth concept / its
+        source path — and invents nothing.
       threshold: 0.8

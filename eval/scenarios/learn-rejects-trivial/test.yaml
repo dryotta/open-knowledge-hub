@@ -10,6 +10,9 @@
     - type: javascript
       value: file://assertions/tools-called.ts
       config: { expect: [learn] }
+    - type: javascript
+      value: file://assertions/module-unchanged.ts
+      config: { module: kb }
     - type: llm-rubric
       value: |
         PASS iff the okf-learn gate REJECTS this as not serving any goal of the

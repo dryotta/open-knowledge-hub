@@ -10,6 +10,9 @@
     - type: javascript
       value: file://assertions/tools-called.ts
       config: { expect: [remember] }
+    - type: javascript
+      value: file://assertions/memory-append.ts
+      config: { module: mem, baselineFileCount: 2 }
     - type: llm-rubric
       value: |
         PASS iff the entry records the raw fact only and does NOT synthesize

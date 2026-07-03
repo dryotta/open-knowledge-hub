@@ -58,6 +58,7 @@ export default class CopilotProvider {
         workspace: prov.root,
         okhHome: prov.okhHome,
         containerPath: prov.containerPath,
+        fixtureDir,
         originPath: prov.originPath,
         toolCalls: extractToolCalls(res.transcript),
         exitCode: res.code,

@@ -29,6 +29,7 @@ describe("scenarios", () => {
       "ask-declines-when-absent",
       "ask-grounded",
       "context-assembly",
+      "context-includes-skills-tools",
       "learn-integrates",
       "learn-rejects-trivial",
       "reflect-insights",
