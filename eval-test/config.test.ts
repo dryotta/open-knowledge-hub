@@ -19,7 +19,7 @@ describe("promptfooconfig.yaml", () => {
 });
 
 describe("scenarios", () => {
-  it("all 8 scenarios parse, reference existing fixtures + assertion files, and have a rubric", async () => {
+  it("all 15 scenarios parse, reference existing fixtures + assertion files, and have a rubric", async () => {
     const dirs = (await readdir(join(EVAL, "scenarios"), { withFileTypes: true }))
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
@@ -27,10 +27,16 @@ describe("scenarios", () => {
     expect(dirs).toEqual([
       "ask-declines-when-absent",
       "ask-grounded",
+      "ask-multi-container",
       "context-assembly",
       "context-includes-skills-tools",
       "learn-integrates",
       "learn-rejects-trivial",
+      "onboard-add-existing-folder",
+      "onboard-add-github",
+      "onboard-create-local",
+      "onboard-explains",
+      "onboard-wake-phrase",
       "reflect-insights",
       "remember-no-conclusions",
       "remember-records",

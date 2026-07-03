@@ -2,7 +2,7 @@ description: OKH E2E in GitHub Copilot CLI
 # The judge runs through GitHub Copilot CLI (eval/assertions/judge.ts) — no external
 # grader model/API key is used. Each scenario grades via a `judge` javascript assertion.
 providers:
-  - id: file://provider/copilotProvider.ts
+  - id: file://provider/copilotProvider.js
     label: copilot-default
     config:
       model: claude-sonnet-4.5

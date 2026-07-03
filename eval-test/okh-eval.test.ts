@@ -11,8 +11,8 @@ afterEach(async () => {
 });
 
 describe("okh-eval manual CLI", () => {
-  it("lists all 8 scenarios", async () => {
-    expect((await listScenarios()).length).toBe(9);
+  it("lists all 15 scenarios", async () => {
+    expect((await listScenarios()).length).toBe(15);
   });
 
   it("loads a scenario's prompt + backend", async () => {

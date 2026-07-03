@@ -1,0 +1,27 @@
+- vars:
+    scenario: onboard-add-existing-folder
+    backend: local
+    provision: unregistered-local
+    container: notes
+    fixture: fixtures/plain-notes
+    prompt: |
+      hub, add my existing folder "notes" (in the current working directory) as a
+      knowledge hub. Show the plan first and only initialize it after I confirm;
+      assume I say yes.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [add] }
+    - type: javascript
+      value: file://assertions/container-registered.ts
+      config: { name: notes, backend: local }
+    - type: javascript
+      value: file://assertions/manifest-initialized.ts
+      config: { name: notes }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the agent registered the existing "notes" folder and initialized
+          an OKH manifest, after previewing the change.
