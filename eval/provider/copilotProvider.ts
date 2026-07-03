@@ -34,6 +34,11 @@ export default class CopilotProvider {
     const fixtureRaw = String(vars.fixture ?? "");
     const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
     const backend: EvalBackend = vars.backend === "git-auto" ? "git-auto" : "local";
+    const mode = vars.provision === "empty" || vars.provision === "unregistered-local" ? vars.provision : undefined;
+    const fixture2Raw = vars.fixture2 ? String(vars.fixture2) : undefined;
+    const fixture2Dir = fixture2Raw
+      ? (isAbsolute(fixture2Raw) ? fixture2Raw : resolve(EVAL_ROOT, fixture2Raw))
+      : undefined;
 
     const prov = await provision({
       scenario: String(vars.scenario ?? "scenario"),
@@ -41,6 +46,10 @@ export default class CopilotProvider {
       container: String(vars.container ?? "hub"),
       fixtureDir,
       repoRoot: REPO_ROOT,
+      ...(mode ? { mode } : {}),
+      ...(vars.container2 && fixture2Dir
+        ? { additional: [{ name: String(vars.container2), fixtureDir: fixture2Dir }] }
+        : {}),
     });
 
     const runner: CopilotRunner = this.config.runner ?? spawnCopilot;

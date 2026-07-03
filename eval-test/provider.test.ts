@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, mkdir, writeFile, stat } from "node:fs/promises";
+import { rm, mkdir, writeFile, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import CopilotProvider from "../eval/provider/copilotProvider.js";
 import { makeTempDir } from "../test/helpers.js";
@@ -39,5 +39,40 @@ describe("CopilotProvider", () => {
     expect(res.output).toContain("done");
     expect(res.metadata.toolCalls).toContain("ask");
     expect((await stat(join(res.metadata.containerPath, ".okh", "okh.yaml"))).isFile()).toBe(true);
+  });
+
+  it("forwards empty provisioning mode to the harness", async () => {
+    const fixtureDir = await makeFixture();
+    const provider = new CopilotProvider({ config: { runner: async () => ({ transcript: "ok", code: 0 }) } });
+
+    const res = await provider.callApi("prompt", {
+      vars: { scenario: "onboard-empty", backend: "local", provision: "empty", container: "hub", fixture: fixtureDir },
+    });
+    cleanups.push(res.metadata.workspace);
+
+    const reg = JSON.parse(await readFile(join(res.metadata.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers).toHaveLength(0);
+    expect(res.metadata.containerPath).toBe("");
+  });
+
+  it("registers an additional local container when container2 and fixture2 are provided", async () => {
+    const fixtureDir = await makeFixture();
+    const fixture2Dir = await makeFixture();
+    const provider = new CopilotProvider({ config: { runner: async () => ({ transcript: "ok", code: 0 }) } });
+
+    const res = await provider.callApi("prompt", {
+      vars: {
+        scenario: "multi",
+        backend: "local",
+        container: "primary",
+        fixture: fixtureDir,
+        container2: "secondary",
+        fixture2: fixture2Dir,
+      },
+    });
+    cleanups.push(res.metadata.workspace);
+
+    const reg = JSON.parse(await readFile(join(res.metadata.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers.map((c: { name: string }) => c.name).sort()).toEqual(["primary", "secondary"]);
   });
 });

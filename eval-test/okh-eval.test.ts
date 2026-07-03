@@ -88,13 +88,13 @@ describe("okh-eval manual CLI", () => {
     expect(results.some((r) => r.name.endsWith("tools-called.ts"))).toBe(false);
   });
 
-  it("runChecks reports a clear error when the scenario container is not registered", async () => {
+  it("runChecks tolerates a scenario container that is not registered", async () => {
     const root = await makeTempDir("okh-eval-empty-");
     roots.push(root);
     const okhHome = join(root, "okh-home");
     await mkdir(okhHome, { recursive: true });
     await writeFile(join(okhHome, "registry.json"), JSON.stringify({ version: 1, containers: [] }), "utf8");
 
-    await expect(runChecks(root, "ask-grounded")).rejects.toThrow('No container named "kb-hub"');
+    await expect(runChecks(root, "ask-grounded")).resolves.toEqual([]);
   });
 });
