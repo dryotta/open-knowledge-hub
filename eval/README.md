@@ -40,7 +40,9 @@ then compare in `npm run eval:view`.
 ## Manual & exploratory testing
 
 Run the scenarios by hand in Copilot CLI, inspect results yourself, and do
-free-form exploration — see **[MANUAL-TESTING.md](./MANUAL-TESTING.md)**.
+free-form exploration. Provisioned runs are recorded, so follow-up commands are
+path-free: `setup <scenario>` → `enter` → `check` → `clean`. See
+**[MANUAL-TESTING.md](./MANUAL-TESTING.md)**.
 
 ## Caveats
 
