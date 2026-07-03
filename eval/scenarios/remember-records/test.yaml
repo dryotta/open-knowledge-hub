@@ -17,6 +17,8 @@
       value: file://assertions/judge.ts
       config:
         threshold: 0.8
+        artifacts: { module: mem }
         rubric: |
-          PASS iff a factual, timestamped memory entry capturing the 500s incident
-          was recorded.
+          Using the exact entry shown under "ON-DISK ARTIFACTS", PASS iff a
+          factual, timestamped memory entry capturing the 500s incident was
+          recorded.

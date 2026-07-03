@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { rm, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { makeTempDir } from "../test/helpers.js";
 import { extractJson, runJudge } from "../eval/judge.js";
+import { buildArtifactsSection } from "../eval/assertions/judge.js";
 import type { CopilotRunner } from "../eval/copilot.js";
 
 describe("extractJson", () => {
@@ -32,5 +36,57 @@ describe("runJudge", () => {
     expect(v.pass).toBe(false);
     expect(v.score).toBe(0);
     expect(v.reason).toMatch(/unparseable/i);
+  });
+});
+
+describe("buildArtifactsSection", () => {
+  const cleanups: string[] = [];
+  async function pair(): Promise<{ fx: string; c: string }> {
+    const fx = await makeTempDir("art-fx-");
+    const c = await makeTempDir("art-");
+    cleanups.push(fx, c);
+    await mkdir(join(fx, "mem"), { recursive: true });
+    await mkdir(join(c, "mem"), { recursive: true });
+    await writeFile(join(fx, "mem", "2026-01-01.md"), "old entry\n", "utf8");
+    await writeFile(join(c, "mem", "2026-01-01.md"), "old entry\n", "utf8"); // container starts as a copy
+    return { fx, c };
+  }
+
+  it("includes only files new/changed vs the fixture baseline, with authoritative header", async () => {
+    const { fx, c } = await pair();
+    await writeFile(join(c, "mem", "2026-07-03.md"), "2026-07-03T00:00:00Z run #42 finished in 13s\n", "utf8");
+    const out = await buildArtifactsSection({ containerPath: c, fixtureDir: fx }, { module: "mem" });
+    expect(out).toMatch(/ON-DISK ARTIFACTS AFTER THE RUN/);
+    expect(out).toContain("### mem/2026-07-03.md");
+    expect(out).toContain("run #42 finished in 13s");
+    expect(out).not.toContain("2026-01-01.md"); // unchanged fixture file excluded
+  });
+
+  it("includes all module files when no fixture baseline is provided", async () => {
+    const { c } = await pair();
+    const out = await buildArtifactsSection({ containerPath: c }, { module: "mem" });
+    expect(out).toContain("### mem/2026-01-01.md");
+    expect(out).toContain("old entry");
+  });
+
+  it("returns empty string when nothing was written or config is incomplete", async () => {
+    const { fx, c } = await pair(); // container === fixture, nothing new
+    expect(await buildArtifactsSection({ containerPath: c, fixtureDir: fx }, { module: "mem" })).toBe("");
+    expect(await buildArtifactsSection({ containerPath: c }, {})).toBe(""); // no module
+    expect(await buildArtifactsSection({}, { module: "mem" })).toBe(""); // no containerPath
+  });
+
+  it("truncates oversized file content", async () => {
+    const c = await makeTempDir("art-big-");
+    cleanups.push(c);
+    await mkdir(join(c, "mem"), { recursive: true });
+    await writeFile(join(c, "mem", "big.md"), "x".repeat(5000), "utf8");
+    const out = await buildArtifactsSection({ containerPath: c }, { module: "mem", maxCharsPerFile: 100 });
+    expect(out).toMatch(/…\[truncated\]/);
+    expect(out.length).toBeLessThan(500);
+  });
+
+  afterEach(async () => {
+    await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
   });
 });
