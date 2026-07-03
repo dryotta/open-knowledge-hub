@@ -37,7 +37,7 @@ Optimize the onboarding product experience and lock it in with tests + evals:
    user-facing **`USAGE.md`** (a curated subset).
 3. Add **unit tests** for the redesigned `add`, and **automated e2e scenarios**
    for the first-run journey (including cloning a **real private GitHub repo**).
-4. Give users a reliable, **customizable "wake phrase"** (default `okh`) to
+4. Give users a reliable, **customizable "wake phrase"** (default `hub`) to
    address the hub, announced by the server, plus an **`onboard` flow** that
    guides first-run setup and lets the user set that phrase.
 
@@ -179,7 +179,7 @@ publishes a curated subset; the e2e scenarios (Section 4) exercise the starred
 items.
 
 **Wake phrase convention.** Recommended prompts are addressed to the hub via its
-**wake phrase** (default `okh`, user-customizable — Section 6), e.g. `"okh, …"`.
+**wake phrase** (default `hub`, user-customizable — Section 6), e.g. `"hub, …"`.
 This reliably routes the request to OKH's tools, which matters most for the
 cognitive verbs (`ask`/`learn`/`remember`/`context`/`reflect`) that otherwise
 collide with default agent behavior. Operational verbs (`inspect`/`add`/`sync`)
@@ -187,36 +187,36 @@ usually route fine even without it.
 
 **Onboarding / setup**
 
-- **OB0*** "okh, help me get started" → agent invokes the `onboard` flow:
+- **OB0*** "hub, help me get started" → agent invokes the `onboard` flow:
   explains OKH, `inspect`s current state, guides first-hub setup, and offers to
   set a custom wake phrase.
-- **OB1** "okh, what can you do?" → agent explains OKH from server `instructions`
+- **OB1** "hub, what can you do?" → agent explains OKH from server `instructions`
   + `inspect` (empty registry).
-- **OB2*** "okh, set up a new knowledge hub in `./my-notes`" (folder absent) →
+- **OB2*** "hub, set up a new knowledge hub in `./my-notes`" (folder absent) →
   `add` preview → confirm → `create:true` (create folder + init manifest).
-- **OB3*** "okh, add my existing notes folder `~/notes` as a hub" (no manifest) →
+- **OB3*** "hub, add my existing notes folder `~/notes` as a hub" (no manifest) →
   preview-init → confirm.
-- **OB4** "okh, register my already-set-up hub folder" (has manifest) → `add`,
+- **OB4** "hub, register my already-set-up hub folder" (has manifest) → `add`,
   single call, no confirmation.
-- **OB5*** "okh, connect our team repo `https://github.com/org/hub.git`" →
+- **OB5*** "hub, connect our team repo `https://github.com/org/hub.git`" →
   preview-clone → confirm → clone + register.
-- **OB6** "okh, start a hub in this empty repo `<url>`" → clone + init manifest.
-- **OB7** "okh, add a knowledge module `kb`" / "add a skills folder" → module
+- **OB6** "hub, start a hub in this empty repo `<url>`" → clone + init manifest.
+- **OB7** "hub, add a knowledge module `kb`" / "add a skills folder" → module
   preview → confirm.
-- **OB8** "okh, show me my hubs" / "what's in `kb`?" → `inspect` (containers /
+- **OB8** "hub, show me my hubs" / "what's in `kb`?" → `inspect` (containers /
   container / module).
 
 **Everyday use**
 
-- **D1** "okh, remember that …" → `remember` → edit memory → confirm → `sync`.
-- **D2** "okh, save/learn this: …" → `learn` (OKF) → confirm → `sync`.
-- **D3** "okh, what do we know about X?" → `ask` (cited).
-- **D4*** "okh, ask across all my hubs about X" → `ask` with no container filter
+- **D1** "hub, remember that …" → `remember` → edit memory → confirm → `sync`.
+- **D2** "hub, save/learn this: …" → `learn` (OKF) → confirm → `sync`.
+- **D3** "hub, what do we know about X?" → `ask` (cited).
+- **D4*** "hub, ask across all my hubs about X" → `ask` with no container filter
   (multi-container).
-- **D5** "okh, prep context for task Y" → `context`.
-- **D6** "okh, reflect on my memory about Z" → `reflect`.
-- **D7** "okh, sync my hub" → `sync` (auto: commit + push).
-- **D8** "okh, open a PR with my changes" → `sync` (pr) — **manual/unit only**.
+- **D5** "hub, prep context for task Y" → `context`.
+- **D6** "hub, reflect on my memory about Z" → `reflect`.
+- **D7** "hub, sync my hub" → `sync` (auto: commit + push).
+- **D8** "hub, open a PR with my changes" → `sync` (pr) — **manual/unit only**.
 
 ## Section 3 — Unit tests (`test/`)
 
@@ -300,24 +300,24 @@ can run them.
 
 ### New scenarios (`eval/scenarios/`)
 
-- **`onboard-create-local`** — provision `empty`; prompt: "okh, create a new hub
+- **`onboard-create-local`** — provision `empty`; prompt: "hub, create a new hub
   in `./my-notes` and add a knowledge module `kb`". Asserts: `add` called (≥2),
   `container-registered` (name `my-notes`, backend `local`, module `kb`),
   `manifest-initialized`, and a judge rubric: *agent presented the plan and
   confirmed before creating.*
 - **`onboard-add-existing-folder`** — provision `unregistered-local` (fixture
-  folder in the workspace, no manifest); prompt: "okh, add my folder `./notes` as
+  folder in the workspace, no manifest); prompt: "hub, add my folder `./notes` as
   a hub". Asserts `container-registered` + `manifest-initialized` + judge
   (confirmed before init).
 - **`onboard-add-github`** — provision `empty`; prompt references the **real
-  private repo URL** (see below): "okh, add the knowledge hub at `<url>` and tell
+  private repo URL** (see below): "hub, add the knowledge hub at `<url>` and tell
   me what's in it". Asserts `add` called, `container-registered` (backend `git`),
   `inspect` surfaced the repo's real modules, and a grounded `ask` answer. **No
   push/sync.**
-- **`onboard-explains`** — provision `empty`; prompt: "okh, what can you do?".
+- **`onboard-explains`** — provision `empty`; prompt: "hub, what can you do?".
   Judge rubric: agent explains containers/modules and points at `add`. (Cheap;
   text only.)
-- **`onboard-wake-phrase`** — provision `empty`; prompt: "okh, help me get
+- **`onboard-wake-phrase`** — provision `empty`; prompt: "hub, help me get
   started". Asserts the `onboard` flow ran and, when the transcript shows a chosen
   phrase, that `$OKH_HOME/preferences.json` was written (new
   `wake-phrase-set.ts` assertion; passes if a non-default phrase is persisted or
@@ -354,17 +354,17 @@ New top-level `USAGE.md`, a curated subset of the Section 2 catalog:
 
 - **How your prompt reaches the hub** — the agent routes to OKH based on tool
   descriptions + the server's announced **wake phrase**. Address the hub with
-  `"okh, …"` (default; customizable — see below). Operational verbs
+  `"hub, …"` (default; customizable — see below). Operational verbs
   (`inspect`/`add`/`sync`) route reliably; cognitive verbs
   (`ask`/`learn`/`remember`/`context`/`reflect`) benefit most from the prefix.
   Note the fully-deterministic alternative: clients with a prompt UI expose the
   five cognitive flows as pickable **`/`-commands**.
-- **Getting started** — "okh, help me get started" (the `onboard` flow), then
+- **Getting started** — "hub, help me get started" (the `onboard` flow), then
   start your first hub three ways (from an existing folder, from scratch in a new
   folder, from a GitHub repo), add modules, and what the **confirmation step**
   looks like (why `add` shows a plan first, and that you say "yes" / it re-runs
   with `create`).
-- **Choosing a wake phrase** — default `okh`; how to change it ("okh, call
+- **Choosing a wake phrase** — default `hub`; how to change it ("hub, call
   yourself `brain`" → `onboard { wakePhrase }`), that it takes effect on client
   restart, and the strongest option: renaming the server key in your MCP config
   to the same phrase (per-client tip).
@@ -378,9 +378,9 @@ Link `USAGE.md` from `README.md` ("Typical usage" → "See USAGE.md").
 ### Wake phrase: server-announced, persisted in `$OKH_HOME`
 
 The wake phrase is OKH-owned state, not client config (the server can't portably
-edit a client's config file). Default `okh`.
+edit a client's config file). Default `hub`.
 
-- **Storage.** `$OKH_HOME/preferences.json` → `{ "wakePhrase": "okh" }`. Created
+- **Storage.** `$OKH_HOME/preferences.json` → `{ "wakePhrase": "hub" }`. Created
   on demand; missing/malformed file falls back to the default.
 - **Config layer (`src/config.ts`).** Add `preferencesFile` to `OkhPaths` and
   `loadPreferences(paths): Preferences` / `savePreferences(paths, prefs)` (atomic
@@ -390,7 +390,7 @@ edit a client's config file). Default `okh`.
   wake phrase and composes the `instructions` string to announce it:
   *"You can address this hub as `<phrase>`. When a message begins with
   `<phrase>` or mentions 'the hub' / 'knowledge hub', use these tools."* Falls
-  back to `okh`. (Instructions are sent at connect time, so a phrase change
+  back to `hub`. (Instructions are sent at connect time, so a phrase change
   applies on the next client restart — stated in the confirmation text.)
 
 ### The `onboard` flow (prompt + tool)
@@ -403,7 +403,7 @@ flows (uneven client prompt support).
   the agent to: (1) briefly explain OKH (containers, typed modules, the five
   verbs, `inspect`/`add`/`sync`); (2) `inspect` to show current state; (3) help
   set up the first hub via the preview/confirm `add` (from folder / scratch /
-  git URL); (4) **ask the user to pick a wake phrase** (default `okh`) and persist
+  git URL); (4) **ask the user to pick a wake phrase** (default `hub`) and persist
   it by re-calling `onboard { wakePhrase }`; (5) point at `USAGE.md`. The
   discipline states the honest caveat that announcing via `instructions` is a soft
   hint and that renaming the client config key to the phrase is the strongest
