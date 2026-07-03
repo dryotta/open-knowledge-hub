@@ -74,6 +74,16 @@ describe("MCP server surface", () => {
     expect(prompts).toEqual(["ask", "context", "learn", "reflect", "remember"]);
   });
 
+  it("declares accurate tool annotations", async () => {
+    const { client } = await connect();
+    const tools = (await client.listTools()).tools;
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations ?? {}]));
+    expect(byName.inspect!.readOnlyHint).toBe(true);
+    expect(byName.ask!.readOnlyHint).toBe(true);
+    expect(byName.add!.openWorldHint).toBe(true);
+    expect(byName.sync!.openWorldHint).toBe(true);
+  });
+
   it("add -> inspect round-trips through the tool interface", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();

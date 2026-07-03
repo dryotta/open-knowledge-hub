@@ -110,6 +110,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       title: "Inspect containers/modules",
       description:
         "List registered containers (no args), a container's modules + status (container), or a module's items (container + module).",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         container: z.string().optional().describe("Container name to inspect."),
         module: z.string().optional().describe("Module path within the container."),
@@ -134,6 +135,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         "Add a container with { source, name?, sync?, backend? } (source is a git URL or a local/OneDrive path), " +
         "or add a module with { container, path, type, config? }. " +
         "By default add returns a plan and makes no changes; show it to the user, get confirmation, then re-call with create:true.",
+      annotations: { openWorldHint: true },
       inputSchema: {
         source: z.string().optional().describe("Git URL or local/OneDrive path (new container)."),
         name: z.string().optional().describe("Container name (defaults to the source basename)."),
@@ -207,6 +209,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       title: "Sync containers",
       description:
         "Validate and synchronize a container (or all containers). Git containers commit+push (auto) or open a PR (pr).",
+      annotations: { openWorldHint: true },
       inputSchema: {
         container: z.string().optional().describe("Container to sync (default: all)."),
         message: z.string().optional().describe("Commit/PR message."),
@@ -234,6 +237,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Ask (flow)",
       description: "Return discipline to answer a question from the hub's modules.",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, question: z.string().optional().describe("The question to answer.") },
     },
     handler(async (args: { container?: string; module?: string; question?: string }) => {
@@ -247,6 +251,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Context (flow)",
       description: "Return discipline to assemble a task-relevant working set across the hub.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         container: z.string().optional().describe("Container name (default: all)."),
         task: z.string().optional().describe("The task to prepare for."),
@@ -263,6 +268,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Learn (flow)",
       description: "Return discipline to integrate new knowledge into a knowledge module (OKF).",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, knowledge: z.string().optional().describe("The candidate knowledge.") },
     },
     handler(async (args: { container?: string; module?: string; knowledge?: string }) => {
@@ -276,6 +282,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Remember (flow)",
       description: "Return discipline to record an observation into a memory module.",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, observation: z.string().optional().describe("The observation to record.") },
     },
     handler(async (args: { container?: string; module?: string; observation?: string }) => {
@@ -289,6 +296,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Reflect (flow)",
       description: "Return discipline to turn memory/experience into insight and updates.",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, focus: z.string().optional().describe("Optional area to focus on.") },
     },
     handler(async (args: { container?: string; module?: string; focus?: string }) => {
