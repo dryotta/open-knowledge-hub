@@ -1,237 +1,101 @@
 # open-knowledge-hub
 
-An [MCP](https://modelcontextprotocol.io) server that manages a personal **catalog of knowledge
-packs**. Each pack is an [Open Knowledge Format (OKF)](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
-bundle — a directory of cross-linked markdown concept docs — published to its own git repo (a
-full repo or a subfolder within one).
+A minimalist [MCP](https://modelcontextprotocol.io) server that organizes all
+agent-accessible knowledge and capabilities into **containers** made of typed
+**modules**. Five **cognitive prompts** (`ask`, `context`, `learn`, `remember`,
+`reflect`) provide the thinking loop; three **operational tools** (`inspect`,
+`add`, `sync`) manage and synchronize containers. The server runs **no LLM** —
+it exposes deterministic tools and injects discipline text; your agent does all
+the reasoning.
 
-The server handles the mechanical lifecycle (install / uninstall / update / status) and exposes
-knowledge **flows** — *ask*, *learn*, *review & update*, and *create* — that inject the OKF
-discipline into your agent. All reasoning happens in your agent; the server provides deterministic
-tools plus vendored discipline text. Edits are always published as **pull requests**, never pushed
-straight to a pack's default branch.
+## Concepts
 
-## How it works
+- **Container** — a self-contained workspace in a local folder. Backends: a plain
+  **local** folder, a **OneDrive** (OS-synced) folder, or a **git** repository
+  (cloned + synced). Registered in a per-machine `registry.json` under `$OKH_HOME`
+  (default `~/.open-knowledge-hub`); git containers are cloned into
+  `$OKH_HOME/containers/`, local/OneDrive folders are registered in place.
+- **Module** — a typed subfolder declared in the container's `.okh/okh.yaml`
+  manifest. Types: `knowledge` (OKF markdown), `skills` (Claude-Code `SKILL.md`
+  folders), `tools` (folders each with a `README.md` + script), `memory` and
+  `project` (format TBD).
 
-- **Catalog** — a per-machine manifest (`$OKH_HOME/catalog.json`, default
-  `~/.open-knowledge-hub/catalog.json`) listing each pack's slug, git origin (URL + optional
-  subpath + ref), install state, and local path.
-- **Install** — a full `git clone` of the origin into `$OKH_HOME/packs/<slug>/`. By default a pack
-  lives under the repo's `knowledge/` subfolder, so the pack root is `<clone>/knowledge`; this keeps
-  the repo root free for a `README.md`, `LICENSE`, and other non-bundle files. Pass `subpath: "."`
-  for a pack that lives at the repo root, or a custom subpath for multi-pack repos. The clone keeps
-  its origin remote, so changes can be committed and turned into a PR.
-- **Flows** — `ask` / `learn` / `review_update` / `create` return instruction text (the vendored
-  `okf-*` disciplines under `resources/okf/`), parametrised for the target pack. Available as both
-  MCP **prompts** (nice UX) and **tools** (work in any client).
+### `.okh/okh.yaml`
+```yaml
+name: my-hub
+sync: auto        # auto (commit+push) | pr (branch + pull request)
+modules:
+  - path: kb
+    type: knowledge
+  - path: skills
+    type: skills
+  - path: tools
+    type: tools
+```
+
+## MCP surface
+
+**Tools (8)**
+
+| Tool | Args | Purpose |
+| --- | --- | --- |
+| `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
+| `add` | `source,name?,sync?,backend?` or `container,path,type,config?` | Register a container, or add a module. |
+| `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
+| `ask` | `container?`, `module?`, `question?` | Discipline to answer from the hub's modules. |
+| `context` | `container?`, `task?` | Discipline to assemble a task's working set. |
+| `learn` | `container?`, `module?`, `knowledge?` | Discipline to integrate knowledge (OKF). |
+| `remember` | `container?`, `module?`, `observation?` | Discipline to record into memory. |
+| `reflect` | `container?`, `module?`, `focus?` | Discipline to turn memory into insight. |
+
+**Prompts (5):** `ask`, `context`, `learn`, `remember`, `reflect` — same behaviour as
+the matching prompt-tools, for clients with a prompt UI. Container/module are
+optional filters: omit both to span the whole hub.
+
+**Resources:** none.
 
 ## Prerequisites
 
 - **Node.js ≥ 18** (ships with `npx`).
-- **git** — for clone / commit / branch operations.
-- **[GitHub CLI](https://cli.github.com/) (`gh`)**, authenticated — for creating a new pack's repo
-  (`gh repo create`) and opening PRs (`gh pr create`). The server stores **no** credentials; `gh`
-  and `git` use your existing auth. See [Troubleshooting](#troubleshooting).
+- **git** — clone/commit/branch/push.
+- **[GitHub CLI](https://cli.github.com/) (`gh`)**, authenticated — only for `pr`-mode
+  containers (opening pull requests). The server stores no credentials.
 
 ## Installation
 
-`open-knowledge-hub` is distributed straight from its GitHub repo — no npm publish required.
-Pick one of the methods below. All of them build the TypeScript sources automatically on install
-(via the `prepare` script), so the only prerequisites are Node.js ≥ 18, `git`, and an
-authenticated `gh` (see [Prerequisites](#prerequisites)).
-
-Repo: `github.com/dryotta/open-knowledge-hub`
-
-### Method A — run from GitHub via `npx` (recommended)
-
-No local checkout needed. Point your MCP client's config at `npx` with the GitHub spec; `npx`
-fetches, builds, and runs it. Add to your client's `mcpServers` block (Claude Desktop, Copilot
-CLI, Cursor, etc.):
-
+Run straight from GitHub via `npx` (builds on first launch):
 ```jsonc
 {
   "mcpServers": {
     "open-knowledge-hub": {
       "command": "npx",
       "args": ["-y", "github:dryotta/open-knowledge-hub"]
-      // Optional: override the catalog/packs location (defaults to ~/.open-knowledge-hub)
       // "env": { "OKH_HOME": "/Users/me/.open-knowledge-hub" }
     }
   }
 }
 ```
 
-Pin to a tag or branch by appending `#<ref>`, e.g. `github:dryotta/open-knowledge-hub#v0.1.0`.
-The first launch takes a few extra seconds while it builds; subsequent runs are cached.
-
-Verify from a shell before wiring it in:
-
-```bash
-npx -y github:dryotta/open-knowledge-hub <<'EOF'
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"x","version":"0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-EOF
-```
-
-You should see a JSON response listing the tools.
-
-### Method B — global install from GitHub
-
-Installs an `open-knowledge-hub` command onto your PATH:
-
-```bash
-npm install -g github:dryotta/open-knowledge-hub
-```
-
-Then configure the client with the bare command:
-
-```jsonc
-{
-  "mcpServers": {
-    "open-knowledge-hub": {
-      "command": "open-knowledge-hub",
-      "args": []
-    }
-  }
-}
-```
-
-Update later with the same command; uninstall with `npm uninstall -g open-knowledge-hub`.
-
-### Method C — clone & build (for development or offline use)
-
-```bash
-git clone https://github.com/dryotta/open-knowledge-hub.git
-cd open-knowledge-hub
-npm install        # builds via the prepare script
-npm link           # optional: exposes `open-knowledge-hub` on your PATH
-```
-
-Configure the client to run the built entry point (works without `npm link`):
-
-```jsonc
-{
-  "mcpServers": {
-    "open-knowledge-hub": {
-      "command": "node",
-      "args": ["/absolute/path/to/open-knowledge-hub/dist/index.js"]
-    }
-  }
-}
-```
-
-After changing source, rerun `npm run build`.
-
-> **Note:** Methods A and B fetch the code over git, so the repository must be pushed to GitHub and
-> readable by your account. For a private repo, ensure `git`/`gh` are authenticated (Method A/B use
-> your ambient git credentials to clone).
-
-## MCP surface
-
-The server exposes **17 tools** and **4 prompts**. It does **not** expose any MCP resources
-(`resources/list` is not served) — pack files are reached via the filesystem path returned by
-`pack_path`, not as MCP resources.
-
-### Tools (17)
-
-**Catalog**
-
-| Tool | Arguments | Purpose |
-| --- | --- | --- |
-| `catalog_list` | — | List catalog entries with state + origin. |
-| `catalog_add` | `slug`, `repoUrl`, `subpath?`, `ref?` | Register a pack without installing. `subpath` defaults to `knowledge`; pass `.` for a root pack. |
-
-**Pack lifecycle**
-
-| Tool | Arguments | Purpose |
-| --- | --- | --- |
-| `pack_install` | `slug`, `repoUrl?`, `subpath?`, `ref?` | Clone a pack's origin. Registers + installs in one step when `repoUrl` is given. |
-| `pack_uninstall` | `slug`, `force?`, `purge?` | Remove a pack's clone. Blocks on unpushed commits unless `force`; `purge` drops the entry. |
-| `pack_status` | `slug` | Branch, dirty state, ahead/behind, unpushed commits. |
-| `pack_pull` | `slug` | Fast-forward from origin; local changes auto-stashed and restored. |
-| `pack_path` | `slug` | Resolve an installed pack's root path. |
-
-**Authoring & publishing**
-
-| Tool | Arguments | Purpose |
-| --- | --- | --- |
-| `pack_create` | `slug`, `title?`, `description?`, `subpath?` | Scaffold a new local pack (dir + `git init` + skeleton `index.md` under `knowledge/`). |
-| `pack_publish` | `slug`, `repoName`, `visibility?`, `description?` | Create the GitHub repo for a new pack and push `main`. |
-
-**PR write flow**
-
-| Tool | Arguments | Purpose |
-| --- | --- | --- |
-| `pack_begin_change` | `slug`, `topic` | Create the working branch `okh/<slug>/<topic>`. Refuses on a dirty tree. |
-| `pack_commit` | `slug`, `message` | Stage all changes + commit. |
-| `pack_diff` | `slug`, `ref?` | Diffstat (default vs `HEAD`) for summarising changes before a PR. |
-| `pack_open_pr` | `slug`, `title`, `body` | Push the change branch and open a PR into the default branch. |
-
-**Flows** (discipline text; mirror the prompts below)
-
-| Tool | Arguments | Purpose |
-| --- | --- | --- |
-| `ask` | `slug`, `question?` | Instructions to answer a question from a pack (okf-ask). |
-| `learn` | `slug`, `knowledge?` | Instructions to fold new knowledge into a pack (okf-learn + PR write flow). |
-| `review_update` | `slug`, `focus?` | Instructions to review a pack against its scope and update it (PR write flow). |
-| `create` | `slug?`, `sourceRepo?` | Instructions to author a brand-new pack (okf-new-from-repo + scaffold/publish policy). |
-
-### Prompts (4)
-
-The four flows are also registered as first-class MCP prompts (for clients with a prompt UI). Same
-behaviour as the flow tools of the same name.
-
-| Prompt | Arguments |
-| --- | --- |
-| `ask` | `slug` (required), `question?` |
-| `learn` | `slug` (required), `knowledge?` |
-| `review_update` | `slug` (required), `focus?` |
-| `create` | `slug?`, `sourceRepo?` |
-
-### Resources
-
-None. The server implements the MCP **tools** and **prompts** capabilities only.
-
 ## Typical usage
 
-- **Install and query a pack**: `pack_install { slug, repoUrl }` → `ask { slug, question }`.
-- **Teach a pack something**: `learn { slug, knowledge }` → your agent runs the okf-learn gate,
-  edits files at the pack path, then (with your approval) `pack_begin_change` → `pack_commit` →
-  `pack_open_pr`.
-- **Create a new pack**: `create { slug }` → `pack_create` → author content → `pack_publish`.
+- `add { source: "https://github.com/me/my-hub.git", name: "my-hub" }` → clone + register.
+- `add { container: "my-hub", path: "kb", type: "knowledge" }` → add a module.
+- `learn { container: "my-hub", knowledge: "..." }` → your agent folds it in, then
+  `sync { container: "my-hub" }` commits+pushes (or opens a PR).
+- `ask { container: "my-hub", question: "..." }` → cited answer from the modules.
 
 ## Development
 
 ```bash
 npm install       # install deps
 npm run build     # compile to dist/
-npm test          # run the vitest suite (uses real git against temp repos)
+npm test          # vitest (uses real git against temp repos)
 npm run typecheck # type-only check
 npm run dev       # run from source via tsx
 ```
 
-The codebase is layered: `exec` (process spawning) → `git` / `gh` (CLI wrappers) →
-`catalog` (manifest) → `packs/service` (orchestration) → `server` (MCP tools + prompts).
-
-## Troubleshooting
-
-**`gh: command not found`** — install the GitHub CLI: `brew install gh` (macOS),
-or see <https://cli.github.com/>.
-
-**`gh` auth errors when creating a repo or PR** — run `gh auth status`; if not logged in,
-`gh auth login` and follow the prompts. Ensure the account has permission to create repos in the
-target owner/org.
-
-**`git` push/clone auth errors** — the server uses your ambient git credentials. Verify with
-`git ls-remote <repoUrl>`. For HTTPS, configure a credential helper (`gh auth setup-git` wires
-`gh` in as one); for SSH, ensure your key is loaded (`ssh-add -l`).
-
-**`Target directory ... already exists and is not empty`** — a previous clone is present. Uninstall
-the pack (`pack_uninstall`) or remove the directory under `$OKH_HOME/packs/`.
-
-**Commit fails with "please tell me who you are"** — set a git identity:
-`git config --global user.name "..."` and `git config --global user.email "..."`.
+Layering: `exec` → `git`/`gh` → `registry` → `container` (manifest + service) →
+`modules` (loaders) → `prompts` → `server`.
 
 ## License
 
