@@ -66,13 +66,13 @@ function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 9 tools and 5 prompts", async () => {
+  it("exposes exactly the 9 tools and 6 prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual(["add", "ask", "context", "inspect", "learn", "onboard", "reflect", "remember", "sync"]);
 
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
-    expect(prompts).toEqual(["ask", "context", "learn", "reflect", "remember"]);
+    expect(prompts).toEqual(["ask", "context", "learn", "onboard", "reflect", "remember"]);
   });
 
   it("onboard returns guidance without args and persists a wake phrase with args", async () => {
@@ -219,5 +219,11 @@ describe("MCP server surface", () => {
     const text = promptText(res);
     expect(text).toContain("What is X?");
     expect(text).toContain(join(dir, "kb"));
+  });
+
+  it("exposes the onboard prompt", async () => {
+    const { client } = await connect();
+    const res = await client.getPrompt({ name: "onboard", arguments: {} });
+    expect(promptText(res)).toContain("OKH: onboard");
   });
 });

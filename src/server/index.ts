@@ -24,6 +24,6 @@ export function buildServer(options: BuildServerOptions = {}): McpServer {
     },
   );
   registerTools(server, service, paths);
-  registerPrompts(server, service);
+  registerPrompts(server, service, paths);
   return server;
 }
