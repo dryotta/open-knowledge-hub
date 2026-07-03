@@ -1,0 +1,119 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { rm, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { ContainerService } from "../src/container/service.js";
+import { Git } from "../src/git/git.js";
+import { Gh } from "../src/git/gh.js";
+import { OkhError } from "../src/errors.js";
+import { loadContainerManifest } from "../src/container/manifest.js";
+import { makePaths, makeTempDir, makeOrigin, testRun } from "./helpers.js";
+
+class FakeGh {
+  prCalls: unknown[] = [];
+  async createRepo(): Promise<string> { return "https://github.com/test/x"; }
+  async createPr(opts: unknown): Promise<string> { this.prCalls.push(opts); return "https://github.com/test/x/pull/1"; }
+}
+
+const cleanups: string[] = [];
+async function setup() {
+  const home = await makeTempDir(); cleanups.push(home);
+  const paths = makePaths(home);
+  const gh = new FakeGh();
+  const service = new ContainerService(paths, new Git(testRun), gh as unknown as Gh);
+  return { paths, service, gh };
+}
+afterEach(async () => {
+  await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+});
+
+describe("addContainer", () => {
+  it("clones a git container into containersDir and scaffolds a manifest", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service, paths } = await setup();
+    const entry = await service.addContainer({ source: origin, name: "my-hub" });
+    expect(entry.backend).toBe("git");
+    expect(entry.origin).toBe(origin);
+    expect(entry.localPath).toBe(join(paths.containersDir, "my-hub"));
+    const m = await loadContainerManifest(entry.localPath);
+    expect(m).toEqual({ name: "my-hub", sync: "auto", modules: [] });
+  });
+
+  it("registers a local folder in place", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    const entry = await service.addContainer({ source: dir, name: "notes" });
+    expect(entry.backend).toBe("local");
+    expect(entry.origin).toBeUndefined();
+    expect(entry.localPath).toBe(dir);
+    expect((await loadContainerManifest(dir)).name).toBe("notes");
+  });
+
+  it("labels an onedrive backend when requested", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    const entry = await service.addContainer({ source: dir, name: "cloud", backend: "onedrive" });
+    expect(entry.backend).toBe("onedrive");
+  });
+
+  it("derives a name from the source when omitted", async () => {
+    const origin = await makeOrigin();
+    const { service } = await setup();
+    const entry = await service.addContainer({ source: origin });
+    expect(entry.name).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  it("honours an explicit sync mode in the scaffolded manifest", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    const entry = await service.addContainer({ source: dir, name: "team", sync: "pr" });
+    expect((await loadContainerManifest(entry.localPath)).sync).toBe("pr");
+  });
+
+  it("rejects a duplicate container name", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "dup" });
+    const dir2 = await makeTempDir(); cleanups.push(dir2);
+    await expect(service.addContainer({ source: dir2, name: "dup" })).rejects.toBeInstanceOf(OkhError);
+  });
+
+  it("rejects a local source that does not exist", async () => {
+    const { service } = await setup();
+    await expect(service.addContainer({ source: "/no/such/dir", name: "x" })).rejects.toBeInstanceOf(OkhError);
+  });
+});
+
+describe("addModule", () => {
+  it("creates the folder, appends the manifest, and scaffolds a knowledge index", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub" });
+    const { moduleRoot } = await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    expect((await stat(join(moduleRoot, "index.md"))).isFile()).toBe(true);
+    const m = await loadContainerManifest(dir);
+    expect(m.modules).toEqual([{ path: "kb", type: "knowledge" }]);
+    expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("okf_version");
+  });
+
+  it("does not scaffold content for non-knowledge modules", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub" });
+    const { moduleRoot } = await service.addModule({ container: "hub", path: "skills", type: "skills" });
+    expect((await stat(moduleRoot)).isDirectory()).toBe(true);
+    await expect(stat(join(moduleRoot, "index.md"))).rejects.toBeTruthy();
+  });
+
+  it("rejects a duplicate module path", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub" });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    await expect(service.addModule({ container: "hub", path: "kb", type: "skills" })).rejects.toBeInstanceOf(OkhError);
+  });
+
+  it("rejects a module on an unknown container", async () => {
+    const { service } = await setup();
+    await expect(service.addModule({ container: "ghost", path: "kb", type: "knowledge" })).rejects.toBeInstanceOf(OkhError);
+  });
+});
