@@ -17,6 +17,10 @@ export interface ProvisionInput {
   fixtureDir: string;
   /** Absolute path to the OKH repo root (for dist/index.js in mcp-config). */
   repoRoot: string;
+  /** Registration strategy. Defaults to "registered" (pre-registers the fixture). */
+  mode?: "registered" | "empty" | "unregistered-local";
+  /** Extra local containers to register (for multi-container scenarios). */
+  additional?: Array<{ name: string; fixtureDir: string }>;
   /** Injectable process runner (tests pass a git-identity-bound runner). */
   runner?: typeof run;
 }
@@ -57,6 +61,22 @@ export async function provision(input: ProvisionInput): Promise<Provisioned> {
     registryFile: join(okhHome, "registry.json"),
     preferencesFile: join(okhHome, "preferences.json"),
   };
+  const mode = input.mode ?? "registered";
+
+  if (mode === "empty") {
+    await saveRegistry(paths, emptyRegistry());
+    await writeMcpConfig(copilotHome, input.repoRoot, okhHome);
+    return { root, okhHome, copilotHome, workspace, containerPath: "", originPath: undefined };
+  }
+
+  if (mode === "unregistered-local") {
+    const dest = join(workspace, input.container);
+    await cp(input.fixtureDir, dest, { recursive: true });
+    await saveRegistry(paths, emptyRegistry());
+    await writeMcpConfig(copilotHome, input.repoRoot, okhHome);
+    return { root, okhHome, copilotHome, workspace, containerPath: dest, originPath: undefined };
+  }
+
   let entry: ContainerEntry;
   let originPath: string | undefined;
 
@@ -78,18 +98,32 @@ export async function provision(input: ProvisionInput): Promise<Provisioned> {
     entry = { name: input.container, backend: "local", localPath: dir, addedAt: new Date().toISOString() };
   }
 
-  await saveRegistry(paths, withContainerAdded(emptyRegistry(), entry));
+  let registry = withContainerAdded(emptyRegistry(), entry);
+  for (const extra of input.additional ?? []) {
+    const dir = join(containersDir, extra.name);
+    await cp(extra.fixtureDir, dir, { recursive: true });
+    registry = withContainerAdded(registry, {
+      name: extra.name,
+      backend: "local",
+      localPath: dir,
+      addedAt: new Date().toISOString(),
+    });
+  }
+  await saveRegistry(paths, registry);
+  await writeMcpConfig(copilotHome, input.repoRoot, okhHome);
 
+  return { root, okhHome, copilotHome, workspace, containerPath: entry.localPath, originPath };
+}
+
+async function writeMcpConfig(copilotHome: string, repoRoot: string, okhHome: string): Promise<void> {
   const mcp = {
     mcpServers: {
       "open-knowledge-hub": {
         command: "node",
-        args: [join(input.repoRoot, "dist", "index.js")],
+        args: [join(repoRoot, "dist", "index.js")],
         env: { OKH_HOME: okhHome },
       },
     },
   };
   await writeFile(join(copilotHome, "mcp-config.json"), `${JSON.stringify(mcp, null, 2)}\n`, "utf8");
-
-  return { root, okhHome, copilotHome, workspace, containerPath: entry.localPath, originPath };
 }
