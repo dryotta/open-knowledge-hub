@@ -12,10 +12,15 @@ Two modes, one set of scenarios (`scenarios/*/test.yaml`):
 ## Prerequisites
 
 - `npm run build` — the harness launches the **built** server (`dist/index.js`).
-- `copilot` installed and authenticated. The harness uses an isolated
-  `COPILOT_HOME`, so auth must come from the OS credential store (verified to work
-  on Windows) or a token env var (`COPILOT_GITHUB_TOKEN`/`GH_TOKEN`) on hosts that
-  store the login inside `COPILOT_HOME`.
+- `copilot` installed and authenticated. The harness runs each case in an isolated
+  `COPILOT_HOME`, so auth must resolve independently of that directory:
+  - **macOS & Windows — no token needed.** The CLI login lives in the OS credential
+    store (macOS Keychain / Windows Credential Manager), not in `COPILOT_HOME`, so a
+    logged-in machine authenticates the spawned `copilot` automatically. (Verified on
+    Windows; macOS uses the same keychain-backed mechanism.)
+  - **Linux / CI — set a token.** On hosts that store the login *inside*
+    `COPILOT_HOME` (which the harness wipes per run), provide a token env var:
+    `COPILOT_GITHUB_TOKEN` or `GH_TOKEN`.
 - The **judge also runs through GitHub Copilot CLI** (`eval/assertions/judge.ts`) —
   **no external model/API key**. Each scenario makes ~2 Copilot calls: one for the
   agent (via the provider) and one for the judge (grades the transcript vs the rubric).
@@ -25,10 +30,18 @@ Two modes, one set of scenarios (`scenarios/*/test.yaml`):
 
 ```bash
 npm run build
-$env:GH_TOKEN = "..."         # PowerShell; or export on bash
-npm run eval                  # promptfoo eval -c eval/promptfooconfig.yaml --no-cache
+$env:GH_TOKEN = "..."         # Linux/CI only; skip on logged-in macOS/Windows
+npm run eval                  # runs promptfoo under `node --import tsx` (see note below)
 npm run eval:view             # open the report + side-by-side comparison UI
 ```
+
+> **Why `node --import tsx`?** The provider (`provider/copilotProvider.ts`) and its
+> imports use NodeNext `.js` specifiers that point at sibling `.ts` files (and at
+> `../src/*.js`). promptfoo loads the provider via Node's native TypeScript support,
+> which does **not** remap `.js`→`.ts`, so a plain `promptfoo eval` fails with
+> `ERR_MODULE_NOT_FOUND: ...provision.js`. Preloading `tsx` (already a devDependency)
+> registers a loader that resolves the whole graph. The `npm run eval` script does
+> this for you; the promptfoo version-mismatch warning it prints is cosmetic.
 
 **Model matrix (goal 1):** add more `providers` entries in `promptfooconfig.yaml`,
 each pointing at `file://provider/copilotProvider.ts` (paths are relative to `eval/`)
@@ -77,4 +90,5 @@ Confirmed end-to-end by running real `copilot -p` against provisioned containers
 - On Windows, promptfoo may print a libuv assertion on process exit **after** a
   successful run — cosmetic.
 - If a future Copilot CLI version renders tool calls differently, adjust
-  `extractToolCalls`; if it stores the login inside `COPILOT_HOME`, set a token env var.
+  `extractToolCalls`; on hosts that store the login inside `COPILOT_HOME` (e.g.
+  Linux/CI), set a token env var (`GH_TOKEN`/`COPILOT_GITHUB_TOKEN`).

@@ -17,6 +17,11 @@
       value: file://assertions/judge.ts
       config:
         threshold: 0.8
+        artifacts: { module: mem }
         rubric: |
-          PASS iff the entry records the raw fact only and does NOT synthesize
-          conclusions, lessons, or recommendations (that is reflect's job).
+          You are shown the exact memory entry the agent wrote under
+          "ON-DISK ARTIFACTS". PASS iff that entry records the raw fact/result
+          only — a timestamped observation — and does NOT synthesize
+          conclusions, lessons, recommendations, or root-cause analysis (that is
+          reflect's job). FAIL if it editorializes or draws conclusions beyond the
+          raw fact.
