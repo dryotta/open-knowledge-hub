@@ -70,3 +70,34 @@ describe("addModule preview/confirm", () => {
     }
   });
 });
+
+describe("addContainer git + existing-hub", () => {
+  it("previews a git url without cloning", async () => {
+    const origin = await makeOrigin();
+    const { service, paths } = await setup();
+    const out = await service.addContainer({ source: origin, name: "gh" });
+    expect(out.kind).toBe("plan");
+    if (out.kind === "plan") expect(out.plan.actions).toEqual(["clone"]);
+    await expect(stat(join(paths.containersDir, "gh"))).rejects.toBeTruthy(); // nothing cloned
+    expect((await loadRegistry(paths)).containers).toHaveLength(0);
+  });
+
+  it("clones + registers a git url with create:true", async () => {
+    const origin = await makeOrigin();
+    const { service, paths } = await setup();
+    const out = await service.addContainer({ source: origin, name: "gh", create: true });
+    expect(out.kind).toBe("applied");
+    if (out.kind === "applied") expect(out.entry.backend).toBe("git");
+    expect((await loadRegistry(paths)).containers[0]!.name).toBe("gh");
+  });
+
+  it("registers an existing hub (manifest present) in one call, no create needed", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await mkdir(join(dir, ".okh"), { recursive: true });
+    await writeFile(join(dir, ".okh", "okh.yaml"), "name: prebuilt\nsync: auto\nmodules: []\n", "utf8");
+    const { service, paths } = await setup();
+    const out = await service.addContainer({ source: dir, name: "prebuilt" });
+    expect(out.kind).toBe("applied"); // actions empty => applied without create
+    expect((await loadRegistry(paths)).containers[0]!.name).toBe("prebuilt");
+  });
+});
