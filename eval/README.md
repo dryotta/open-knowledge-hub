@@ -31,21 +31,17 @@ Two modes, one set of scenarios (`scenarios/*/test.yaml`):
 ```bash
 npm run build
 $env:GH_TOKEN = "..."         # Linux/CI only; skip on logged-in macOS/Windows
+npm run eval:validate         # structural promptfoo validation via node --import tsx
 npm run eval                  # runs promptfoo under `node --import tsx` (see note below)
 npm run eval:view             # open the report + side-by-side comparison UI
 ```
 
-> **Why a JS provider shim?** The implementation lives in
-> `provider/copilotProvider.ts` and uses NodeNext `.js` specifiers that point at
-> sibling `.ts` files (and at `../src/*.js`). promptfoo's native TypeScript import
-> does **not** remap those `.js` specifiers, so the config points at
-> `provider/copilotProvider.js`, a tiny shim that registers `tsx/cjs` and loads the
-> TypeScript provider. This keeps bare `promptfoo validate -c eval/promptfooconfig.yaml`
-> working. The `npm run eval` script still preloads `tsx` for the rest of the eval
-> graph; the promptfoo version-mismatch warning it prints is cosmetic.
+> **Validation:** Use `npm run eval:validate` for structural validation. It launches
+> promptfoo via `node --import tsx`, matching `npm run eval`, so the TypeScript
+> provider can keep NodeNext `.js` import specifiers.
 
 **Model matrix (goal 1):** add more `providers` entries in `promptfooconfig.yaml`,
-each pointing at `file://provider/copilotProvider.js` (paths are relative to `eval/`)
+each pointing at `file://provider/copilotProvider.ts` (paths are relative to `eval/`)
 with a different `config.model`. Default is a single pinned model.
 
 **Optimization (goal 2):** run the suite against two OKH builds (git branches),
@@ -78,7 +74,7 @@ Confirmed end-to-end by running real `copilot -p` against provisioned containers
   `extractToolCalls` (in `copilot.ts`) parses that form.
 - promptfoo resolves `file://` paths **relative to the config file's dir (`eval/`)** —
   hence `file://provider/…`, `file://assertions/…`, `file://scenarios/*/test.yaml`.
-  `promptfoo validate -c eval/promptfooconfig.yaml` passes.
+  `npm run eval:validate` passes.
 - Validated flows: `remember` (append-only memory entry), `learn`+`sync` (OKF change
   committed & pushed to the git-auto origin), and `learn` correctly REJECTING
   out-of-scope input (no write).

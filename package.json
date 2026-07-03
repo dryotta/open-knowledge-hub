@@ -25,6 +25,7 @@
     "typecheck:eval": "tsc -p tsconfig.eval.json",
     "test:eval": "vitest run --config vitest.eval.config.ts",
     "eval": "node --import tsx ./node_modules/promptfoo/dist/src/entrypoint.js eval -c eval/promptfooconfig.yaml --no-cache",
+    "eval:validate": "node --import tsx ./node_modules/promptfoo/dist/src/entrypoint.js validate -c eval/promptfooconfig.yaml",
     "eval:view": "promptfoo view",
     "eval:setup": "tsx eval/okh-eval.ts"
   },
