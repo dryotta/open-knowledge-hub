@@ -46,17 +46,25 @@ export const spawnCopilot: CopilotRunner = (opts) =>
 const OKH_TOOLS = ["inspect", "add", "sync", "ask", "context", "learn", "remember", "reflect"] as const;
 
 /**
- * Best-effort extraction of which OKH tools were invoked, from the transcript.
- * Matches a server-qualified reference (`open-knowledge-hub<sep>TOOL`) or a
- * parenthesized call (`TOOL(`). The exact Copilot CLI tool-call rendering is a
- * verify-point (Task 8); this parser is tolerant and unit-tested.
+ * Extract which OKH tools were invoked, from the transcript.
+ *
+ * Primary signal (verified against a real Copilot CLI run): each MCP tool call is
+ * rendered on a line containing `(MCP: open-knowledge-hub)` with the tool's title,
+ * e.g. `● Remember (flow) (MCP: open-knowledge-hub) · container: ...` or
+ * `● Sync containers (MCP: open-knowledge-hub) · ...`. We match the OKH tool name
+ * as a word on such a line. A server-qualified fallback (`open-knowledge-hub<sep>TOOL`)
+ * covers other renderings/versions.
  */
 export function extractToolCalls(transcript: string): string[] {
   const found = new Set<string>();
+  for (const line of transcript.split(/\r?\n/)) {
+    if (!/\(MCP:\s*open-knowledge-hub\)/i.test(line)) continue;
+    for (const t of OKH_TOOLS) {
+      if (new RegExp(`\\b${t}\\b`, "i").test(line)) found.add(t);
+    }
+  }
   for (const t of OKH_TOOLS) {
-    const qualified = new RegExp(`open-knowledge-hub[^a-z0-9]{1,4}${t}\\b`, "i");
-    const called = new RegExp(`\\b${t}\\s*\\(`, "i");
-    if (qualified.test(transcript) || called.test(transcript)) found.add(t);
+    if (new RegExp(`open-knowledge-hub[^a-z0-9]{1,4}${t}\\b`, "i").test(transcript)) found.add(t);
   }
   return [...found].sort();
 }

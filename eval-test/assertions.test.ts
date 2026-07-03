@@ -42,18 +42,20 @@ describe("okf-valid", () => {
     expect((await okfValid("", ctx({ containerPath: c }, { module: "kb" }))).pass).toBe(false);
   });
 
-  it("with requireIndexUpdated, fails when index.md is unchanged and passes when it changed", async () => {
+  it("with requireChanged, fails when the module equals the fixture and passes when a concept changed", async () => {
     const fx = await makeTempDir("okf-fx-"); cleanups.push(fx);
     const c = await makeTempDir("okf-c-"); cleanups.push(c);
     await mkdir(join(fx, "kb"), { recursive: true });
     await mkdir(join(c, "kb"), { recursive: true });
     await writeFile(join(fx, "kb", "index.md"), "# Knowledge\n", "utf8");
+    await writeFile(join(fx, "kb", "auth.md"), "---\ntype: Concept\n---\nbody\n", "utf8");
     await writeFile(join(c, "kb", "index.md"), "# Knowledge\n", "utf8");
     await writeFile(join(c, "kb", "auth.md"), "---\ntype: Concept\n---\nbody\n", "utf8");
     const meta = { containerPath: c, fixtureDir: fx };
-    expect((await okfValid("", ctx(meta, { module: "kb", requireIndexUpdated: true }))).pass).toBe(false);
-    await writeFile(join(c, "kb", "index.md"), "# Knowledge\n* [Auth](auth.md)\n", "utf8");
-    expect((await okfValid("", ctx(meta, { module: "kb", requireIndexUpdated: true }))).pass).toBe(true);
+    expect((await okfValid("", ctx(meta, { module: "kb", requireChanged: true }))).pass).toBe(false);
+    // extend the existing concept (as a real learn run may) -> changed -> passes
+    await writeFile(join(c, "kb", "auth.md"), "---\ntype: Concept\n---\nbody\n\n# Signing\nRS256\n", "utf8");
+    expect((await okfValid("", ctx(meta, { module: "kb", requireChanged: true }))).pass).toBe(true);
   });
 });
 

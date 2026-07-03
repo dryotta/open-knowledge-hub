@@ -13,7 +13,7 @@
       config: { expect: [learn, sync] }
     - type: javascript
       value: file://assertions/okf-valid.ts
-      config: { module: kb, requireCitations: false, requireIndexUpdated: true }
+      config: { module: kb, requireCitations: false, requireChanged: true }
     - type: javascript
       value: file://assertions/git-committed.ts
       config: { minCommits: 2 }

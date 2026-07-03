@@ -1,33 +1,17 @@
 import { join, basename } from "node:path";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { parseFrontmatter, stringField } from "../../src/util/frontmatter.js";
+import { readTree, diffTrees } from "./_compare.js";
 
 interface Ctx {
-  config?: { module?: string; requireCitations?: boolean; requireIndexUpdated?: boolean };
+  config?: { module?: string; requireCitations?: boolean; requireChanged?: boolean };
   providerResponse?: { metadata?: { containerPath?: string; fixtureDir?: string } };
 }
 const RESERVED = new Set(["index.md", "log.md"]);
 
 async function walkMd(dir: string): Promise<string[]> {
-  const out: string[] = [];
-  async function rec(d: string): Promise<void> {
-    let entries;
-    try {
-      entries = await readdir(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const p = join(d, e.name);
-      if (e.isDirectory()) {
-        if (e.name !== ".git" && e.name !== ".okh") await rec(p);
-      } else if (e.isFile() && e.name.endsWith(".md")) {
-        out.push(p);
-      }
-    }
-  }
-  await rec(dir);
-  return out;
+  const tree = await readTree(dir);
+  return [...tree.keys()].filter((p) => p.endsWith(".md")).map((p) => join(dir, p));
 }
 
 /** Pass iff every concept doc in the knowledge module parses with a non-empty OKF `type`. */
@@ -47,14 +31,15 @@ export default async function okfValid(_output: string, context: Ctx) {
     if (/^#\s*Citations/im.test(body)) hasCitations = true;
   }
   if (context.config?.requireCitations && !hasCitations) problems.push("no concept has a # Citations section");
-  if (context.config?.requireIndexUpdated) {
+  if (context.config?.requireChanged) {
     const fixtureDir = context.providerResponse?.metadata?.fixtureDir;
     if (!fixtureDir) {
-      problems.push("cannot verify index.md update: no fixtureDir in metadata");
+      problems.push("cannot verify module change: no fixtureDir in metadata");
     } else {
-      const now = await readFile(join(root, "index.md"), "utf8").catch(() => "");
-      const orig = await readFile(join(fixtureDir, module, "index.md"), "utf8").catch(() => "");
-      if (now === orig) problems.push("index.md was not updated to reference the new concept");
+      const d = diffTrees(await readTree(join(fixtureDir, module)), await readTree(root));
+      if (d.added.length === 0 && d.changed.length === 0) {
+        problems.push("knowledge module was not modified (learn wrote nothing new)");
+      }
     }
   }
   const pass = problems.length === 0;
