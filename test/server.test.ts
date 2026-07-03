@@ -111,6 +111,21 @@ describe("MCP server surface", () => {
     expect(textOf(applied)).toContain('Registered container "hub"');
   });
 
+  it("add previews module changes without create", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+
+    await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
+    const preview = await client.callTool({
+      name: "add",
+      arguments: { container: "hub", path: "kb", type: "knowledge" },
+    });
+
+    expect(textOf(preview)).toContain("Plan (no changes made)");
+    expect(structuredOf(preview).needsConfirmation).toBe(true);
+  });
+
   it("rejects a module inspect request without a container", async () => {
     const { client } = await connect();
     const res = await client.callTool({ name: "inspect", arguments: { module: "kb" } });

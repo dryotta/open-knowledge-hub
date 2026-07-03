@@ -578,7 +578,13 @@ export class ContainerService {
     const exists = !!s;
     const actions: ContainerAction[] = [];
     if (!exists) actions.push("create-folder");
-    if (!exists || !(await manifestExists(target))) actions.push("init-manifest");
+    const hasManifest = exists && await manifestExists(target);
+    if (!hasManifest) {
+      actions.push("init-manifest");
+    } else if (syncExplicit) {
+      const manifest = await loadContainerManifest(target);
+      if (manifest.sync !== sync) actions.push("init-manifest");
+    }
     return { kind: "container", actions, name, backend, source: input.source, target, sync, syncExplicit };
   }
 

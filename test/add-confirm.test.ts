@@ -5,7 +5,7 @@ import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { loadRegistry } from "../src/registry/registry.js";
-import { manifestExists } from "../src/container/manifest.js";
+import { loadContainerManifest, manifestExists } from "../src/container/manifest.js";
 import { makePaths, makeTempDir, makeOrigin, testRun } from "./helpers.js";
 
 class FakeGh {
@@ -99,5 +99,42 @@ describe("addContainer git + existing-hub", () => {
     const out = await service.addContainer({ source: dir, name: "prebuilt" });
     expect(out.kind).toBe("applied"); // actions empty => applied without create
     expect((await loadRegistry(paths)).containers[0]!.name).toBe("prebuilt");
+  });
+
+  it("previews an explicit sync override for an existing manifest without mutating it", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await mkdir(join(dir, ".okh"), { recursive: true });
+    await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-gated\nsync: auto\nmodules: []\n", "utf8");
+    const { service } = await setup();
+
+    const out = await service.addContainer({ source: dir, name: "sync-gated", sync: "pr" });
+
+    expect(out.kind).toBe("plan");
+    if (out.kind === "plan") expect(out.plan.actions).toContain("init-manifest");
+    expect((await loadContainerManifest(dir)).sync).toBe("auto");
+  });
+
+  it("applies an explicit sync override for an existing manifest with create:true", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await mkdir(join(dir, ".okh"), { recursive: true });
+    await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-applied\nsync: auto\nmodules: []\n", "utf8");
+    const { service } = await setup();
+
+    const out = await service.addContainer({ source: dir, name: "sync-applied", sync: "pr", create: true });
+
+    expect(out.kind).toBe("applied");
+    expect((await loadContainerManifest(dir)).sync).toBe("pr");
+  });
+
+  it("registers an existing manifest with default sync in one call", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    await mkdir(join(dir, ".okh"), { recursive: true });
+    await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-default\nsync: auto\nmodules: []\n", "utf8");
+    const { service } = await setup();
+
+    const out = await service.addContainer({ source: dir, name: "sync-default" });
+
+    expect(out.kind).toBe("applied");
+    expect((await loadContainerManifest(dir)).sync).toBe("auto");
   });
 });
