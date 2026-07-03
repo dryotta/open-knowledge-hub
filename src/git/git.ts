@@ -90,6 +90,15 @@ export class Git {
     return out.trim().length > 0;
   }
 
+  /** True if HEAD has commits not present on any remote. */
+  async hasCurrentBranchUnpushedCommits(cwd: string): Promise<boolean> {
+    const out = await this.git(
+      ["log", "HEAD", "--not", "--remotes", "--oneline"],
+      cwd,
+    );
+    return out.trim().length > 0;
+  }
+
   /** Stash all changes (including untracked). Returns true if anything was stashed. */
   async stashPush(cwd: string, message: string): Promise<boolean> {
     const before = await this.git(["stash", "list"], cwd);
@@ -124,6 +133,10 @@ export class Git {
 
   async commit(cwd: string, message: string): Promise<void> {
     await this.git(["commit", "-m", message], cwd);
+  }
+
+  async resetSoft(cwd: string, ref: string): Promise<void> {
+    await this.git(["reset", "--soft", ref], cwd);
   }
 
   /** True if there is anything staged to commit. */

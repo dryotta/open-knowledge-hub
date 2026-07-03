@@ -26,9 +26,15 @@ export async function makeTempDir(prefix = "okh-test-"): Promise<string> {
 export function makePaths(home: string): OkhPaths {
   return {
     home,
-    packsDir: join(home, "packs"),
-    manifestFile: join(home, "catalog.json"),
+    containersDir: join(home, "containers"),
+    registryFile: join(home, "registry.json"),
   };
+}
+
+/** Write a `.okh/okh.yaml` manifest string into a container root. */
+export async function writeManifest(containerRoot: string, yaml: string): Promise<void> {
+  await mkdir(join(containerRoot, ".okh"), { recursive: true });
+  await writeFile(join(containerRoot, ".okh", "okh.yaml"), yaml, "utf8");
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {

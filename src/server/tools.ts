@@ -1,349 +1,267 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { PackService } from "../packs/service.js";
+import { z } from "zod";
+import type {
+  ContainerService,
+  InspectResult,
+  SyncResult,
+} from "../container/service.js";
 import { isOkhError } from "../errors.js";
-import {
-  buildAskFlow,
-  buildCreateFlow,
-  buildLearnFlow,
-  buildReviewUpdateFlow,
-} from "../discipline/index.js";
+import { moduleTypeSchema } from "../modules/types.js";
+import { buildAsk, buildContext, buildLearn, buildReflect, buildRemember } from "../prompts/index.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
-  return {
-    content: [{ type: "text", text }],
-    ...(structured ? { structuredContent: structured } : {}),
-  };
+  return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
 }
 
 function fail(message: string, hint?: string): CallToolResult {
-  const text = hint ? `${message}\n\nHint: ${hint}` : message;
-  return { content: [{ type: "text", text }], isError: true };
+  return { content: [{ type: "text", text: hint ? `${message}\n\nHint: ${hint}` : message }], isError: true };
 }
 
-/** Wrap a handler so expected OkhErrors become clean tool errors. */
 function handler<A>(fn: (args: A) => Promise<CallToolResult>) {
   return async (args: A): Promise<CallToolResult> => {
     try {
       return await fn(args);
     } catch (err) {
-      if (isOkhError(err)) {
-        return fail(`[${err.code}] ${err.message}`, err.hint);
-      }
+      if (isOkhError(err)) return fail(`[${err.code}] ${err.message}`, err.hint);
       throw err;
     }
   };
 }
 
-const slugArg = { slug: z.string().describe("The pack's unique local slug.") };
-
-/** Register every OKH tool on the given server. */
-export function registerTools(server: McpServer, service: PackService): void {
-  // --- catalog --------------------------------------------------------------
-
-  server.registerTool(
-    "catalog_list",
-    {
-      title: "List catalog",
-      description: "List all packs in the catalog with their install state and origin.",
-      inputSchema: {},
-    },
-    handler(async () => {
-      const packs = await service.list();
-      if (packs.length === 0) return ok("The catalog is empty.", { packs: [] });
-      const lines = packs.map(
-        (p) =>
-          `- ${p.slug} [${p.state}] ${p.repoUrl}${p.subpath ? ` (subpath: ${p.subpath})` : ""}${p.ref ? ` @${p.ref}` : ""}`,
-      );
-      return ok(lines.join("\n"), { packs });
-    }),
-  );
-
-  server.registerTool(
-    "catalog_add",
-    {
-      title: "Register a pack",
-      description: "Register a pack in the catalog without installing it.",
-      inputSchema: {
-        slug: z.string().describe("Unique local slug (lowercase, dash-separated)."),
-        repoUrl: z.string().describe("Git URL of the pack's origin repo."),
-        subpath: z.string().optional().describe("Subfolder within the repo (default: 'knowledge'). Pass '.' for a pack at the repo root."),
-        ref: z.string().optional().describe("Branch or tag to track (default: repo default branch)."),
-      },
-    },
-    handler(async (args) => {
-      const entry = await service.add(args);
-      return ok(`Registered "${entry.slug}".`, { entry });
-    }),
-  );
-
-  // --- install lifecycle ----------------------------------------------------
-
-  server.registerTool(
-    "pack_install",
-    {
-      title: "Install a pack",
-      description:
-        "Clone a pack's origin into the local packs directory. If the pack is not yet registered, pass repoUrl (and optional subpath/ref) to register and install in one step.",
-      inputSchema: {
-        slug: z.string().describe("Unique local slug."),
-        repoUrl: z.string().optional().describe("Origin repo URL (required if not already registered)."),
-        subpath: z.string().optional().describe("Subfolder within the repo (default: 'knowledge'). Pass '.' for a pack at the repo root."),
-        ref: z.string().optional(),
-      },
-    },
-    handler(async (args) => {
-      const entry = await service.install(
-        args.slug,
-        args.repoUrl ? { slug: args.slug, repoUrl: args.repoUrl, subpath: args.subpath, ref: args.ref } : undefined,
-      );
-      return ok(`Installed "${entry.slug}" at ${entry.localPath}.`, { entry });
-    }),
-  );
-
-  server.registerTool(
-    "pack_uninstall",
-    {
-      title: "Uninstall a pack",
-      description:
-        "Remove a pack's local clone. Blocked when there are unpushed commits unless force is set. Set purge to also drop the catalog entry.",
-      inputSchema: {
-        ...slugArg,
-        force: z.boolean().optional().describe("Discard unpushed commits."),
-        purge: z.boolean().optional().describe("Also remove the catalog entry (default: keep as registered)."),
-      },
-    },
-    handler(async (args) => {
-      await service.uninstall(args.slug, { force: args.force, purge: args.purge });
-      return ok(`Uninstalled "${args.slug}"${args.purge ? " and removed it from the catalog" : ""}.`);
-    }),
-  );
-
-  server.registerTool(
-    "pack_status",
-    {
-      title: "Pack status",
-      description: "Show git status of an installed pack: branch, dirty state, ahead/behind, unpushed commits.",
-      inputSchema: { ...slugArg },
-    },
-    handler(async (args) => {
-      const status = await service.status(args.slug);
-      if (!status.installed) return ok(`"${args.slug}" is registered but not installed.`, { status });
-      const text = [
-        `Pack: ${status.slug}`,
-        `Branch: ${status.branch}`,
-        `Dirty: ${status.dirty}`,
-        `Ahead/behind upstream: ${status.ahead}/${status.behind}`,
-        `Unpushed commits: ${status.hasUnpushedCommits}`,
-        `Path: ${status.localPath}`,
-      ].join("\n");
-      return ok(text, { status });
-    }),
-  );
-
-  server.registerTool(
-    "pack_pull",
-    {
-      title: "Update a pack from origin",
-      description: "Fetch and fast-forward an installed pack. Local changes are auto-stashed and restored.",
-      inputSchema: { ...slugArg },
-    },
-    handler(async (args) => {
-      const { stashed } = await service.pull(args.slug);
-      return ok(`Updated "${args.slug}"${stashed ? " (local changes were stashed and restored)" : ""}.`);
-    }),
-  );
-
-  server.registerTool(
-    "pack_path",
-    {
-      title: "Resolve pack path",
-      description: "Return the local filesystem path of an installed pack's root, for reading/writing its files.",
-      inputSchema: { ...slugArg },
-    },
-    handler(async (args) => {
-      const path = await service.path(args.slug);
-      return ok(path, { path });
-    }),
-  );
-
-  // --- authoring / publishing ----------------------------------------------
-
-  server.registerTool(
-    "pack_create",
-    {
-      title: "Scaffold a new pack",
-      description:
-        "Create a new local pack: make the working dir, git init, write a skeleton OKF index.md under the 'knowledge/' subfolder, and register it as installed (unpublished). Follow with pack_publish once authored.",
-      inputSchema: {
-        slug: z.string().describe("Unique local slug for the new pack."),
-        title: z.string().optional(),
-        description: z.string().optional(),
-        subpath: z.string().optional().describe("Subfolder to author the pack in (default: 'knowledge'). Pass '.' to author at the repo root."),
-      },
-    },
-    handler(async (args) => {
-      const entry = await service.create(args);
-      return ok(`Scaffolded "${entry.slug}" at ${entry.localPath}. Author it, then run pack_publish.`, { entry });
-    }),
-  );
-
-  server.registerTool(
-    "pack_publish",
-    {
-      title: "Publish a new pack",
-      description:
-        "Create a GitHub repo for a locally-created pack and push main. This is the only direct-to-main push; later edits use the PR flow.",
-      inputSchema: {
-        slug: z.string(),
-        repoName: z.string().describe("Name (or owner/name) for the new GitHub repo."),
-        visibility: z.enum(["public", "private", "internal"]).optional(),
-        description: z.string().optional(),
-      },
-    },
-    handler(async (args) => {
-      const { repoUrl } = await service.publish(args);
-      return ok(`Published "${args.slug}" to ${repoUrl}.`, { repoUrl });
-    }),
-  );
-
-  // --- PR write flow --------------------------------------------------------
-
-  server.registerTool(
-    "pack_begin_change",
-    {
-      title: "Begin a change",
-      description: "Create the working branch okh/<slug>/<topic> for an edit. Refuses on a dirty working tree.",
-      inputSchema: {
-        ...slugArg,
-        topic: z.string().describe("Short kebab-able topic for the branch name."),
-      },
-    },
-    handler(async (args) => {
-      const { branch, localPath } = await service.beginChange(args.slug, args.topic);
-      return ok(`On branch ${branch}. Edit files at ${localPath}.`, { branch, localPath });
-    }),
-  );
-
-  server.registerTool(
-    "pack_commit",
-    {
-      title: "Commit changes",
-      description: "Stage all changes and commit them in the pack's working tree.",
-      inputSchema: {
-        ...slugArg,
-        message: z.string().describe("Commit message."),
-      },
-    },
-    handler(async (args) => {
-      await service.commit(args.slug, args.message);
-      return ok(`Committed changes to "${args.slug}".`);
-    }),
-  );
-
-  server.registerTool(
-    "pack_diff",
-    {
-      title: "Diff a pack",
-      description: "Show a diffstat for an installed pack (default vs HEAD), for summarising changes.",
-      inputSchema: {
-        ...slugArg,
-        ref: z.string().optional().describe("Ref to diff against (default HEAD)."),
-      },
-    },
-    handler(async (args) => {
-      const stat = await service.diffStat(args.slug, args.ref);
-      return ok(stat || "No changes.", { diffstat: stat });
-    }),
-  );
-
-  server.registerTool(
-    "pack_open_pr",
-    {
-      title: "Open a pull request",
-      description: "Push the current change branch and open a PR into the pack's default branch. Returns the PR URL.",
-      inputSchema: {
-        ...slugArg,
-        title: z.string().describe("PR title."),
-        body: z.string().describe("PR body."),
-      },
-    },
-    handler(async (args) => {
-      const { prUrl, branch } = await service.openPr(args.slug, args.title, args.body);
-      return ok(`Opened PR from ${branch}: ${prUrl}`, { prUrl, branch });
-    }),
-  );
-
-  // --- flow tools (discipline text; mirror the prompts) ---------------------
-
-  registerFlowTools(server, service);
+function isBlank(value: string): boolean {
+  return value.trim().length === 0;
 }
 
-/**
- * The ask/learn/review_update/create flows are exposed as tools (in addition to
- * prompts) so they work in MCP clients without prompt support. Each returns the
- * vendored OKF discipline text, parametrised by the target pack.
- */
-function registerFlowTools(server: McpServer, service: PackService): void {
+function formatInspect(r: InspectResult): string {
+  if (r.kind === "containers") {
+    if (r.containers.length === 0) return "No containers registered. Use add { source } to register one.";
+    return r.containers
+      .map(
+        (c) =>
+          `- ${c.name} [${c.backend}] sync=${c.sync ?? "?"} modules=${c.moduleCount}` +
+          `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`,
+      )
+      .join("\n");
+  }
+  if (r.kind === "container") {
+    const s = r.status;
+    const lines = [
+      `Container: ${s.name} [${s.backend}]`,
+      `Sync: ${s.sync ?? "?"}`,
+      `Path: ${s.localPath}`,
+      `Manifest valid: ${s.manifestValid}${s.manifestError ? ` (${s.manifestError})` : ""}`,
+      "Modules:",
+      ...(s.modules.length
+        ? s.modules.map((m) => `  - ${m.type}: ${m.path} (${m.items} items)`)
+        : ["  (none)"]),
+    ];
+    if (s.git) {
+      lines.push(
+        `Git: branch=${s.git.branch} dirty=${s.git.dirty} ahead/behind=${s.git.ahead}/${s.git.behind} unpushed=${s.git.hasUnpushedCommits}`,
+      );
+    }
+    return lines.join("\n");
+  }
+  const head = `Module ${r.module.path} [${r.module.type}] — ${r.items.length} items`;
+  const items = r.items.length
+    ? r.items.map((i) => `  - ${i.title}${i.description ? ` — ${i.description}` : ""} (${i.path})`)
+    : ["  (empty)"];
+  return [head, ...items].join("\n");
+}
+
+function formatSync(rs: SyncResult[]): string {
+  if (rs.length === 0) return "Nothing to sync.";
+  return rs
+    .map((r) => {
+      const v = r.validation.ok ? "valid" : `INVALID: ${r.validation.issues.join("; ")}`;
+      const extra = r.prUrl ? ` PR: ${r.prUrl}` : "";
+      return `- ${r.name} [${r.backend}] ${r.action} (${v})${extra}`;
+    })
+    .join("\n");
+}
+
+/** Register the three operational tools + five cognitive prompt-tools. */
+export function registerTools(server: McpServer, service: ContainerService): void {
+  server.registerTool(
+    "inspect",
+    {
+      title: "Inspect containers/modules",
+      description:
+        "List registered containers (no args), a container's modules + status (container), or a module's items (container + module).",
+      inputSchema: {
+        container: z.string().optional().describe("Container name to inspect."),
+        module: z.string().optional().describe("Module path within the container."),
+      },
+    },
+    handler(async (args: { container?: string; module?: string }) => {
+      if (args.module !== undefined && args.container === undefined) {
+        return fail("Inspecting a module requires { container, module }.");
+      }
+      if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
+      if (args.module !== undefined && isBlank(args.module)) return fail("module cannot be empty.");
+      const result = await service.inspect(args.container, args.module);
+      return ok(formatInspect(result), { result });
+    }),
+  );
+
+  server.registerTool(
+    "add",
+    {
+      title: "Add a container or module",
+      description:
+        "Add a container with { source, name?, sync?, backend? } (source is a git URL or a local/OneDrive path), " +
+        "or add a module with { container, path, type, config? }.",
+      inputSchema: {
+        source: z.string().optional().describe("Git URL or local/OneDrive path (new container)."),
+        name: z.string().optional().describe("Container name (defaults to the source basename)."),
+        sync: z.enum(["auto", "pr"]).optional().describe("Git write mode for a new container."),
+        backend: z.enum(["local", "onedrive"]).optional().describe("Label a path source as local or onedrive."),
+        container: z.string().optional().describe("Target container (new module)."),
+        path: z.string().optional().describe("Module folder path within the container (new module)."),
+        type: moduleTypeSchema.optional().describe("Module type (new module)."),
+        config: z.record(z.string(), z.unknown()).optional().describe("Optional module config."),
+      },
+    },
+    handler(
+      async (args: {
+        source?: string;
+        name?: string;
+        sync?: "auto" | "pr";
+        backend?: "local" | "onedrive";
+        container?: string;
+        path?: string;
+        type?: "knowledge" | "skills" | "tools" | "memory" | "project";
+        config?: Record<string, unknown>;
+      }) => {
+        const hasSource = args.source !== undefined;
+        const hasModuleFields =
+          args.container !== undefined || args.path !== undefined || args.type !== undefined || args.config !== undefined;
+        if (hasSource && hasModuleFields) {
+          return fail("add requires either { source } or { container, path, type }, not both.");
+        }
+        if (args.source !== undefined) {
+          if (isBlank(args.source)) return fail("source cannot be empty.");
+          const entry = await service.addContainer({
+            source: args.source,
+            ...(args.name ? { name: args.name } : {}),
+            ...(args.sync ? { sync: args.sync } : {}),
+            ...(args.backend ? { backend: args.backend } : {}),
+          });
+          return ok(`Registered container "${entry.name}" [${entry.backend}] at ${entry.localPath}.`, { entry });
+        }
+        if (hasModuleFields) {
+          if (args.container === undefined || args.path === undefined || args.type === undefined) {
+            return fail("Adding a module requires { container, path, type }.");
+          }
+          if (isBlank(args.container)) return fail("container cannot be empty.");
+          if (isBlank(args.path)) return fail("path cannot be empty.");
+          const { entry, moduleRoot } = await service.addModule({
+            container: args.container,
+            path: args.path,
+            type: args.type,
+            ...(args.config ? { config: args.config } : {}),
+          });
+          return ok(`Added ${entry.type} module "${entry.path}" to "${args.container}" at ${moduleRoot}.`, { entry });
+        }
+        return fail("add requires either { source } (new container) or { container, path, type } (new module).");
+      },
+    ),
+  );
+
+  server.registerTool(
+    "sync",
+    {
+      title: "Sync containers",
+      description:
+        "Validate and synchronize a container (or all containers). Git containers commit+push (auto) or open a PR (pr).",
+      inputSchema: {
+        container: z.string().optional().describe("Container to sync (default: all)."),
+        message: z.string().optional().describe("Commit/PR message."),
+      },
+    },
+    handler(async (args: { container?: string; message?: string }) => {
+      if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
+      const results = await service.sync(args.container, args.message);
+      return ok(formatSync(results), { results });
+    }),
+  );
+
+  registerCognitiveTools(server, service);
+}
+
+const promptArgs = {
+  container: z.string().optional().describe("Container name (default: all registered containers)."),
+  module: z.string().optional().describe("Module path within the container."),
+};
+
+/** The five cognitive prompts, also exposed as tools for clients without prompt support. */
+function registerCognitiveTools(server: McpServer, service: ContainerService): void {
   server.registerTool(
     "ask",
     {
-      title: "Ask a pack (flow)",
-      description: "Return instructions to answer a question from an installed pack using the okf-ask discipline.",
+      title: "Ask (flow)",
+      description: "Return discipline to answer a question from the hub's modules.",
+      inputSchema: { ...promptArgs, question: z.string().optional().describe("The question to answer.") },
+    },
+    handler(async (args: { container?: string; module?: string; question?: string }) => {
+      const targets = await service.resolveTargets(args.container, args.module);
+      return ok(await buildAsk(targets, args.question));
+    }),
+  );
+
+  server.registerTool(
+    "context",
+    {
+      title: "Context (flow)",
+      description: "Return discipline to assemble a task-relevant working set across the hub.",
       inputSchema: {
-        ...slugArg,
-        question: z.string().optional().describe("The question to answer."),
+        container: z.string().optional().describe("Container name (default: all)."),
+        task: z.string().optional().describe("The task to prepare for."),
       },
     },
-    handler(async (args) => {
-      const localPath = await service.path(args.slug);
-      return ok(await buildAskFlow({ slug: args.slug, localPath, question: args.question }));
+    handler(async (args: { container?: string; task?: string }) => {
+      const targets = await service.resolveTargets(args.container);
+      return ok(await buildContext(targets, args.task));
     }),
   );
 
   server.registerTool(
     "learn",
     {
-      title: "Learn into a pack (flow)",
-      description: "Return instructions to fold new knowledge into an installed pack (okf-learn + PR write flow).",
-      inputSchema: {
-        ...slugArg,
-        knowledge: z.string().optional().describe("The candidate knowledge to consider."),
-      },
+      title: "Learn (flow)",
+      description: "Return discipline to integrate new knowledge into a knowledge module (OKF).",
+      inputSchema: { ...promptArgs, knowledge: z.string().optional().describe("The candidate knowledge.") },
     },
-    handler(async (args) => {
-      const localPath = await service.path(args.slug);
-      return ok(await buildLearnFlow({ slug: args.slug, localPath, knowledge: args.knowledge }));
+    handler(async (args: { container?: string; module?: string; knowledge?: string }) => {
+      const targets = await service.resolveTargets(args.container, args.module);
+      return ok(await buildLearn(targets, args.knowledge));
     }),
   );
 
   server.registerTool(
-    "review_update",
+    "remember",
     {
-      title: "Review & update a pack (flow)",
-      description: "Return instructions to review an installed pack against its scope and update it (PR write flow).",
-      inputSchema: {
-        ...slugArg,
-        focus: z.string().optional().describe("Optional area to focus the review on."),
-      },
+      title: "Remember (flow)",
+      description: "Return discipline to record an observation into a memory module.",
+      inputSchema: { ...promptArgs, observation: z.string().optional().describe("The observation to record.") },
     },
-    handler(async (args) => {
-      const localPath = await service.path(args.slug);
-      return ok(await buildReviewUpdateFlow({ slug: args.slug, localPath, focus: args.focus }));
+    handler(async (args: { container?: string; module?: string; observation?: string }) => {
+      const targets = await service.resolveTargets(args.container, args.module);
+      return ok(await buildRemember(targets, args.observation));
     }),
   );
 
   server.registerTool(
-    "create",
+    "reflect",
     {
-      title: "Create a pack (flow)",
-      description: "Return instructions to author a brand-new pack (okf-new-from-repo + scaffold/publish policy).",
-      inputSchema: {
-        slug: z.string().optional().describe("Proposed slug for the new pack."),
-        sourceRepo: z.string().optional().describe("Repo the knowledge is drawn from, if any."),
-      },
+      title: "Reflect (flow)",
+      description: "Return discipline to turn memory/experience into insight and updates.",
+      inputSchema: { ...promptArgs, focus: z.string().optional().describe("Optional area to focus on.") },
     },
-    handler(async (args) => ok(await buildCreateFlow(args))),
+    handler(async (args: { container?: string; module?: string; focus?: string }) => {
+      const targets = await service.resolveTargets(args.container, args.module);
+      return ok(await buildReflect(targets, args.focus));
+    }),
   );
 }
