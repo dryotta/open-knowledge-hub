@@ -1,10 +1,12 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, resolve, isAbsolute } from "node:path";
 import { readdir, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { parse as parseYaml } from "yaml";
 import { provision, type EvalBackend } from "./provision.js";
 import { loadRegistry, requireContainer } from "../src/registry/registry.js";
-import type { RunRecord } from "./run-state.js";
+import { recordRun, resolveRun, forgetRun, type RunRecord } from "./run-state.js";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
@@ -15,6 +17,39 @@ const SIDE_EFFECT_ASSERTIONS = ["okf-valid.ts", "memory-append.ts", "git-committ
 function shellQuote(value: string): string {
   if (process.platform === "win32") return `'${value.replace(/'/g, "''")}'`;
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/** True when an arg is a filesystem path (old explicit form) rather than a scenario name. */
+function looksLikePath(arg: string): boolean {
+  return isAbsolute(arg) || /[\\/]/.test(arg) || existsSync(arg);
+}
+
+/** Launch an interactive Copilot session; resolves with the child exit code. */
+function spawnInteractive(inv: EnterInvocation): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn(inv.command, inv.args, {
+      cwd: inv.cwd,
+      env: { ...process.env, ...inv.env },
+      stdio: "inherit",
+      shell: false,
+    });
+    child.on("close", (code) => resolve(code ?? 0));
+    child.on("error", (err) => {
+      console.error(`failed to launch ${inv.command}: ${(err as Error).message}`);
+      resolve(1);
+    });
+  });
+}
+
+/** Run + print the objective side-effect checks; returns process exit code. */
+async function reportChecks(root: string, name: string): Promise<number> {
+  const results = await runChecks(root, name);
+  let ok = true;
+  for (const r of results) {
+    console.log(`${r.pass ? "PASS" : "FAIL"} ${r.name} — ${r.reason}`);
+    if (!r.pass) ok = false;
+  }
+  return ok ? 0 : 1;
 }
 
 export interface ScenarioTest {
@@ -139,35 +174,58 @@ export async function main(argv: string[]): Promise<number> {
       backend: bi >= 0 ? (rest[bi + 1] as EvalBackend) : undefined,
       model: mi >= 0 ? rest[mi + 1] : undefined,
     });
+    await recordRun({
+      scenario: res.scenario,
+      root: res.root,
+      workspace: res.workspace,
+      copilotHome: res.copilotHome,
+      backend: res.backend,
+      createdAt: new Date().toISOString(),
+    });
     console.log(`Root      : ${res.root}`);
     console.log(`Workspace : ${res.workspace}`);
-    console.log(`\nRun:\n${res.command}`);
+    console.log(`\nEnter an interactive session (no paths needed):\n  npm run eval:setup -- enter`);
+    console.log(`\nOr run headless:\n${res.command}`);
     console.log("\nExpected-outcome checklist:");
     for (const c of res.checklist) console.log(`  - ${c}`);
-    console.log(`\nAfter running, verify side-effects:\n  npm run eval:setup -- check ${res.root} --scenario ${name}`);
-    console.log(`Clean up:\n  npm run eval:setup -- clean ${res.root}`);
+    console.log(`\nAfter running, verify side-effects:\n  npm run eval:setup -- check`);
+    console.log(`Clean up:\n  npm run eval:setup -- clean`);
     return 0;
   }
+  if (cmd === "enter") {
+    const mi = rest.indexOf("--model");
+    const model = mi >= 0 ? rest[mi + 1] : undefined;
+    const scenario = rest.find((a, i) => !a.startsWith("--") && rest[i - 1] !== "--model");
+    const rec = await resolveRun(scenario);
+    const inv = buildEnterInvocation(rec, model);
+    console.log(`Entering ${rec.scenario}\n  COPILOT_HOME: ${rec.copilotHome}\n  cwd: ${rec.workspace}\n`);
+    return spawnInteractive(inv);
+  }
   if (cmd === "check") {
-    const root = rest[0];
     const si = rest.indexOf("--scenario");
-    const name = si >= 0 ? rest[si + 1] : undefined;
-    if (!root || !name) throw new Error("usage: okh-eval check <root> --scenario <name>");
-    const results = await runChecks(root, name);
-    let ok = true;
-    for (const r of results) {
-      console.log(`${r.pass ? "PASS" : "FAIL"} ${r.name} — ${r.reason}`);
-      if (!r.pass) ok = false;
+    if (si >= 0) {
+      // Backward-compatible explicit form: check <root> --scenario <name>
+      const root = rest[0];
+      const name = rest[si + 1];
+      if (!root || !name) throw new Error("usage: okh-eval check <root> --scenario <name>   (or: check [scenario])");
+      return await reportChecks(root, name);
     }
-    return ok ? 0 : 1;
+    // State-resolved form: check [scenario]  (no scenario => most-recent run)
+    const scenario = rest.find((a) => !a.startsWith("--"));
+    const rec = await resolveRun(scenario);
+    return await reportChecks(rec.root, rec.scenario);
   }
   if (cmd === "clean") {
-    if (!rest[0]) throw new Error("usage: okh-eval clean <root|workspace>");
-    await clean(rest[0]);
+    const arg = rest[0];
+    const root = arg && looksLikePath(arg)
+      ? arg.replace(/[\\/]workspace$/, "")
+      : (await resolveRun(arg)).root;
+    await clean(root);
+    await forgetRun(root);
     console.log("cleaned");
     return 0;
   }
-  throw new Error(`unknown command: ${cmd ?? "(none)"} — use list | setup | check | clean`);
+  throw new Error(`unknown command: ${cmd ?? "(none)"} — use list | setup | enter | check | clean`);
 }
 
 const invokedDirectly = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
