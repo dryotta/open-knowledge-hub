@@ -165,9 +165,12 @@ distinct label so `inspect` can communicate that file sync is handled by the OS.
 
 Hybrid, selected per container via `okh.yaml`'s `sync`:
 
-- **`auto` (default):** `sync` performs `pull` → stage all changes → `commit`
-  (message from the caller, or an OKH-generated default) → `push`. Suited to a
-  personal hub with frequent small writes (e.g. `remember`).
+- **`auto` (default):** `sync` stages all changes → `commit` (message from the
+  caller, or an OKH-generated default) → `pull --ff-only` to integrate remote
+  history → `push`. Committing before the fast-forward pull preserves local work;
+  if local and remote have genuinely diverged, `sync` fails with `GIT_ERROR` and
+  asks the user to resolve manually rather than attempting an automatic merge.
+  Suited to a personal hub with frequent small writes (e.g. `remember`).
 - **`pr`:** the v1 pull-request flow — create a change branch `okh/<name>/<topic>`,
   commit, push, and open a PR via `gh` (never a direct push to the default
   branch). Suited to collaborative knowledge containers.
