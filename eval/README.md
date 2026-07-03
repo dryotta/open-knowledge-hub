@@ -3,10 +3,11 @@
 Exercises the real OKH MCP server **inside GitHub Copilot CLI** against real
 fixture containers. Design: `docs/superpowers/specs/2026-07-02-okh-e2e-copilot-cli-design.md`.
 
-Two modes, one set of scenarios (`eval/scenarios/*/test.yaml`):
+Two modes, one set of scenarios (`scenarios/*/test.yaml`):
 - **Automated** — promptfoo drives a custom Copilot-CLI provider, applies
-  deterministic `javascript` assertions + an `llm-rubric` judge, and reports.
-- **Manual** — provision a ready workspace and run Copilot CLI by hand.
+  deterministic `javascript` assertions + a **Copilot-CLI judge**, and reports (this doc).
+- **Manual & exploratory** — run cases by hand and inspect results yourself:
+  see **[MANUAL-TESTING.md](./MANUAL-TESTING.md)**.
 
 ## Prerequisites
 
@@ -36,16 +37,10 @@ with a different `config.model`. Default is a single pinned model.
 **Optimization (goal 2):** run the suite against two OKH builds (git branches),
 then compare in `npm run eval:view`.
 
-## Manual mode
+## Manual & exploratory testing
 
-```bash
-npm run build
-npm run eval:setup -- list
-npm run eval:setup -- setup ask-grounded            # prints workspace + copilot command + checklist
-# ...run the printed `copilot -p ...` command, eyeball the answer against the checklist...
-npm run eval:setup -- check <root> --scenario ask-grounded   # re-run objective file/git checks
-npm run eval:setup -- clean <root>
-```
+Run the scenarios by hand in Copilot CLI, inspect results yourself, and do
+free-form exploration — see **[MANUAL-TESTING.md](./MANUAL-TESTING.md)**.
 
 ## Caveats
 
