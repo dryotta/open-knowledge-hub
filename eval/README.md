@@ -11,9 +11,10 @@ Two modes, one set of scenarios (`eval/scenarios/*/test.yaml`):
 ## Prerequisites
 
 - `npm run build` — the harness launches the **built** server (`dist/index.js`).
-- `copilot` installed and a token in the environment: `GH_TOKEN` or
-  `COPILOT_GITHUB_TOKEN` (required — the harness uses an isolated `COPILOT_HOME`,
-  so the interactive login is not visible).
+- `copilot` installed and authenticated. The harness uses an isolated
+  `COPILOT_HOME`, so auth must come from the OS credential store (verified to work
+  on Windows) or a token env var (`COPILOT_GITHUB_TOKEN`/`GH_TOKEN`) on hosts that
+  store the login inside `COPILOT_HOME`.
 - For the judge: an independent grader model key (e.g. `OPENAI_API_KEY`), or edit
   `defaultTest.options.provider` in `promptfooconfig.yaml`.
 - `promptfoo` (installed as a devDependency).
@@ -28,8 +29,8 @@ npm run eval:view             # open the report + side-by-side comparison UI
 ```
 
 **Model matrix (goal 1):** add more `providers` entries in `promptfooconfig.yaml`,
-each pointing at `file://eval/provider/copilotProvider.ts` with a different
-`config.model`. Default is a single pinned model.
+each pointing at `file://provider/copilotProvider.ts` (paths are relative to `eval/`)
+with a different `config.model`. Default is a single pinned model.
 
 **Optimization (goal 2):** run the suite against two OKH builds (git branches),
 then compare in `npm run eval:view`.
@@ -52,19 +53,29 @@ npm run eval:setup -- clean <root>
   (and promptfoo `repeat`). **Do not** gate required CI on this suite.
 - Response caching is disabled for the agent provider (`--no-cache`).
 
-## Verify-points (confirm against your Copilot CLI version)
+## Verified against a live run (Windows, Copilot CLI + this OKH build)
 
-- `mcp-config.json` key is `mcpServers` (see `provision.ts`) — check `copilot help config`.
-- The `--model` flag name and accepted model IDs — check `copilot help` / `/model`.
-- The transcript/session-log rendering of MCP tool calls — `extractToolCalls`
-  (in `copilot.ts`) is best-effort; adjust its patterns if your version differs.
-- **promptfoo `file://` path resolution:** the config uses repo-root-relative
-  paths (e.g. `file://eval/provider/copilotProvider.ts`, and `file://eval/assertions/…`
-  inside scenario `test.yaml`), assuming promptfoo resolves them relative to the
-  cwd when run as `promptfoo eval -c eval/promptfooconfig.yaml` from the repo root.
-  If your promptfoo resolves `file://` relative to the **config file's directory**
-  instead, drop the `eval/` prefix (e.g. `file://provider/…`, `file://scenarios/*/test.yaml`,
-  and `file://../assertions/…` in scenarios). Confirm on the first live run.
-- Whether promptfoo TS providers/assertions load `../src/*.ts` imports via its
-  Node loader; if not, build and point imports at `dist/*.js` (see the plan's
-  "Note on imports from `src/`").
+Confirmed end-to-end by running real `copilot -p` against provisioned containers
+(manual mode) and checking side-effects:
+
+- `mcp-config.json` uses the `mcpServers` key; Copilot loads the OKH server from the
+  isolated `COPILOT_HOME` and authenticates via the OS credential store.
+- `--model claude-sonnet-4.5` is accepted.
+- MCP tool calls render as `● <Title> (MCP: open-knowledge-hub) · args`;
+  `extractToolCalls` (in `copilot.ts`) parses that form.
+- promptfoo resolves `file://` paths **relative to the config file's dir (`eval/`)** —
+  hence `file://provider/…`, `file://assertions/…`, `file://scenarios/*/test.yaml`.
+  `promptfoo validate -c eval/promptfooconfig.yaml` passes.
+- Validated flows: `remember` (append-only memory entry), `learn`+`sync` (OKF change
+  committed & pushed to the git-auto origin), and `learn` correctly REJECTING
+  out-of-scope input (no write).
+
+## Open items / notes
+
+- The `llm-rubric` judge needs a grader-model key (e.g. `OPENAI_API_KEY`) or a
+  reachable `defaultTest.options.provider`; without it the automated run fails at
+  grading. The deterministic assertions and the manual `check` need no judge.
+- On Windows, promptfoo may print a libuv assertion on process exit **after** a
+  successful run — cosmetic.
+- If a future Copilot CLI version renders tool calls differently, adjust
+  `extractToolCalls`; if it stores the login inside `COPILOT_HOME`, set a token env var.
