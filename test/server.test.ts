@@ -9,6 +9,7 @@ import { buildServer } from "../src/server/index.js";
 import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
+import { savePreferences } from "../src/preferences.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
 class FakeGh {
@@ -90,6 +91,22 @@ describe("MCP server surface", () => {
 
     const bad = await client.callTool({ name: "onboard", arguments: { wakePhrase: "no spaces" } });
     expect(isErrorResult(bad)).toBe(true);
+  });
+
+  it("announces the configured wake phrase in server instructions", async () => {
+    const home = await makeTempDir();
+    cleanups.push(home);
+    const paths = makePaths(home);
+    await savePreferences(paths, { wakePhrase: "brain" });
+    const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
+    const server = buildServer({ service, paths });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "0" });
+    servers.push(server);
+    clients.push(client);
+    await Promise.all([client.connect(clientT), server.connect(serverT)]);
+    const instructions = client.getInstructions();
+    expect(instructions).toContain("brain");
   });
 
   it("declares accurate tool annotations", async () => {
