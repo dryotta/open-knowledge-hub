@@ -127,7 +127,12 @@ export interface CheckResult {
 export async function runChecks(root: string, name: string): Promise<CheckResult[]> {
   const scenario = await loadScenario(name);
   const okhHome = join(root, "okh-home");
-  const reg = await loadRegistry({ home: okhHome, containersDir: join(okhHome, "containers"), registryFile: join(okhHome, "registry.json") });
+  const reg = await loadRegistry({
+    home: okhHome,
+    containersDir: join(okhHome, "containers"),
+    registryFile: join(okhHome, "registry.json"),
+    preferencesFile: join(okhHome, "preferences.json"),
+  });
   const entry = requireContainer(reg, scenario.vars.container);
   const fixtureRaw = scenario.vars.fixture;
   const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);

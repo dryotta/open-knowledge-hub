@@ -51,7 +51,12 @@ export async function provision(input: ProvisionInput): Promise<Provisioned> {
   await mkdir(copilotHome, { recursive: true });
   await mkdir(workspace, { recursive: true });
 
-  const paths: OkhPaths = { home: okhHome, containersDir, registryFile: join(okhHome, "registry.json") };
+  const paths: OkhPaths = {
+    home: okhHome,
+    containersDir,
+    registryFile: join(okhHome, "registry.json"),
+    preferencesFile: join(okhHome, "preferences.json"),
+  };
   let entry: ContainerEntry;
   let originPath: string | undefined;
 
