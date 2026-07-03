@@ -56,6 +56,10 @@ function promptText(res: Awaited<ReturnType<Client["getPrompt"]>>): string {
   return res.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("\n");
 }
 
+function structuredOf(res: Awaited<ReturnType<Client["callTool"]>>): Record<string, unknown> {
+  return ("structuredContent" in res ? (res as { structuredContent?: Record<string, unknown> }).structuredContent : undefined) ?? {};
+}
+
 function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
   return "isError" in res && res.isError === true;
 }
@@ -75,13 +79,26 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
 
-    await client.callTool({ name: "add", arguments: { source: dir, name: "hub" } });
-    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge" } });
+    await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", create: true } });
     const res = await client.callTool({ name: "inspect", arguments: {} });
     expect(textOf(res)).toContain("hub");
 
     const mod = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(mod)).toContain("[knowledge]");
+  });
+
+  it("add previews (no changes) without create, and applies with create", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+
+    const preview = await client.callTool({ name: "add", arguments: { source: dir, name: "hub" } });
+    expect(textOf(preview)).toContain("Plan (no changes made)");
+    expect(structuredOf(preview).needsConfirmation).toBe(true);
+
+    const applied = await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
+    expect(textOf(applied)).toContain('Registered container "hub"');
   });
 
   it("rejects a module inspect request without a container", async () => {
@@ -150,8 +167,8 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
 
-    await client.callTool({ name: "add", arguments: { source: dir, name: "hub" } });
-    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge" } });
+    await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", create: true } });
     const res = await client.getPrompt({
       name: "ask",
       arguments: { container: "hub", question: "What is X?" },

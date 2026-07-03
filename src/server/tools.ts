@@ -2,6 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type {
+  AddContainerPlan,
+  AddModulePlan,
   ContainerService,
   InspectResult,
   SyncResult,
@@ -70,6 +72,25 @@ function formatInspect(r: InspectResult): string {
   return [head, ...items].join("\n");
 }
 
+function formatContainerPlan(plan: AddContainerPlan): string {
+  const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
+  if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.target}`);
+  if (plan.actions.includes("clone"))
+    lines.push(`- Clone ${plan.source} → ${plan.target} (initialize a manifest if the repo has none)`);
+  if (plan.actions.includes("init-manifest")) lines.push(`- Initialize manifest: name=${plan.name} sync=${plan.sync}`);
+  lines.push(`- Register container "${plan.name}" [${plan.backend}]`);
+  return lines.join("\n");
+}
+
+function formatModulePlan(plan: AddModulePlan): string {
+  const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
+  if (plan.actions.includes("init-manifest")) lines.push(`- Initialize manifest for "${plan.container}"`);
+  if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.moduleRoot}`);
+  if (plan.actions.includes("scaffold")) lines.push(`- Scaffold ${plan.type} module content`);
+  lines.push(`- Add ${plan.type} module "${plan.path}" to "${plan.container}"`);
+  return lines.join("\n");
+}
+
 function formatSync(rs: SyncResult[]): string {
   if (rs.length === 0) return "Nothing to sync.";
   return rs
@@ -111,7 +132,8 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       title: "Add a container or module",
       description:
         "Add a container with { source, name?, sync?, backend? } (source is a git URL or a local/OneDrive path), " +
-        "or add a module with { container, path, type, config? }.",
+        "or add a module with { container, path, type, config? }. " +
+        "By default add returns a plan and makes no changes; show it to the user, get confirmation, then re-call with create:true.",
       inputSchema: {
         source: z.string().optional().describe("Git URL or local/OneDrive path (new container)."),
         name: z.string().optional().describe("Container name (defaults to the source basename)."),
@@ -121,6 +143,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         path: z.string().optional().describe("Module folder path within the container (new module)."),
         type: moduleTypeSchema.optional().describe("Module type (new module)."),
         config: z.record(z.string(), z.unknown()).optional().describe("Optional module config."),
+        create: z.boolean().optional().describe("Apply the change. Omit to preview a plan (no changes)."),
       },
     },
     handler(
@@ -133,6 +156,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         path?: string;
         type?: "knowledge" | "skills" | "tools" | "memory" | "project";
         config?: Record<string, unknown>;
+        create?: boolean;
       }) => {
         const hasSource = args.source !== undefined;
         const hasModuleFields =
@@ -142,13 +166,17 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         }
         if (args.source !== undefined) {
           if (isBlank(args.source)) return fail("source cannot be empty.");
-          const entry = await service.addContainer({
+          const outcome = await service.addContainer({
             source: args.source,
             ...(args.name ? { name: args.name } : {}),
             ...(args.sync ? { sync: args.sync } : {}),
             ...(args.backend ? { backend: args.backend } : {}),
+            ...(args.create ? { create: true } : {}),
           });
-          return ok(`Registered container "${entry.name}" [${entry.backend}] at ${entry.localPath}.`, { entry });
+          if (outcome.kind === "plan") {
+            return ok(formatContainerPlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
+          }
+          return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
         }
         if (hasModuleFields) {
           if (args.container === undefined || args.path === undefined || args.type === undefined) {
@@ -156,13 +184,17 @@ export function registerTools(server: McpServer, service: ContainerService): voi
           }
           if (isBlank(args.container)) return fail("container cannot be empty.");
           if (isBlank(args.path)) return fail("path cannot be empty.");
-          const { entry, moduleRoot } = await service.addModule({
+          const outcome = await service.addModule({
             container: args.container,
             path: args.path,
             type: args.type,
             ...(args.config ? { config: args.config } : {}),
+            ...(args.create ? { create: true } : {}),
           });
-          return ok(`Added ${entry.type} module "${entry.path}" to "${args.container}" at ${moduleRoot}.`, { entry });
+          if (outcome.kind === "plan") {
+            return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
+          }
+          return ok(`Added ${outcome.entry.type} module "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`, { entry: outcome.entry });
         }
         return fail("add requires either { source } (new container) or { container, path, type } (new module).");
       },
