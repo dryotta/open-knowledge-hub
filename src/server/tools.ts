@@ -29,6 +29,10 @@ function handler<A>(fn: (args: A) => Promise<CallToolResult>) {
   };
 }
 
+function isBlank(value: string): boolean {
+  return value.trim().length === 0;
+}
+
 function formatInspect(r: InspectResult): string {
   if (r.kind === "containers") {
     if (r.containers.length === 0) return "No containers registered. Use add { source } to register one.";
@@ -91,6 +95,11 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       },
     },
     handler(async (args: { container?: string; module?: string }) => {
+      if (args.module !== undefined && args.container === undefined) {
+        return fail("Inspecting a module requires { container, module }.");
+      }
+      if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
+      if (args.module !== undefined && isBlank(args.module)) return fail("module cannot be empty.");
       const result = await service.inspect(args.container, args.module);
       return ok(formatInspect(result), { result });
     }),
@@ -125,7 +134,14 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         type?: "knowledge" | "skills" | "tools" | "memory" | "project";
         config?: Record<string, unknown>;
       }) => {
-        if (args.source) {
+        const hasSource = args.source !== undefined;
+        const hasModuleFields =
+          args.container !== undefined || args.path !== undefined || args.type !== undefined || args.config !== undefined;
+        if (hasSource && hasModuleFields) {
+          return fail("add requires either { source } or { container, path, type }, not both.");
+        }
+        if (args.source !== undefined) {
+          if (isBlank(args.source)) return fail("source cannot be empty.");
           const entry = await service.addContainer({
             source: args.source,
             ...(args.name ? { name: args.name } : {}),
@@ -134,10 +150,12 @@ export function registerTools(server: McpServer, service: ContainerService): voi
           });
           return ok(`Registered container "${entry.name}" [${entry.backend}] at ${entry.localPath}.`, { entry });
         }
-        if (args.container || args.path || args.type) {
-          if (!args.container || !args.path || !args.type) {
+        if (hasModuleFields) {
+          if (args.container === undefined || args.path === undefined || args.type === undefined) {
             return fail("Adding a module requires { container, path, type }.");
           }
+          if (isBlank(args.container)) return fail("container cannot be empty.");
+          if (isBlank(args.path)) return fail("path cannot be empty.");
           const { entry, moduleRoot } = await service.addModule({
             container: args.container,
             path: args.path,
@@ -163,6 +181,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       },
     },
     handler(async (args: { container?: string; message?: string }) => {
+      if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
       const results = await service.sync(args.container, args.message);
       return ok(formatSync(results), { results });
     }),
