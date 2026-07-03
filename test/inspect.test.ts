@@ -23,8 +23,8 @@ describe("status", () => {
   it("reports git status + modules for a git container", async () => {
     const origin = await makeOrigin();
     const { service } = await setup();
-    await service.addContainer({ source: origin, name: "hub" });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    await service.addContainer({ source: origin, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
     const st = await service.status("hub");
     expect(st.backend).toBe("git");
     expect(st.manifestValid).toBe(true);
@@ -35,7 +35,7 @@ describe("status", () => {
   it("omits git status for a local container", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
-    await service.addContainer({ source: dir, name: "notes" });
+    await service.addContainer({ source: dir, name: "notes", create: true });
     const st = await service.status("notes");
     expect(st.git).toBeUndefined();
     expect(st.sync).toBe("auto");
@@ -46,7 +46,7 @@ describe("validate", () => {
   it("flags a missing module folder and a knowledge module without index.md", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
-    await service.addContainer({ source: dir, name: "hub" });
+    await service.addContainer({ source: dir, name: "hub", create: true });
     // Manifest references modules whose folders/files don't exist.
     await writeManifest(dir, "name: hub\nmodules:\n  - path: gone\n    type: skills\n  - path: kb\n    type: knowledge\n");
     const res = await service.validate("hub");
@@ -58,8 +58,8 @@ describe("validate", () => {
   it("passes for a well-formed container", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
-    await service.addContainer({ source: dir, name: "hub" });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
     expect((await service.validate("hub")).ok).toBe(true);
   });
 });
@@ -68,7 +68,7 @@ describe("inspect", () => {
   it("lists containers with no args", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
-    await service.addContainer({ source: dir, name: "hub" });
+    await service.addContainer({ source: dir, name: "hub", create: true });
     const res = await service.inspect();
     expect(res.kind).toBe("containers");
     if (res.kind === "containers") expect(res.containers[0]!.name).toBe("hub");
@@ -77,8 +77,8 @@ describe("inspect", () => {
   it("returns container status with a container arg, and module items with both", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
-    await service.addContainer({ source: dir, name: "hub" });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
     const c = await service.inspect("hub");
     expect(c.kind).toBe("container");
     const m = await service.inspect("hub", "kb");
@@ -89,7 +89,7 @@ describe("inspect", () => {
   it("throws NOT_FOUND for an unknown module", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
-    await service.addContainer({ source: dir, name: "hub" });
+    await service.addContainer({ source: dir, name: "hub", create: true });
     await expect(service.inspect("hub", "ghost")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
