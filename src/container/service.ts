@@ -96,7 +96,29 @@ export interface AddContainerInput {
   sync?: "auto" | "pr";
   /** Only meaningful for path sources; distinguishes onedrive from plain local. */
   backend?: "local" | "onedrive";
+  /** Authorize side-effectful creation/initialization. Default false => preview only. */
+  create?: boolean;
 }
+
+export type ContainerAction = "create-folder" | "clone" | "init-manifest";
+
+export interface AddContainerPlan {
+  kind: "container";
+  actions: ContainerAction[];
+  name: string;
+  backend: Backend;
+  source: string;
+  /** Absolute local path to create / clone into / register. */
+  target: string;
+  /** Effective sync mode used when initializing a new manifest. */
+  sync: SyncMode;
+  /** Whether the caller explicitly set sync (controls overriding an existing manifest). */
+  syncExplicit: boolean;
+}
+
+export type AddContainerOutcome =
+  | { kind: "plan"; plan: AddContainerPlan }
+  | { kind: "applied"; entry: ContainerEntry };
 
 export interface AddModuleInput {
   container: string;
@@ -503,61 +525,83 @@ export class ContainerService {
     return result!;
   }
 
-  addContainer(input: AddContainerInput): Promise<ContainerEntry> {
+  addContainer(input: AddContainerInput): Promise<AddContainerOutcome> {
     return this.mutex.run(() => this.addContainerImpl(input));
   }
 
-  private async addContainerImpl(input: AddContainerInput): Promise<ContainerEntry> {
+  /** Resolve what `add` would do, with no side effects. Throws on doomed actions. */
+  async planAddContainer(input: AddContainerInput): Promise<AddContainerPlan> {
     const isGit = looksLikeGitUrl(input.source);
     const name = validate(containerNameSchema, input.name ?? deriveName(input.source), "name");
     const reg = await loadRegistry(this.paths);
     if (findContainer(reg, name)) {
       throw new OkhError("ALREADY_EXISTS", `A container named "${name}" already exists.`);
     }
-
-    let backend: Backend;
-    let localPath: string;
-    let origin: string | undefined;
-
+    const sync: SyncMode = input.sync ?? "auto";
+    const syncExplicit = input.sync !== undefined;
     if (isGit) {
       validate(repoUrlSchema, input.source, "source");
-      backend = "git";
-      origin = input.source;
-      const clone = containerCloneDir(this.paths, name);
-      await this.assertDirAvailable(clone);
+      return {
+        kind: "container",
+        actions: ["clone"],
+        name,
+        backend: "git",
+        source: input.source,
+        target: containerCloneDir(this.paths, name),
+        sync,
+        syncExplicit,
+      };
+    }
+    const backend: Backend = input.backend ?? "local";
+    const target = resolve(input.source);
+    const s = await stat(target).catch(() => null);
+    if (s && !s.isDirectory()) {
+      throw new OkhError("INVALID_ARGUMENT", `Path "${input.source}" exists but is not a directory.`);
+    }
+    const exists = !!s;
+    const actions: ContainerAction[] = [];
+    if (!exists) actions.push("create-folder");
+    if (!exists || !(await manifestExists(target))) actions.push("init-manifest");
+    return { kind: "container", actions, name, backend, source: input.source, target, sync, syncExplicit };
+  }
+
+  private async addContainerImpl(input: AddContainerInput): Promise<AddContainerOutcome> {
+    const plan = await this.planAddContainer(input);
+    if (plan.actions.length > 0 && !input.create) return { kind: "plan", plan };
+    return { kind: "applied", entry: await this.applyAddContainer(plan) };
+  }
+
+  private async applyAddContainer(plan: AddContainerPlan): Promise<ContainerEntry> {
+    const reg = await loadRegistry(this.paths);
+    if (findContainer(reg, plan.name)) {
+      throw new OkhError("ALREADY_EXISTS", `A container named "${plan.name}" already exists.`);
+    }
+    let origin: string | undefined;
+    if (plan.backend === "git") {
+      origin = plan.source;
+      await this.assertDirAvailable(plan.target);
       await mkdir(this.paths.containersDir, { recursive: true });
       try {
-        await this.git.clone(input.source, clone);
+        await this.git.clone(plan.source, plan.target);
       } catch (err) {
-        await rm(clone, { recursive: true, force: true });
+        await rm(plan.target, { recursive: true, force: true });
         throw err;
       }
-      localPath = clone;
     } else {
-      backend = input.backend ?? "local";
-      const abs = resolve(input.source);
-      const s = await stat(abs).catch(() => null);
-      if (!s || !s.isDirectory()) {
-        throw new OkhError("NOT_FOUND", `Path "${input.source}" is not an existing directory.`);
-      }
-      localPath = abs;
+      await mkdir(plan.target, { recursive: true });
     }
-
-    if (!(await manifestExists(localPath))) {
-      await saveContainerManifest(localPath, {
-        ...scaffoldManifest(name),
-        sync: input.sync ?? "auto",
-      });
-    } else if (input.sync) {
-      const m = await loadContainerManifest(localPath);
-      await saveContainerManifest(localPath, { ...m, sync: input.sync });
+    if (!(await manifestExists(plan.target))) {
+      await saveContainerManifest(plan.target, { ...scaffoldManifest(plan.name), sync: plan.sync });
+    } else if (plan.syncExplicit) {
+      const m = await loadContainerManifest(plan.target);
+      await saveContainerManifest(plan.target, { ...m, sync: plan.sync });
     }
 
     const entry: ContainerEntry = {
-      name,
-      backend,
+      name: plan.name,
+      backend: plan.backend,
       ...(origin ? { origin } : {}),
-      localPath,
+      localPath: plan.target,
       addedAt: new Date().toISOString(),
     };
     await saveRegistry(this.paths, withContainerAdded(reg, entry));
