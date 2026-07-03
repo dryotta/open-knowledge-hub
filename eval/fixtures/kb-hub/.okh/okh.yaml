@@ -1,0 +1,11 @@
+name: kb-hub
+sync: auto
+modules:
+  - path: kb
+    type: knowledge
+  - path: skills
+    type: skills
+  - path: tools
+    type: tools
+  - path: mem
+    type: memory

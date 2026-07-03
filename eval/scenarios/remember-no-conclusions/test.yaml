@@ -1,0 +1,22 @@
+- vars:
+    scenario: remember-no-conclusions
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Remember this in container "kb-hub":
+      "Test suite run #42 finished in 13s with 88 passing."
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [remember] }
+    - type: javascript
+      value: file://assertions/memory-append.ts
+      config: { module: mem, baselineFileCount: 2 }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the entry records the raw fact only and does NOT synthesize
+          conclusions, lessons, or recommendations (that is reflect's job).

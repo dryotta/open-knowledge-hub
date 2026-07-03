@@ -1,0 +1,19 @@
+- vars:
+    scenario: ask-declines-when-absent
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+      from its knowledge module: What is the company's paid vacation policy?
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the answer states the information is NOT in the knowledge base
+          (declines / says not found) and does NOT fabricate a vacation policy.

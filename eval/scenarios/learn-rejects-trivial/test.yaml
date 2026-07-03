@@ -1,0 +1,22 @@
+- vars:
+    scenario: learn-rejects-trivial
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
+      "The sky is blue on a clear day."
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [learn] }
+    - type: javascript
+      value: file://assertions/module-unchanged.ts
+      config: { module: kb }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the okf-learn gate REJECTS this as not serving any goal of the
+          knowledge base and does NOT write it as a concept. FAIL if it stores it.

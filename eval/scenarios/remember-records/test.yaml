@@ -1,0 +1,22 @@
+- vars:
+    scenario: remember-records
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Remember this observation in container
+      "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [remember] }
+    - type: javascript
+      value: file://assertions/memory-append.ts
+      config: { module: mem, baselineFileCount: 2 }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff a factual, timestamped memory entry capturing the 500s incident
+          was recorded.
