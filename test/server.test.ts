@@ -31,17 +31,18 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-async function connect(): Promise<{ client: Client }> {
+async function connect(): Promise<{ client: Client; home: string }> {
   const home = await makeTempDir();
   cleanups.push(home);
-  const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
-  const server = buildServer({ service });
+  const paths = makePaths(home);
+  const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
+  const server = buildServer({ service, paths });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   servers.push(server);
   clients.push(client);
   await Promise.all([client.connect(clientT), server.connect(serverT)]);
-  return { client };
+  return { client, home };
 }
 
 function textOf(res: Awaited<ReturnType<Client["callTool"]>>): string {
@@ -65,13 +66,30 @@ function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 8 tools and 5 prompts", async () => {
+  it("exposes exactly the 9 tools and 5 prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["add", "ask", "context", "inspect", "learn", "reflect", "remember", "sync"]);
+    expect(tools).toEqual(["add", "ask", "context", "inspect", "learn", "onboard", "reflect", "remember", "sync"]);
 
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
     expect(prompts).toEqual(["ask", "context", "learn", "reflect", "remember"]);
+  });
+
+  it("onboard returns guidance without args and persists a wake phrase with args", async () => {
+    const { client, home } = await connect();
+
+    const guide = await client.callTool({ name: "onboard", arguments: {} });
+    expect(textOf(guide)).toContain("OKH: onboard");
+    expect(textOf(guide)).toContain("hub"); // default wake phrase
+
+    const set = await client.callTool({ name: "onboard", arguments: { wakePhrase: "brain" } });
+    expect(textOf(set)).toContain('Wake phrase set to "brain"');
+
+    const { loadPreferences } = await import("../src/preferences.js");
+    expect((await loadPreferences(makePaths(home))).wakePhrase).toBe("brain");
+
+    const bad = await client.callTool({ name: "onboard", arguments: { wakePhrase: "no spaces" } });
+    expect(isErrorResult(bad)).toBe(true);
   });
 
   it("declares accurate tool annotations", async () => {

@@ -23,7 +23,7 @@ export function buildServer(options: BuildServerOptions = {}): McpServer {
         "(commit+push, or pull requests).",
     },
   );
-  registerTools(server, service);
+  registerTools(server, service, paths);
   registerPrompts(server, service);
   return server;
 }

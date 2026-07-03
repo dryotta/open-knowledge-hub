@@ -8,9 +8,11 @@ import type {
   InspectResult,
   SyncResult,
 } from "../container/service.js";
+import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
 import { moduleTypeSchema } from "../modules/types.js";
-import { buildAsk, buildContext, buildLearn, buildReflect, buildRemember } from "../prompts/index.js";
+import { loadPreferences, savePreferences, wakePhraseSchema } from "../preferences.js";
+import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
   return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
@@ -103,7 +105,7 @@ function formatSync(rs: SyncResult[]): string {
 }
 
 /** Register the three operational tools + five cognitive prompt-tools. */
-export function registerTools(server: McpServer, service: ContainerService): void {
+export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
     {
@@ -219,6 +221,38 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
       const results = await service.sync(args.container, args.message);
       return ok(formatSync(results), { results });
+    }),
+  );
+
+  server.registerTool(
+    "onboard",
+    {
+      title: "Onboard / set wake phrase",
+      description:
+        "Guide first-run setup (explain OKH, inspect, create the first hub). With { wakePhrase } persist a custom phrase to address the hub.",
+      inputSchema: {
+        wakePhrase: z
+          .string()
+          .optional()
+          .describe("Set a custom wake phrase (1-32 chars: a letter then letters, digits or dashes)."),
+      },
+      annotations: { openWorldHint: false },
+    },
+    handler(async (args: { wakePhrase?: string }) => {
+      if (args.wakePhrase !== undefined) {
+        const parsed = wakePhraseSchema.safeParse(args.wakePhrase);
+        if (!parsed.success) {
+          return fail(`Invalid wake phrase: ${parsed.error.issues[0]?.message ?? "invalid"}`, "Use 1-32 chars: a letter then letters, digits or dashes.");
+        }
+        await savePreferences(paths, { wakePhrase: parsed.data });
+        return ok(
+          `Wake phrase set to "${parsed.data}". It takes effect on the next client restart; you can already say "${parsed.data}, …".`,
+          { wakePhrase: parsed.data },
+        );
+      }
+      const { wakePhrase } = await loadPreferences(paths);
+      const targets = await service.resolveTargets();
+      return ok(await buildOnboard(targets, wakePhrase));
     }),
   );
 
