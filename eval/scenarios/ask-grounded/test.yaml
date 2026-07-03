@@ -1,0 +1,20 @@
+- vars:
+    scenario: ask-grounded
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+      from its knowledge module: How does auth work?
+  assert:
+    - type: javascript
+      value: file://eval/assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://eval/assertions/transcript.ts
+      config: { mustContain: ["auth"], mustNotContain: [] }
+    - type: llm-rubric
+      value: |
+        PASS iff the answer is grounded ONLY in the container's knowledge module
+        (the Auth concept), reflects token-based auth, and invents nothing.
+      threshold: 0.8

@@ -1,0 +1,15 @@
+description: OKH E2E in GitHub Copilot CLI
+providers:
+  - id: file://eval/provider/copilotProvider.ts
+    label: copilot-default
+    config:
+      # Verify the exact model id via `copilot help` / `/model`.
+      model: claude-sonnet-4.5
+      timeoutMs: 300000
+defaultTest:
+  options:
+    # Independent judge model for llm-rubric (requires OPENAI_API_KEY, or swap provider).
+    provider: openai:gpt-5
+prompts:
+  - "{{prompt}}"
+tests: file://eval/scenarios/*/test.yaml

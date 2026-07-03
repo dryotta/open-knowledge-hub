@@ -1,0 +1,17 @@
+- vars:
+    scenario: reflect-insights
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Reflect on the memory module of
+      container "kb-hub" and produce lessons and proposed updates.
+  assert:
+    - type: javascript
+      value: file://eval/assertions/tools-called.ts
+      config: { expect: [reflect] }
+    - type: llm-rubric
+      value: |
+        PASS iff the reflection cites the existing memory entry (the 2026-01-01
+        auth spike), draws a high-signal lesson, and proposes concrete updates.
+      threshold: 0.8

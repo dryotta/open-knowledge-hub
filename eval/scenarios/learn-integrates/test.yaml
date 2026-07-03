@@ -1,0 +1,24 @@
+- vars:
+    scenario: learn-integrates
+    backend: git-auto
+    container: git-hub
+    fixture: fixtures/git-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Learn the following into container
+      "git-hub" and persist it: "Session tokens are signed with RS256 and the
+      public keys are rotated weekly." Then sync.
+  assert:
+    - type: javascript
+      value: file://eval/assertions/tools-called.ts
+      config: { expect: [learn, sync] }
+    - type: javascript
+      value: file://eval/assertions/okf-valid.ts
+      config: { module: kb, requireCitations: false }
+    - type: javascript
+      value: file://eval/assertions/git-committed.ts
+      config: { minCommits: 2 }
+    - type: llm-rubric
+      value: |
+        PASS iff a valid OKF knowledge concept capturing the RS256/weekly-rotation
+        fact was added and persisted via sync.
+      threshold: 0.8

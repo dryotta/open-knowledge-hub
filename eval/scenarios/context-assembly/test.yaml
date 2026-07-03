@@ -1,0 +1,18 @@
+- vars:
+    scenario: context-assembly
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Assemble the context needed to
+      implement a secure login feature in container "kb-hub".
+  assert:
+    - type: javascript
+      value: file://eval/assertions/tools-called.ts
+      config: { expect: [context] }
+    - type: llm-rubric
+      value: |
+        PASS iff the response assembles a compact, relevant working set that
+        includes the Auth knowledge concept and cites module paths, omits clearly
+        irrelevant items, and notes any gaps. FAIL if it dumps everything or misses auth.
+      threshold: 0.8
