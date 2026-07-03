@@ -13,8 +13,10 @@
     - type: javascript
       value: file://assertions/memory-append.ts
       config: { module: mem, baselineFileCount: 2 }
-    - type: llm-rubric
-      value: |
-        PASS iff the entry records the raw fact only and does NOT synthesize
-        conclusions, lessons, or recommendations (that is reflect's job).
-      threshold: 0.8
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the entry records the raw fact only and does NOT synthesize
+          conclusions, lessons, or recommendations (that is reflect's job).

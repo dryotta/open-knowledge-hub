@@ -15,8 +15,9 @@ Two modes, one set of scenarios (`eval/scenarios/*/test.yaml`):
   `COPILOT_HOME`, so auth must come from the OS credential store (verified to work
   on Windows) or a token env var (`COPILOT_GITHUB_TOKEN`/`GH_TOKEN`) on hosts that
   store the login inside `COPILOT_HOME`.
-- For the judge: an independent grader model key (e.g. `OPENAI_API_KEY`), or edit
-  `defaultTest.options.provider` in `promptfooconfig.yaml`.
+- The **judge also runs through GitHub Copilot CLI** (`eval/assertions/judge.ts`) —
+  **no external model/API key**. Each scenario makes ~2 Copilot calls: one for the
+  agent (via the provider) and one for the judge (grades the transcript vs the rubric).
 - `promptfoo` (installed as a devDependency).
 
 ## Automated eval
@@ -48,8 +49,9 @@ npm run eval:setup -- clean <root>
 
 ## Caveats
 
-- Each run consumes premium requests (1 agent call + 1 judge call per test × models).
-- Copilot CLI temperature isn't directly controllable — rely on rubric thresholds
+- Each run consumes premium requests: **2 Copilot CLI calls per test × models** — one
+  for the agent, one for the judge. Keep the default matrix small.
+- Copilot CLI temperature isn't directly controllable — rely on judge thresholds
   (and promptfoo `repeat`). **Do not** gate required CI on this suite.
 - Response caching is disabled for the agent provider (`--no-cache`).
 
@@ -72,9 +74,9 @@ Confirmed end-to-end by running real `copilot -p` against provisioned containers
 
 ## Open items / notes
 
-- The `llm-rubric` judge needs a grader-model key (e.g. `OPENAI_API_KEY`) or a
-  reachable `defaultTest.options.provider`; without it the automated run fails at
-  grading. The deterministic assertions and the manual `check` need no judge.
+- The judge runs through Copilot CLI (`eval/assertions/judge.ts` → `runJudge`), so the
+  automated run needs **no external grader key** — only Copilot CLI auth. Deterministic
+  assertions and the manual `check` need no judge at all.
 - On Windows, promptfoo may print a libuv assertion on process exit **after** a
   successful run — cosmetic.
 - If a future Copilot CLI version renders tool calls differently, adjust

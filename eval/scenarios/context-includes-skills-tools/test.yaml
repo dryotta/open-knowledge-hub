@@ -13,10 +13,12 @@
     - type: javascript
       value: file://assertions/transcript.ts
       config: { mustContain: ["debugging", "csv2json"], mustNotContain: [] }
-    - type: llm-rubric
-      value: |
-        PASS iff the working set selects the Debugging skill and the csv2json tool
-        by path, notes one line on why each matters, and does NOT pad the set with
-        the unrelated Auth knowledge concept. FAIL if it returns only knowledge,
-        dumps whole files, or omits either the skill or the tool.
-      threshold: 0.8
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the working set selects the Debugging skill and the csv2json tool
+          by path, notes one line on why each matters, and does NOT pad the set with
+          the unrelated Auth knowledge concept. FAIL if it returns only knowledge,
+          dumps whole files, or omits either the skill or the tool.

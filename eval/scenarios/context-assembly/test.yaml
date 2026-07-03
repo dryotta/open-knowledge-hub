@@ -10,9 +10,11 @@
     - type: javascript
       value: file://assertions/tools-called.ts
       config: { expect: [context] }
-    - type: llm-rubric
-      value: |
-        PASS iff the response assembles a compact, relevant working set that
-        includes the Auth knowledge concept and cites module paths, omits clearly
-        irrelevant items, and notes any gaps. FAIL if it dumps everything or misses auth.
-      threshold: 0.8
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the response assembles a compact, relevant working set that
+          includes the Auth knowledge concept and cites module paths, omits clearly
+          irrelevant items, and notes any gaps. FAIL if it dumps everything or misses auth.

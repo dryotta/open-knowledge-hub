@@ -14,7 +14,6 @@ describe("promptfooconfig.yaml", () => {
     const providerId: string = cfg.providers[0].id;
     expect(providerId.startsWith("file://")).toBe(true);
     expect(await exists(join(EVAL, providerId.replace("file://", "")))).toBe(true);
-    expect(cfg.defaultTest.options.provider).toBeTruthy();
     expect(String(cfg.tests)).toContain("scenarios");
   });
 });
@@ -43,8 +42,12 @@ describe("scenarios", () => {
       const test = list[0];
       expect(typeof test.vars.prompt).toBe("string");
       expect(await exists(join(EVAL, String(test.vars.fixture)))).toBe(true);
-      const rubrics = test.assert.filter((a: { type: string }) => a.type === "llm-rubric");
-      expect(rubrics.length).toBeGreaterThanOrEqual(1);
+      // each scenario grades via the Copilot-CLI judge assertion with a rubric
+      const judges = test.assert.filter(
+        (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
+      );
+      expect(judges.length).toBeGreaterThanOrEqual(1);
+      expect(typeof judges[0].config?.rubric).toBe("string");
       for (const a of test.assert) {
         if (a.type === "javascript") {
           expect(await exists(join(EVAL, String(a.value).replace("file://", "")))).toBe(true);
