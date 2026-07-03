@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { rm, mkdir, writeFile, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import CopilotProvider from "../eval/provider/copilotProvider.ts";
+import CopilotProvider from "../eval/provider/copilotProvider.js";
 import { makeTempDir } from "../test/helpers.js";
 import type { CopilotRunner } from "../eval/copilot.js";
 
