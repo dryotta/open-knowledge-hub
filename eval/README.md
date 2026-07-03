@@ -54,6 +54,18 @@ free-form exploration. Provisioned runs are recorded, so follow-up commands are
 path-free: `setup <scenario>` → `enter` → `check` → `clean`. See
 **[MANUAL-TESTING.md](./MANUAL-TESTING.md)**.
 
+## Onboarding scenarios
+
+`provision` (per-scenario var) selects the starting state:
+- `registered` (default) — the fixture is pre-registered as a container.
+- `empty` — empty registry + empty workspace (agent adds from scratch or a URL).
+- `unregistered-local` — the fixture sits in the workspace, unregistered, for the
+  agent to `add`.
+
+`onboard-add-github` clones the **private** repo `dryotta/okh-eval-hub`. Cloning a
+private repo relies on the machine's `gh` credential helper (macOS/Windows) or a
+token with `repo` read (Linux/CI). No push/sync is exercised.
+
 ## Caveats
 
 - Each run consumes premium requests: **2 Copilot CLI calls per test × models** — one

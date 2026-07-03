@@ -35,22 +35,23 @@ modules:
 
 ## MCP surface
 
-**Tools (8)**
+**Tools (9)**
 
 | Tool | Args | Purpose |
 | --- | --- | --- |
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
-| `add` | `source,name?,sync?,backend?` or `container,path,type,config?` | Register a container, or add a module. |
+| `add` | `source,name?,sync?,backend?` or `container,path,type,config?` | Register a container, or add a module. Returns a plan unless `create:true`. |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
+| `onboard` | `wakePhrase?` | Guide first-run setup; persist a custom wake phrase. |
 | `ask` | `container?`, `module?`, `question?` | Discipline to answer from the hub's modules. |
 | `context` | `container?`, `task?` | Discipline to assemble a task's working set. |
 | `learn` | `container?`, `module?`, `knowledge?` | Discipline to integrate knowledge (OKF). |
 | `remember` | `container?`, `module?`, `observation?` | Discipline to record into memory. |
 | `reflect` | `container?`, `module?`, `focus?` | Discipline to turn memory into insight. |
 
-**Prompts (5):** `ask`, `context`, `learn`, `remember`, `reflect` — same behaviour as
-the matching prompt-tools, for clients with a prompt UI. Container/module are
-optional filters: omit both to span the whole hub.
+**Prompts (6):** `ask`, `context`, `learn`, `remember`, `reflect`, `onboard` — same
+behaviour as the matching prompt-tools, for clients with a prompt UI.
+Container/module are optional filters: omit both to span the whole hub.
 
 **Resources:** none.
 
@@ -83,6 +84,13 @@ Run straight from GitHub via `npx` (builds on first launch):
 - `learn { container: "my-hub", knowledge: "..." }` → your agent folds it in, then
   `sync { container: "my-hub" }` commits+pushes (or opens a PR).
 - `ask { container: "my-hub", question: "..." }` → cited answer from the modules.
+
+## Wake phrase
+
+Address the hub by its wake phrase (default `hub`), e.g. `hub, remember that …`.
+Change it with the `onboard` tool; OKH stores it in `$OKH_HOME/preferences.json`
+and announces it in the server instructions. See **[USAGE.md](./USAGE.md)** for
+recommended prompts.
 
 ## Development
 
