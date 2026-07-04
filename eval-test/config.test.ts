@@ -20,7 +20,7 @@ describe("promptfooconfig.yaml", () => {
 });
 
 describe("scenarios", () => {
-  it("all 15 scenarios parse, reference existing fixtures + assertion files, and have judge criteria", async () => {
+  it("all 16 scenarios parse, reference existing fixtures + assertion files, and have judge criteria", async () => {
     const dirs = (await readdir(join(EVAL, "scenarios"), { withFileTypes: true }))
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
@@ -37,6 +37,7 @@ describe("scenarios", () => {
       "onboard-add-github",
       "onboard-create-local",
       "onboard-explains",
+      "onboard-phrase",
       "onboard-wake-phrase",
       "reflect-insights",
       "remember-no-conclusions",

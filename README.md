@@ -78,6 +78,9 @@ Run straight from GitHub via `npx` (builds on first launch):
 }
 ```
 
+See **[SETUP.md](./SETUP.md)** for the full walkthrough, including first-run
+onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me up."**
+
 ## Typical usage
 
 - `add { source: "https://github.com/me/my-hub.git", name: "my-hub" }` → clone + register.
@@ -95,16 +98,8 @@ instructions. See **[USAGE.md](./USAGE.md)** for recommended prompts.
 
 ## Development
 
-```bash
-npm install       # install deps
-npm run build     # compile to dist/
-npm test          # vitest (uses real git against temp repos)
-npm run typecheck # type-only check
-npm run dev       # run from source via tsx
-```
-
-Layering: `exec` → `git`/`gh` → `registry` → `container` (manifest + service) →
-`modules` (loaders) → `prompts` → `server`.
+See **[DEVELOPMENT.md](./DEVELOPMENT.md)** for build, test, and eval commands, and
+how to run a local development build in your MCP client.
 
 ## License
 
