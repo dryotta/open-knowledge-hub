@@ -1,10 +1,7 @@
 - description: context-assembly
   vars:
     prompt: file://scenarios/context/assembly/prompt.md
-    scenario: context-assembly
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

@@ -1,13 +1,7 @@
 - description: ask-multi-container
   vars:
     prompt: file://scenarios/ask/multi-container/prompt.md
-    scenario: ask-multi-container
-    backend: local
-    provision: registered
-    container: kb-hub
-    fixture: fixtures/kb-hub
-    container2: git-hub
-    fixture2: fixtures/git-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

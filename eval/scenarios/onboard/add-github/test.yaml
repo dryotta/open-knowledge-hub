@@ -1,11 +1,7 @@
 - description: onboard-add-github
   vars:
     prompt: file://scenarios/onboard/add-github/prompt.md
-    scenario: onboard-add-github
-    backend: local
-    provision: empty
-    container: okh-eval-hub
-    fixture: fixtures/plain-notes
+    env: empty
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

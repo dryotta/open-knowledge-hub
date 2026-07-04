@@ -1,11 +1,7 @@
 - description: onboard-add-existing-folder
   vars:
     prompt: file://scenarios/onboard/add-existing-folder/prompt.md
-    scenario: onboard-add-existing-folder
-    backend: local
-    provision: unregistered-local
-    container: notes
-    fixture: fixtures/plain-notes
+    env: empty
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

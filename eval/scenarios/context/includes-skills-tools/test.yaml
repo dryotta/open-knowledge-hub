@@ -1,17 +1,14 @@
 - description: context-includes-skills-tools
   vars:
     prompt: file://scenarios/context/includes-skills-tools/prompt.md
-    scenario: context-includes-skills-tools
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts
       config: { expect: [context] }
     - type: javascript
       value: file://assertions/transcript.ts
-      config: { mustContain: ["debugging", "csv2json"], mustNotContain: [] }
+      config: { mustContain: ["debugging", "csv2json"] }
     - type: javascript
       value: file://assertions/judge.ts
       config:

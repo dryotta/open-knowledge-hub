@@ -1,10 +1,7 @@
 - description: remember-no-conclusions
   vars:
     prompt: file://scenarios/remember/no-conclusions/prompt.md
-    scenario: remember-no-conclusions
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

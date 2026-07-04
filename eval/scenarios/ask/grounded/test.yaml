@@ -1,17 +1,14 @@
 - description: ask-grounded
   vars:
     prompt: file://scenarios/ask/grounded/prompt.md
-    scenario: ask-grounded
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts
       config: { expect: [ask] }
     - type: javascript
       value: file://assertions/transcript.ts
-      config: { mustContain: ["token"], mustNotContain: [] }
+      config: { mustContain: ["token"] }
     - type: javascript
       value: file://assertions/judge.ts
       config:

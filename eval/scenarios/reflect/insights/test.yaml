@@ -1,10 +1,7 @@
 - description: reflect-insights
   vars:
     prompt: file://scenarios/reflect/insights/prompt.md
-    scenario: reflect-insights
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

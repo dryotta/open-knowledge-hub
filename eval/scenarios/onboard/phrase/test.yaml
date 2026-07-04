@@ -1,11 +1,7 @@
 - description: onboard-phrase
   vars:
     prompt: file://scenarios/onboard/phrase/prompt.md
-    scenario: onboard-phrase
-    backend: local
-    provision: empty
-    container: hub
-    fixture: fixtures/plain-notes
+    env: empty
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

@@ -1,11 +1,7 @@
 - description: onboard-explains
   vars:
     prompt: file://scenarios/onboard/explains/prompt.md
-    scenario: onboard-explains
-    backend: local
-    provision: empty
-    container: hub
-    fixture: fixtures/plain-notes
+    env: empty
   assert:
     - type: javascript
       value: file://assertions/judge.ts

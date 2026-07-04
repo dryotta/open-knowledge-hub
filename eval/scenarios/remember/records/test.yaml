@@ -1,10 +1,7 @@
 - description: remember-records
   vars:
     prompt: file://scenarios/remember/records/prompt.md
-    scenario: remember-records
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+    env: local-and-git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

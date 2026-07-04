@@ -1,11 +1,7 @@
 - description: onboard-create-local
   vars:
     prompt: file://scenarios/onboard/create-local/prompt.md
-    scenario: onboard-create-local
-    backend: local
-    provision: empty
-    container: my-notes
-    fixture: fixtures/plain-notes
+    env: empty
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

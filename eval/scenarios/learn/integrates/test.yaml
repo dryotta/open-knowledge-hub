@@ -1,10 +1,7 @@
 - description: learn-integrates
   vars:
     prompt: file://scenarios/learn/integrates/prompt.md
-    scenario: learn-integrates
-    backend: git-auto
-    container: git-hub
-    fixture: fixtures/git-hub
+    env: git
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts
