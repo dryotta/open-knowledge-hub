@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
-import type { EvalBackend } from "./provision.js";
+import type { EvalBackend } from "./environments.js";
 
 export interface RunRecord {
   scenario: string;
