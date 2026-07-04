@@ -3,7 +3,7 @@ import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
 import judge from "../eval/assertions/judge.js";
-import type { CriterionResult } from "../eval/judge.js";
+import type { Criterion, CriterionResult } from "../eval/judge.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -64,6 +64,42 @@ describe("judge assertion", () => {
     expect(r.reason).toMatch(/DISAGREE/);
   });
 
+  it("fails when a checked required criterion is UNRELIABLE even if deterministic check passes", async () => {
+    const okhHome = await okhHomeWith("my-notes");
+    let checkReads = 0;
+    const check = new Proxy({ kind: "container" as const, name: "my-notes" }, {
+      get(target, prop, receiver) {
+        if (prop === "kind" || prop === "name") checkReads++;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const r = await judge(
+      "t",
+      {
+        config: { criteria: [{ id: "created", text: "created", check }] },
+        providerResponse: { metadata: { okhHome, toolCalls: [] } },
+      },
+      fakeJudge([{ id: "created", verdict: "UNRELIABLE", passVotes: 1, failVotes: 0, validVotes: 1 }]),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/unreliable/);
+    expect(checkReads).toBe(0);
+  });
+
+  it("fails and flags a reverse judge/deterministic disagreement", async () => {
+    const okhHome = await okhHomeWith("my-notes");
+    const r = await judge(
+      "t",
+      {
+        config: { criteria: [{ id: "created", text: "created", check: { kind: "container", name: "my-notes" } }] },
+        providerResponse: { metadata: { okhHome, toolCalls: [] } },
+      },
+      fakeJudge([{ id: "created", verdict: "FAIL" }]),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/DISAGREE/);
+  });
+
   it("fails when a required criterion is UNRELIABLE", async () => {
     const r = await judge(
       "t",
@@ -104,6 +140,29 @@ describe("judge assertion", () => {
     );
     expect(r.pass).toBe(true);
     expect(r.reason).toMatch(/borderline/);
+  });
+
+  it("forwards k and graderModel config to runJudgeCriteria", async () => {
+    let recordedOpts: { k?: number; model?: string } | undefined;
+    const r = await judge(
+      "t",
+      {
+        config: { k: 5, graderModel: "m", criteria: [{ id: "x", text: "x" }] },
+        providerResponse: { metadata: {} },
+      },
+      {
+        runJudgeCriteria: async (
+          _criteria: Criterion[],
+          _transcript: string,
+          opts: { k?: number; model?: string } = {},
+        ): Promise<CriterionResult[]> => {
+          recordedOpts = opts;
+          return [{ id: "x", verdict: "PASS", passVotes: 3, failVotes: 0, validVotes: 3, evidence: [] }];
+        },
+      },
+    );
+    expect(r.pass).toBe(true);
+    expect(recordedOpts).toEqual({ k: 5, model: "m" });
   });
 
   it("fails fast when no criteria are provided", async () => {

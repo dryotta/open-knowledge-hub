@@ -108,14 +108,16 @@ export default async function judge(
     let effective: "PASS" | "FAIL" | "UNRELIABLE" = r.verdict;
     let note = "";
     if (c.check) {
-      const det = await evaluateCheck(c.check, checkCtx);
       if (r.verdict === "UNRELIABLE") {
         note = "✗unreliable";
-      } else if ((r.verdict === "PASS") !== det.pass) {
-        note = `✗DISAGREE judge=${r.verdict} det=${det.pass ? "PASS" : "FAIL"} (${det.reason})`;
-        effective = "FAIL";
       } else {
-        note = "✓det";
+        const det = await evaluateCheck(c.check, checkCtx);
+        if ((r.verdict === "PASS") !== det.pass) {
+          note = `✗DISAGREE judge=${r.verdict} det=${det.pass ? "PASS" : "FAIL"} (${det.reason})`;
+          effective = "FAIL";
+        } else {
+          note = "✓det";
+        }
       }
     }
     if (required && effective !== "PASS") pass = false;

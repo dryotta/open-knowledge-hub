@@ -19,6 +19,8 @@ export interface CriterionResult {
   evidence: string[];
 }
 
+const MAX_JUDGE_K = 11;
+
 /**
  * Return the last top-level balanced JSON object in `text` that parses to an
  * object, or null. Tolerant of surrounding prose / code fences / reasoning that a
@@ -143,7 +145,7 @@ ${transcript}`;
 
 function resolveK(optsK?: number): number {
   const raw = optsK ?? Number(process.env.OKH_JUDGE_K);
-  return Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), 11) : 3;
+  return Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), MAX_JUDGE_K) : 3;
 }
 
 /**
