@@ -5,8 +5,9 @@
     container: okh-eval-hub
     fixture: fixtures/plain-notes
     prompt: |
-      hub, add the knowledge hub at https://github.com/dryotta/okh-eval-hub.git and
-      tell me what's in it. Preview the clone first; assume I confirm.
+      hub, add the knowledge hub at https://github.com/dryotta/okh-eval-hub.git
+      (preview the clone first; assume I confirm), then inspect its kb module and
+      summarize the actual knowledge it contains.
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts
