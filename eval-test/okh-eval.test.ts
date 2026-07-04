@@ -15,10 +15,10 @@ describe("okh-eval manual CLI", () => {
     expect((await listScenarios()).length).toBe(16);
   });
 
-  it("loads a scenario's prompt + backend", async () => {
+  it("loads a scenario's prompt (from prompt.md) + backend", async () => {
     const s = await loadScenario("ask-grounded");
     expect(s.vars.backend).toBe("local");
-    expect(s.vars.prompt).toMatch(/auth/i);
+    expect(s.prompt).toMatch(/auth/i);
   });
 
   it("setup provisions a workspace and prints a copilot command", async () => {
