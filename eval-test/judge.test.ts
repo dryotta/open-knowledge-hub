@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
-import { extractJson, runJudge } from "../eval/judge.js";
+import { extractJson, extractJsonArray, runJudge } from "../eval/judge.js";
 import { buildArtifactsSection } from "../eval/assertions/judge.js";
 import type { CopilotRunner } from "../eval/copilot.js";
 
@@ -17,6 +17,20 @@ describe("extractJson", () => {
   });
   it("returns null when no JSON object is present", () => {
     expect(extractJson("no json here")).toBeNull();
+  });
+});
+
+describe("extractJsonArray", () => {
+  it("extracts the last balanced JSON array amid prose/fences", () => {
+    const a = extractJsonArray('thinking [1] then [{"id":"x","verdict":"PASS"}]');
+    expect(a).toEqual([{ id: "x", verdict: "PASS" }]);
+  });
+  it("handles brackets inside strings", () => {
+    const a = extractJsonArray('[{"id":"a","evidence":"has ] bracket","verdict":"FAIL"}]');
+    expect(a).toEqual([{ id: "a", evidence: "has ] bracket", verdict: "FAIL" }]);
+  });
+  it("returns null when no JSON array is present", () => {
+    expect(extractJsonArray("no array here {\"id\":1}")).toBeNull();
   });
 });
 

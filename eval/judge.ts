@@ -52,6 +52,47 @@ export function extractJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * Return the last top-level balanced JSON array in `text` that parses to an
+ * array, or null. Mirrors extractJson but for the judge's per-criterion output.
+ */
+export function extractJsonArray(text: string): unknown[] | null {
+  const arrs: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "[") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "]" && depth > 0) {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        arrs.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  for (let k = arrs.length - 1; k >= 0; k--) {
+    try {
+      const a = JSON.parse(arrs[k]!);
+      if (Array.isArray(a)) return a;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
 function gradePrompt(rubric: string, transcript: string): string {
   return `You are grading an AI agent's run against a rubric. Judge ONLY from the transcript.
 Respond with ONLY a JSON object (no prose, no code fences):
