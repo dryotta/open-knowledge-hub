@@ -4,7 +4,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { parse as parseYaml } from "yaml";
-import { provision, type EvalBackend } from "./provision.js";
+import { provisionEnvironment, environments, isEnvName, type EnvName, type EvalBackend } from "./environments.js";
 import { loadRegistry, findContainer } from "../src/registry/registry.js";
 import { recordRun, resolveRun, forgetRun, type RunRecord } from "./run-state.js";
 
@@ -64,14 +64,10 @@ export interface ScenarioTest {
   /** Prompt text, loaded from scenarios/<name>/prompt.md (the promptfoo prompt for this scenario). */
   prompt: string;
   vars: {
-    scenario: string;
-    backend: EvalBackend;
-    container: string;
-    fixture: string;
-    provision?: "registered" | "empty" | "unregistered-local";
-    /** Optional second local container for multi-container scenarios. */
-    container2?: string;
-    fixture2?: string;
+    /** Prompt file ref (file://scenarios/<verb>/<case>/prompt.md). */
+    prompt: string;
+    /** Named environment (see eval/environments.ts). */
+    env: EnvName;
   };
   assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }>;
 }
@@ -118,26 +114,15 @@ export interface SetupResult {
 
 export async function setupScenario(
   name: string,
-  opts: { model?: string; backend?: EvalBackend } = {},
+  opts: { model?: string } = {},
 ): Promise<SetupResult> {
   const scenario = await loadScenario(name);
-  const backend = opts.backend ?? scenario.vars.backend;
-  const fixtureRaw = scenario.vars.fixture;
-  const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
-  const fixture2Dir = scenario.vars.fixture2
-    ? (isAbsolute(scenario.vars.fixture2) ? scenario.vars.fixture2 : resolve(EVAL_ROOT, scenario.vars.fixture2))
-    : undefined;
-  const prov = await provision({
-    scenario: name,
-    backend,
-    container: scenario.vars.container,
-    fixtureDir,
-    repoRoot: REPO_ROOT,
-    ...(scenario.vars.provision ? { mode: scenario.vars.provision } : {}),
-    ...(scenario.vars.container2 && fixture2Dir
-      ? { additional: [{ name: scenario.vars.container2, fixtureDir: fixture2Dir }] }
-      : {}),
-  });
+  const env = scenario.vars.env;
+  if (!isEnvName(env)) throw new Error(`scenario "${name}": invalid env "${String(env)}"`);
+  const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label: name });
+  const envDef = environments[env];
+  const hub0 = envDef.hubs[0];
+  const backend: EvalBackend = ("backend" in hub0 && hub0.backend) || "local";
   const model = opts.model ?? "claude-sonnet-4.5";
   const prompt = shellQuote(scenario.prompt.trim());
   const command =
@@ -180,9 +165,9 @@ export async function runChecks(root: string, name: string): Promise<CheckResult
     registryFile: join(okhHome, "registry.json"),
     preferencesFile: join(okhHome, "preferences.json"),
   });
-  const entry = findContainer(reg, scenario.vars.container);
-  const fixtureRaw = scenario.vars.fixture;
-  const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
+  const primary = environments[scenario.vars.env].hubs[0];
+  const entry = findContainer(reg, primary.container);
+  const fixtureDir = isAbsolute(primary.fixture) ? primary.fixture : resolve(EVAL_ROOT, primary.fixture);
   const metadata = {
     workspace: root,
     okhHome,
@@ -219,11 +204,9 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (cmd === "setup") {
     const name = rest[0];
-    if (!name) throw new Error("usage: okh-eval setup <scenario> [--backend local|git-auto] [--model M]");
-    const bi = rest.indexOf("--backend");
+    if (!name) throw new Error("usage: okh-eval setup <scenario> [--model M]");
     const mi = rest.indexOf("--model");
     const res = await setupScenario(name, {
-      backend: bi >= 0 ? (rest[bi + 1] as EvalBackend) : undefined,
       model: mi >= 0 ? rest[mi + 1] : undefined,
     });
     await recordRun({

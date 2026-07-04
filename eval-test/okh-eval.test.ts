@@ -15,9 +15,9 @@ describe("okh-eval manual CLI", () => {
     expect((await listScenarios()).length).toBe(16);
   });
 
-  it("loads a scenario's prompt (from prompt.md) + backend", async () => {
+  it("loads a scenario's prompt (from prompt.md) + env", async () => {
     const s = await loadScenario("ask-grounded");
-    expect(s.vars.backend).toBe("local");
+    expect(s.vars.env).toBe("local-and-git");
     expect(s.prompt).toMatch(/auth/i);
   });
 
