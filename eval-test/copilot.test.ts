@@ -11,8 +11,12 @@ describe("extractToolCalls", () => {
     expect(extractToolCalls(transcript)).toEqual(["remember", "sync"]);
   });
   it("detects onboard from a real Copilot CLI MCP-call line", () => {
-    const transcript = '● Onboard / set wake phrase (MCP: open-knowledge-hub) · wakePhrase: "brain"';
+    const transcript = "● Onboard (guided setup) (MCP: open-knowledge-hub)";
     expect(extractToolCalls(transcript)).toEqual(["onboard"]);
+  });
+  it("detects config from a real Copilot CLI MCP-call line", () => {
+    const transcript = "● Config (view or change settings) (MCP: open-knowledge-hub) · set: {…}";
+    expect(extractToolCalls(transcript)).toEqual(["config"]);
   });
   it("detects a server-qualified tool call (fallback rendering)", () => {
     expect(extractToolCalls("Calling open-knowledge-hub__ask with {q}")).toEqual(["ask"]);

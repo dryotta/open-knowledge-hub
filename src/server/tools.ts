@@ -254,7 +254,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
   server.registerTool(
     "config",
     {
-      title: "View or change configuration",
+      title: "Config (view or change settings)",
       description:
         "View or change OKH configuration (stored in preferences.json). Call with no args to list current " +
         "settings; pass { set: { <key>: <value> } } to change one or more. Known keys: " +

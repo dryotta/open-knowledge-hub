@@ -140,6 +140,13 @@ describe("MCP server surface", () => {
     expect(byName.onboard!.openWorldHint).toBe(false);
   });
 
+  it("config tool title contains the word 'config' so its call is detectable in transcripts", async () => {
+    const { client } = await connect();
+    const tool = (await client.listTools()).tools.find((t) => t.name === "config");
+    const title = tool?.title ?? (tool?.annotations as { title?: string } | undefined)?.title ?? "";
+    expect(title).toMatch(/\bconfig\b/i);
+  });
+
   it("add -> inspect round-trips through the tool interface", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();
