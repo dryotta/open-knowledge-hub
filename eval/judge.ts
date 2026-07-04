@@ -3,12 +3,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnCopilot, type CopilotRunner } from "./copilot.js";
 
-export interface JudgeVerdict {
-  pass: boolean;
-  score: number;
-  reason: string;
-  raw: string;
+export interface Criterion {
+  id: string;
+  text: string;
+  required?: boolean;
+  check?: unknown; // opaque here; interpreted by the judge assertion via checks.ts
 }
+
+export interface CriterionResult {
+  id: string;
+  verdict: "PASS" | "FAIL" | "UNRELIABLE";
+  passVotes: number;
+  failVotes: number;
+  validVotes: number;
+  evidence: string[];
+}
+
+const MAX_JUDGE_K = 11;
 
 /**
  * Return the last top-level balanced JSON object in `text` that parses to an
@@ -52,28 +63,52 @@ export function extractJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
-function gradePrompt(rubric: string, transcript: string): string {
-  return `You are grading an AI agent's run against a rubric. Judge ONLY from the transcript.
-Respond with ONLY a JSON object (no prose, no code fences):
-{"pass": <true|false>, "score": <number between 0 and 1>, "reason": "<one short sentence>"}
-A score >= 0.8 means the run meets the rubric.
-
-RUBRIC:
-${rubric}
-
-AGENT TRANSCRIPT (what the agent did and said):
-${transcript}`;
+/**
+ * Return the last top-level balanced JSON array in `text` that parses to an
+ * array, or null. Mirrors extractJson but for the judge's per-criterion output.
+ */
+export function extractJsonArray(text: string): unknown[] | null {
+  const arrs: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "[") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "]" && depth > 0) {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        arrs.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  for (let k = arrs.length - 1; k >= 0; k--) {
+    try {
+      const a = JSON.parse(arrs[k]!);
+      if (Array.isArray(a)) return a;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
 }
 
-/**
- * Grade a transcript against a rubric using GitHub Copilot CLI as the judge
- * (no external model key). Runs `copilot -p` in an isolated, empty COPILOT_HOME.
- */
-export async function runJudge(
-  rubric: string,
-  transcript: string,
-  opts: { model?: string; timeoutMs?: number; runner?: CopilotRunner } = {},
-): Promise<JudgeVerdict> {
+/** Run one `copilot -p` grading call in an isolated, empty COPILOT_HOME; return raw stdout. */
+async function judgeOnce(
+  prompt: string,
+  opts: { model?: string; timeoutMs?: number; runner?: CopilotRunner },
+): Promise<string> {
   const runner = opts.runner ?? spawnCopilot;
   const root = await mkdtemp(join(tmpdir(), "okh-judge-"));
   const copilotHome = join(root, "copilot-home");
@@ -82,24 +117,89 @@ export async function runJudge(
   await mkdir(workspace, { recursive: true });
   try {
     const res = await runner({
-      prompt: gradePrompt(rubric, transcript),
+      prompt,
       model: opts.model ?? "claude-sonnet-4.5",
       copilotHome,
       cwd: workspace,
       timeoutMs: opts.timeoutMs ?? 180_000,
     });
-    const parsed = extractJson(res.transcript);
-    const score = parsed && typeof parsed.score === "number" ? parsed.score : NaN;
-    if (!parsed || Number.isNaN(score)) {
-      return { pass: false, score: 0, reason: "judge returned unparseable output", raw: res.transcript };
-    }
-    return {
-      pass: parsed.pass === true,
-      score,
-      reason: typeof parsed.reason === "string" ? parsed.reason : "",
-      raw: res.transcript,
-    };
+    return res.transcript;
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+function gradeCriteriaPrompt(criteria: Criterion[], transcript: string): string {
+  const list = criteria.map((c) => `- ${c.id}: ${c.text}`).join("\n");
+  return `You are grading an AI agent's run against a checklist of yes/no criteria. Judge ONLY from the transcript.
+Respond with ONLY a JSON array (no prose, no code fences), exactly one object per criterion:
+[{"id":"<criterion id>","verdict":"PASS"|"FAIL","evidence":"<short quote or reason>"}]
+Include every criterion id exactly once. "verdict" must be exactly "PASS" or "FAIL".
+
+CRITERIA:
+${list}
+
+AGENT TRANSCRIPT (what the agent did and said):
+${transcript}`;
+}
+
+function resolveK(optsK?: number): number {
+  const raw = optsK ?? Number(process.env.OKH_JUDGE_K);
+  return Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), MAX_JUDGE_K) : 3;
+}
+
+/**
+ * Grade a transcript against binary criteria using k independent Copilot-CLI judge
+ * runs, then majority-vote each criterion. A run whose output doesn't parse (or
+ * omits a criterion) does not vote for it. A criterion with fewer than ceil(k/2)
+ * valid votes, or a tie, is UNRELIABLE. k defaults to opts.k, else OKH_JUDGE_K, else 3.
+ */
+export async function runJudgeCriteria(
+  criteria: Criterion[],
+  transcript: string,
+  opts: { k?: number; model?: string; timeoutMs?: number; runner?: CopilotRunner } = {},
+): Promise<CriterionResult[]> {
+  const k = resolveK(opts.k);
+  const prompt = gradeCriteriaPrompt(criteria, transcript);
+  const votes: Array<Map<string, "PASS" | "FAIL">> = [];
+  const evidence = new Map<string, string[]>();
+  for (let i = 0; i < k; i++) {
+    const raw = await judgeOnce(prompt, opts);
+    const arr = extractJsonArray(raw);
+    if (!arr) continue;
+    const m = new Map<string, "PASS" | "FAIL">();
+    for (const item of arr) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const rec = item as Record<string, unknown>;
+        const id = rec.id;
+        const v = rec.verdict;
+        if (typeof id === "string" && (v === "PASS" || v === "FAIL")) {
+          m.set(id, v);
+          if (typeof rec.evidence === "string" && rec.evidence) {
+            const l = evidence.get(id) ?? [];
+            l.push(rec.evidence);
+            evidence.set(id, l);
+          }
+        }
+      }
+    }
+    votes.push(m);
+  }
+  const need = Math.ceil(k / 2);
+  return criteria.map((c) => {
+    let passVotes = 0;
+    let failVotes = 0;
+    for (const m of votes) {
+      const v = m.get(c.id);
+      if (v === "PASS") passVotes++;
+      else if (v === "FAIL") failVotes++;
+    }
+    const validVotes = passVotes + failVotes;
+    let verdict: CriterionResult["verdict"];
+    if (validVotes < need) verdict = "UNRELIABLE";
+    else if (passVotes > failVotes) verdict = "PASS";
+    else if (failVotes > passVotes) verdict = "FAIL";
+    else verdict = "UNRELIABLE";
+    return { id: c.id, verdict, passVotes, failVotes, validVotes, evidence: evidence.get(c.id) ?? [] };
+  });
 }

@@ -13,7 +13,8 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the answer states the information is NOT in the knowledge base
-          (declines / says not found) and does NOT fabricate a vacation policy.
+        criteria:
+          - id: declines
+            text: The answer states the vacation-policy information is NOT in the knowledge base (declines / says not found).
+          - id: no-fabrication
+            text: The answer does NOT fabricate a vacation policy.

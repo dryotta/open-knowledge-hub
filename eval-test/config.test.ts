@@ -20,7 +20,7 @@ describe("promptfooconfig.yaml", () => {
 });
 
 describe("scenarios", () => {
-  it("all 15 scenarios parse, reference existing fixtures + assertion files, and have a rubric", async () => {
+  it("all 15 scenarios parse, reference existing fixtures + assertion files, and have judge criteria", async () => {
     const dirs = (await readdir(join(EVAL, "scenarios"), { withFileTypes: true }))
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
@@ -49,12 +49,18 @@ describe("scenarios", () => {
       const test = list[0];
       expect(typeof test.vars.prompt).toBe("string");
       expect(await exists(join(EVAL, String(test.vars.fixture)))).toBe(true);
-      // each scenario grades via the Copilot-CLI judge assertion with a rubric
+      // each scenario grades via the Copilot-CLI judge assertion with criteria
       const judges = test.assert.filter(
         (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
       );
       expect(judges.length).toBeGreaterThanOrEqual(1);
-      expect(typeof judges[0].config?.rubric).toBe("string");
+      const criteria = judges[0].config?.criteria;
+      expect(Array.isArray(criteria)).toBe(true);
+      expect(criteria.length).toBeGreaterThanOrEqual(1);
+      for (const c of criteria) {
+        expect(typeof c.id).toBe("string");
+        expect(typeof c.text).toBe("string");
+      }
       for (const a of test.assert) {
         if (a.type === "javascript") {
           expect(await exists(join(EVAL, String(a.value).replace("file://", "")))).toBe(true);

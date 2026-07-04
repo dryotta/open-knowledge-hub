@@ -20,7 +20,9 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff a valid OKF knowledge concept capturing the RS256/weekly-rotation
-          fact was added and persisted via sync.
+        criteria:
+          - id: integrated-rs256
+            text: A valid OKF knowledge concept capturing the RS256 / weekly-key-rotation fact was added to the knowledge module.
+          - id: persisted-via-sync
+            text: The change was persisted via the sync tool.
+            check: { kind: tool, name: sync }

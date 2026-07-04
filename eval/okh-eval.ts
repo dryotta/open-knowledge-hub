@@ -127,9 +127,7 @@ export async function setupScenario(
       ? `Set-Location -LiteralPath ${shellQuote(prov.workspace)}; $env:COPILOT_HOME=${shellQuote(prov.copilotHome)}; copilot -p ${prompt} --allow-all --model ${model}`
       : `COPILOT_HOME=${shellQuote(prov.copilotHome)} copilot -p ${prompt} --allow-all --model ${model}   # run from cwd: ${prov.workspace}`;
   const checklist = scenario.assert.map((a) =>
-    a.type === "llm-rubric"
-      ? `rubric: ${String(a.value).trim().split("\n")[0]} …`
-      : `${a.type} ${a.value ? a.value.replace("file://assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
+    `${a.type} ${a.value ? a.value.replace("file://assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
   );
   return { root: prov.root, workspace: prov.workspace, copilotHome: prov.copilotHome, containerPath: prov.containerPath, scenario: name, backend, command, checklist };
 }

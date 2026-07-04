@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { runJudge } from "../judge.js";
+import { runJudgeCriteria, type Criterion } from "../judge.js";
+import { evaluateCheck, type Check } from "./checks.js";
 import { readTree, diffTrees } from "./_compare.js";
 
 interface ArtifactsConfig {
@@ -9,16 +10,6 @@ interface ArtifactsConfig {
   maxCharsPerFile?: number;
   /** Max number of files to include. Default 10. */
   maxFiles?: number;
-}
-
-interface Ctx {
-  config?: {
-    rubric?: string;
-    threshold?: number;
-    graderModel?: string;
-    artifacts?: ArtifactsConfig;
-  };
-  providerResponse?: { metadata?: { containerPath?: string; fixtureDir?: string } };
 }
 
 const DEFAULT_MAX_CHARS = 4000;
@@ -58,26 +49,81 @@ export async function buildArtifactsSection(
   return `\n\nON-DISK ARTIFACTS AFTER THE RUN (authoritative — the exact files the agent wrote):\n${blocks.join("\n\n")}`;
 }
 
+interface CriterionConfig {
+  id: string;
+  text: string;
+  required?: boolean;
+  check?: Check;
+}
+
+interface Ctx {
+  config?: {
+    criteria?: CriterionConfig[];
+    k?: number;
+    graderModel?: string;
+    artifacts?: ArtifactsConfig;
+  };
+  providerResponse?: {
+    metadata?: { containerPath?: string; fixtureDir?: string; okhHome?: string; toolCalls?: string[] };
+  };
+}
+
 /**
- * promptfoo `javascript` assertion that grades the agent transcript against the
- * scenario's rubric using GitHub Copilot CLI as the judge (no external API key).
- * Passes iff the judge's score meets the threshold (default 0.8).
- *
- * When `config.artifacts.module` is set, the exact files the agent wrote to that
- * module are appended to what the judge sees, so rubrics can grade file content
- * that the transcript does not reliably surface.
+ * promptfoo `javascript` assertion. Grades the transcript against binary
+ * `criteria` using a self-consistent Copilot-CLI judge (k runs, per-criterion
+ * majority). Criteria carrying a `check` are cross-validated against deterministic
+ * ground truth; a judge/deterministic disagreement fails and is flagged.
  */
-export default async function judge(output: string, context: Ctx) {
-  const rubric = context.config?.rubric ?? "";
-  const threshold = context.config?.threshold ?? 0.8;
-  if (!rubric.trim()) return { pass: false, score: 0, reason: "no rubric provided in assertion config" };
+export default async function judge(
+  output: string,
+  context: Ctx,
+  deps: { runJudgeCriteria: typeof runJudgeCriteria } = { runJudgeCriteria },
+) {
+  const criteria = context.config?.criteria;
+  if (!Array.isArray(criteria) || criteria.length === 0) {
+    return { pass: false, score: 0, reason: "no criteria provided in assertion config" };
+  }
+  const meta = context.providerResponse?.metadata ?? {};
   let graded = output;
   if (context.config?.artifacts) {
-    graded += await buildArtifactsSection(context.providerResponse?.metadata ?? {}, context.config.artifacts);
+    graded += await buildArtifactsSection(meta, context.config.artifacts);
   }
-  const v = await runJudge(rubric, graded, {
+  const results = await deps.runJudgeCriteria(criteria as Criterion[], graded, {
+    ...(context.config?.k ? { k: context.config.k } : {}),
     ...(context.config?.graderModel ? { model: context.config.graderModel } : {}),
   });
-  const pass = v.score >= threshold;
-  return { pass, score: v.score, reason: `judge(${v.score.toFixed(2)}≥${threshold}? ${pass}): ${v.reason}` };
+  const byId = new Map(results.map((r) => [r.id, r]));
+  const checkCtx = { okhHome: meta.okhHome, toolCalls: meta.toolCalls ?? [], transcript: output };
+
+  const parts: string[] = [];
+  let pass = true;
+  for (const c of criteria) {
+    const r = byId.get(c.id);
+    const required = c.required !== false;
+    if (!r) {
+      parts.push(`${c.id}: MISSING`);
+      if (required) pass = false;
+      continue;
+    }
+    let effective: "PASS" | "FAIL" | "UNRELIABLE" = r.verdict;
+    let note = "";
+    if (c.check) {
+      if (r.verdict === "UNRELIABLE") {
+        note = "✗unreliable";
+      } else {
+        const det = await evaluateCheck(c.check, checkCtx);
+        if ((r.verdict === "PASS") !== det.pass) {
+          note = `✗DISAGREE judge=${r.verdict} det=${det.pass ? "PASS" : "FAIL"} (${det.reason})`;
+          pass = false;
+          effective = "FAIL";
+        } else {
+          note = "✓det";
+        }
+      }
+    }
+    if (required && effective !== "PASS") pass = false;
+    const border = r.verdict === "PASS" && r.failVotes > 0 ? " (borderline)" : "";
+    parts.push(`${c.id}: ${effective} ${r.passVotes}/${r.validVotes}${note ? " " + note : ""}${border}${required ? "" : " [advisory]"}`);
+  }
+  return { pass, score: pass ? 1 : 0, reason: parts.join(" · ") };
 }

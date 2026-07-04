@@ -13,8 +13,8 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the response assembles a compact, relevant working set that
-          includes the Auth knowledge concept and cites module paths, omits clearly
-          irrelevant items, and notes any gaps. FAIL if it dumps everything or misses auth.
+        criteria:
+          - id: includes-auth
+            text: The response assembles a compact working set that includes the Auth knowledge concept and cites module paths.
+          - id: omits-irrelevant
+            text: It omits clearly irrelevant items and notes any gaps (does not dump everything).

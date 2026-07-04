@@ -5,13 +5,14 @@
     container: hub
     fixture: fixtures/plain-notes
     prompt: |
-      hub, what can you do?
+      hub, explain what the Open Knowledge Hub is and how it organizes knowledge,
+      and tell me how I'd set up my first hub.
   assert:
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the agent explains OKH as containers of typed modules and offers to
-          help the user set up or add a first hub. Naming the management tools
-          (inspect/add/sync) or the cognitive flows is a plus but not required.
+        criteria:
+          - id: explains-containers-modules
+            text: The agent explains OKH as containers of typed modules.
+          - id: offers-setup-help
+            text: The agent offers to help the user set up or add a first hub.

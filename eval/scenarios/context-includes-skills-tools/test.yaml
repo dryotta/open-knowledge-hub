@@ -19,9 +19,10 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the working set selects the Debugging skill and the csv2json tool
-          by path, notes one line on why each matters, and does NOT pad the set with
-          the unrelated Auth knowledge concept. FAIL if it returns only knowledge,
-          dumps whole files, or omits either the skill or the tool.
+        criteria:
+          - id: selects-skill-and-tool
+            text: The working set selects the Debugging skill and the csv2json tool, each cited by path.
+          - id: one-line-why
+            text: It notes one line on why each selected item matters.
+          - id: no-auth-pad
+            text: It does NOT pad the set with the unrelated Auth knowledge concept.

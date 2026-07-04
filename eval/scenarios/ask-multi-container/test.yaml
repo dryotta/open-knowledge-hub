@@ -16,8 +16,10 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the agent answered from the registered knowledge modules with
-          module-path citations, drawing on more than one hub where the facts live,
-          and invented nothing.
+        criteria:
+          - id: answered-with-citations
+            text: The agent answered from the registered knowledge modules with module-path citations.
+          - id: spans-hubs
+            text: The answer draws on more than one hub where the relevant facts live.
+          - id: no-fabrication
+            text: The agent invented nothing.
