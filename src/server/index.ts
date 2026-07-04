@@ -13,9 +13,10 @@ export interface BuildServerOptions {
 function buildInstructions(wakePhrase: string): string {
   return (
     "Open Knowledge Hub: organizes agent knowledge and capabilities into containers of typed modules " +
-    "(knowledge, skills, tools, memory, project). Use inspect/add/sync to manage containers; use " +
-    "ask/context/learn/remember/reflect (prompts or tools) to think with them. Start with the onboard " +
-    "tool for first-run setup. `add` previews changes and needs create:true to apply after user confirmation. " +
+    "(knowledge, skills, tools, memory, project). Use inspect/add/sync to manage containers and config to " +
+    "view or change settings; use ask/context/learn/remember/reflect (prompts or tools) to think with them. " +
+    "Start with the onboard prompt/tool for first-run setup. `add` previews changes and needs create:true to " +
+    "apply after user confirmation. " +
     `You can address this hub as "${wakePhrase}": when a message begins with "${wakePhrase}" or mentions ` +
     '"the hub" / "knowledge hub", use these tools. Writes are synced via git (commit+push, or pull requests).'
   );

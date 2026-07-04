@@ -125,6 +125,7 @@ describe("MCP server surface", () => {
     await Promise.all([client.connect(clientT), server.connect(serverT)]);
     const instructions = client.getInstructions();
     expect(instructions).toContain("brain");
+    expect(instructions).toContain("config");
   });
 
   it("declares accurate tool annotations", async () => {
