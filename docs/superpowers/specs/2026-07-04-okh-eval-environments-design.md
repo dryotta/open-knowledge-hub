@@ -13,40 +13,54 @@ a single `env` var backed by a central environment definition, drop the redundan
 
 ## Decisions (from brainstorming)
 
-- **Environments live in a TypeScript module** `eval/environments.ts` (typed map, imported
-  by both the provider and the manual harness — DRY, compile-checked, no YAML parsing).
+- **`environments.ts` replaces `provision.ts` entirely.** One module both *defines* the
+  environments and *materializes* them (`provisionEnvironment()`), absorbing all of
+  `provision.ts`'s filesystem/git/mcp-config logic. `eval/provision.ts` is **deleted**.
+- **No provisioning "mode" enum.** The old `registered` / `empty` / `unregistered-local`
+  triad is gone; provisioning is derived directly from each environment's definition
+  (`placement` + `hubs`). The formerly-separate (and now unused) pure-`empty` mode simply
+  ceases to exist.
 - **`scenario` var removed.** It only prefixed the temp dir. promptfoo passes
   `context.test.description` (= the scenario id) to the provider, and the manual harness
   already derives the id from the folder path. The temp-dir label comes from `description`.
-- **A capability-based 3-environment model** (chosen over a 5-env behavior-preserving set),
-  accepting reduced per-scenario isolation, validated by the full live eval.
-- **`provision.ts` gains git-backed additional containers** so one env can hold a local
-  hub + a git hub together.
+- **A capability-based 3-environment model.** Minimal per-scenario isolation is explicitly
+  **not** a goal; fewer consolidated environments is the priority. Validated by the full
+  live eval; if a scenario regresses, adjust the scenario/prompt/shared env — **do not**
+  add another environment.
 
 ## Environments (`eval/environments.ts`)
 
+The module exports the typed env map **and** the provisioning function. `provision.ts` is
+deleted; its `EvalBackend` / `Provisioned` types and its logic move here.
+
 ```ts
 export type EvalBackend = "local" | "git-auto";
-export interface EnvHub { container: string; fixture: string; backend?: EvalBackend; }
+export interface EnvHub {
+  container: string;
+  fixture: string;            // path relative to eval/
+  backend?: EvalBackend;      // default "local"
+}
 export interface Environment {
-  provision: "registered" | "unregistered-local";
-  hubs: EnvHub[]; // first = primary; rest = additional
+  /** "registered" adds hubs to the OKH registry; "workspace" drops them as
+      UNREGISTERED folders in the working dir (empty registry). */
+  placement: "registered" | "workspace";
+  hubs: EnvHub[];             // hubs[0] = primary (drives metadata.containerPath/originPath)
 }
 export const environments = {
-  // Empty registry with one UNREGISTERED folder sitting in the workspace. Serves
-  // add-existing-folder, add-from-GitHub, create-from-scratch, and explain/config.
+  // Empty registry + one UNREGISTERED folder in the workspace. Serves add-existing-folder,
+  // add-from-GitHub, create-from-scratch, and explain/config onboarding.
   empty: {
-    provision: "unregistered-local",
+    placement: "workspace",
     hubs: [{ container: "notes", fixture: "fixtures/plain-notes" }],
   },
   // Single git-backed hub with a push origin — for sync.
   git: {
-    provision: "registered",
+    placement: "registered",
     hubs: [{ container: "git-hub", fixture: "fixtures/git-hub", backend: "git-auto" }],
   },
   // Two registered hubs: a local folder + a git hub — for local-folder and multi-hub cases.
   "local-and-git": {
-    provision: "registered",
+    placement: "registered",
     hubs: [
       { container: "kb-hub", fixture: "fixtures/kb-hub", backend: "local" },
       { container: "git-hub", fixture: "fixtures/git-hub", backend: "git-auto" },
@@ -54,7 +68,24 @@ export const environments = {
   },
 } satisfies Record<string, Environment>;
 export type EnvName = keyof typeof environments;
+
+export interface Provisioned {
+  root: string; okhHome: string; copilotHome: string; workspace: string;
+  containerPath: string;      // primary hub's local path ("" for a workspace-placed hub's dir)
+  originPath?: string;        // primary hub's bare origin, if git-backed
+}
+export function provisionEnvironment(
+  env: EnvName,
+  opts: { repoRoot: string; label?: string; runner?: typeof run },
+): Promise<Provisioned>;
 ```
+
+`provisionEnvironment` builds the isolated `root` (okhHome / copilotHome / workspace),
+then per hub: **workspace** placement copies the fixture to `workspace/<container>` (left
+unregistered, registry empty); **registered** placement copies to
+`okhHome/containers/<container>` and registers it, seeding a bare origin + clone when the
+hub's `backend` is `git-auto`. Finally it writes `mcp-config.json`. `containerPath` /
+`originPath` track `hubs[0]`.
 
 ### Scenario → environment mapping (16)
 
@@ -89,44 +120,50 @@ by name and ignore the also-registered `git-hub`. `ask-multi-container` uses bot
 
 ## Files to change
 
-- **Create** `eval/environments.ts` (typed map above + a resolver helper).
+- **Create** `eval/environments.ts` — the env map + types (`EvalBackend`, `EnvHub`,
+  `Environment`, `Provisioned`, `EnvName`) + `provisionEnvironment()` (absorbs all of
+  `provision.ts`'s logic: build root, place/register hubs, seed git origins, write
+  mcp-config).
+- **Delete** `eval/provision.ts` (fully replaced by `environments.ts`).
 - **Modify** all 16 `eval/scenarios/<verb>/<case>/test.yaml`: `vars` → `{ prompt, env }`;
   remove `scenario`/`backend`/`container`/`fixture`/`provision`/`container2`/`fixture2`.
-- **Modify** `eval/provider/copilotProvider.ts`: read `vars.env`, resolve via
-  `environments`, map to `provision()` args; temp-dir label from `context.test.description`.
-- **Modify** `eval/provision.ts`: `additional` accepts an optional `backend: "git-auto"`;
-  git additional seeds its own bare origin + clone (same as the primary git path).
-  `ProvisionInput.scenario` becomes `label` (temp-dir prefix), defaulted.
+- **Modify** `eval/provider/copilotProvider.ts`: import from `environments.ts`; read
+  `vars.env`, call `provisionEnvironment(env, { repoRoot, label: description })`; drop the
+  per-var provisioning plumbing.
 - **Modify** `eval/okh-eval.ts`: `ScenarioTest.vars` → `{ prompt, env }`; `setupScenario`/
-  `runChecks` resolve the env to provision args + the primary container name; drop
-  `--backend` override (backend now comes from the env).
-- **Modify** `eval-test/config.test.ts`: assert each test has `vars.env` ∈ `environments`
+  `runChecks` call `provisionEnvironment` and resolve the primary container via
+  `environments[env].hubs[0].container`; drop the `--backend` override (backend is per-hub
+  in the env).
+- **Rename/rewrite** `eval-test/provision.test.ts` → `eval-test/environments.test.ts`:
+  cover `provisionEnvironment` for each env — `git` (registered git hub + origin),
+  `local-and-git` (local kb-hub + git git-hub both registered), `empty` (empty registry +
+  unregistered `notes` folder in workspace).
+- **Modify** `eval-test/config.test.ts`: assert each test's `vars.env` ∈ `environments`
   (no legacy vars); keep the 16-id coverage + judge-criteria checks.
-- **Modify** `eval-test/okh-eval.test.ts` and `eval-test/provider.test.ts`: update to the
-  `env`-based vars; multi-container test asserts kb-hub + git-hub registered.
-- **Modify** `eval/MANUAL-TESTING.md`: mention `env` instead of the setup vars.
+- **Modify** `eval-test/okh-eval.test.ts`: update to `env`-based vars.
+- **Modify** `eval/MANUAL-TESTING.md`: reference `env` instead of the setup vars.
 
 ## Cleanup (comprehensive review)
 
+- **Delete `eval/provision.ts`** and its three-mode abstraction — subsumed by
+  `environments.ts`. The formerly-separate pure-`empty` mode is gone (no dead code).
 - **Remove `scenario` var** from all 16 test.yaml (redundant with `description`).
 - **Drop `mustNotContain: []`** from `ask-grounded` and `context-includes-skills-tools`
   transcript asserts (the field defaults to `[]`; the empty value is noise).
-- **Drop `provision: registered`** from `ask-multi-container` (default; subsumed by env).
+- **Drop `provision: registered`** from `ask-multi-container` (subsumed by the env).
 - **No dead files:** `_compare.ts` and `checks.ts` are used internally; all 3 fixtures and
   all 10 test-referenced assertions are used. `eval/reports/*.json` is gitignored — n/a.
-- **`empty` provision mode becomes unreferenced** once onboarding uses
-  `unregistered-local`. Default: **keep it** as a small tested provision primitive (its
-  provider test stays valid); note it as unused. Remove only if the reviewer prefers.
 
 ## Risks & validation
 
-- **Reduced isolation.** The 8 kb-hub scenarios now run with `git-hub` also registered
-  (prompts are scoped "in container kb-hub"); the onboarding create/explain scenarios now
-  have a stray unregistered `notes` folder present. Prompts are explicit, so 16/16 is
-  expected to hold. **The full live eval is the gate.** If a scenario regresses, give it a
-  dedicated env (accepting >3 envs for that case) rather than weakening the assertion.
-- **git-additional provisioning** adds git init/clone/push to the 9 `local-and-git`
-  scenarios. Acceptable; covered by `provision.test.ts`.
+- **Reduced isolation is accepted, not minimized.** The 8 kb-hub scenarios run with
+  `git-hub` also registered (prompts scope to "container kb-hub"); the onboarding
+  create/explain scenarios run with a stray unregistered `notes` folder present. Prompts
+  are explicit, so 16/16 is expected to hold. **The full live eval is the gate.** If a
+  scenario regresses, fix the scenario/prompt or tweak the shared env — **do not** add a
+  new environment (consolidation is the priority).
+- **git provisioning** runs for the `git` and `local-and-git` envs (init/clone/push).
+  Acceptable; covered by `environments.test.ts`.
 
 ## Verification
 
