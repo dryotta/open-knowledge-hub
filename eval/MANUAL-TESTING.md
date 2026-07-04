@@ -66,7 +66,7 @@ specific one (`npm run eval:setup -- enter ask-grounded`) or `--model <M>` to
 override the model. Inside the session:
 
 - `/mcp` — confirm **open-knowledge-hub** is loaded and list its tools.
-- Paste the scenario prompt (from `eval\scenarios\<name>\test.yaml` → `vars.prompt`).
+- Paste the scenario prompt (from `eval\scenarios\<verb>\<case>\prompt.md`).
   Example (ask-grounded):
   > Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
   > from its knowledge module: How does auth work?
