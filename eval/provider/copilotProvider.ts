@@ -1,7 +1,7 @@
-import { fileURLToPath } from "node:url";
-import { dirname, isAbsolute, resolve } from "node:path";
-import { provision, type EvalBackend } from "../provision.js";
+import { provisionEnvironment, isEnvName } from "../environments.js";
 import { spawnCopilot, extractToolCalls, type CopilotRunner } from "../copilot.js";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
@@ -13,9 +13,10 @@ interface ProviderOptions {
 
 interface CallContext {
   vars?: Record<string, unknown>;
+  test?: { description?: string };
 }
 
-/** promptfoo custom provider: provision an isolated workspace, run `copilot -p`, return transcript + metadata. */
+/** promptfoo custom provider: provision a named environment, run `copilot -p`, return transcript + metadata. */
 export default class CopilotProvider {
   private readonly providerId: string;
   private readonly config: NonNullable<ProviderOptions["config"]>;
@@ -31,26 +32,13 @@ export default class CopilotProvider {
 
   async callApi(prompt: string, context: CallContext = {}) {
     const vars = context.vars ?? {};
-    const fixtureRaw = String(vars.fixture ?? "");
-    const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
-    const backend: EvalBackend = vars.backend === "git-auto" ? "git-auto" : "local";
-    const mode = vars.provision === "empty" || vars.provision === "unregistered-local" ? vars.provision : undefined;
-    const fixture2Raw = vars.fixture2 ? String(vars.fixture2) : undefined;
-    const fixture2Dir = fixture2Raw
-      ? (isAbsolute(fixture2Raw) ? fixture2Raw : resolve(EVAL_ROOT, fixture2Raw))
-      : undefined;
+    const env = vars.env;
+    if (!isEnvName(env)) {
+      throw new Error(`scenario is missing a valid \`env\` var (got ${JSON.stringify(env)})`);
+    }
+    const label = context.test?.description ?? env;
 
-    const prov = await provision({
-      scenario: String(vars.scenario ?? "scenario"),
-      backend,
-      container: String(vars.container ?? "hub"),
-      fixtureDir,
-      repoRoot: REPO_ROOT,
-      ...(mode ? { mode } : {}),
-      ...(vars.container2 && fixture2Dir
-        ? { additional: [{ name: String(vars.container2), fixtureDir: fixture2Dir }] }
-        : {}),
-    });
+    const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label });
 
     const runner: CopilotRunner = this.config.runner ?? spawnCopilot;
     const res = await runner({
@@ -67,7 +55,7 @@ export default class CopilotProvider {
         workspace: prov.root,
         okhHome: prov.okhHome,
         containerPath: prov.containerPath,
-        fixtureDir,
+        fixtureDir: prov.fixtureDir,
         originPath: prov.originPath,
         toolCalls: extractToolCalls(res.transcript),
         exitCode: res.code,
