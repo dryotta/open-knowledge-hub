@@ -1,7 +1,6 @@
 - description: context-assembly
-  prompts:
-    - context-assembly
   vars:
+    prompt: file://scenarios/context/assembly/prompt.md
     scenario: context-assembly
     backend: local
     container: kb-hub

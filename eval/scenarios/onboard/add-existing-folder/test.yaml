@@ -1,7 +1,6 @@
 - description: onboard-add-existing-folder
-  prompts:
-    - onboard-add-existing-folder
   vars:
+    prompt: file://scenarios/onboard/add-existing-folder/prompt.md
     scenario: onboard-add-existing-folder
     backend: local
     provision: unregistered-local

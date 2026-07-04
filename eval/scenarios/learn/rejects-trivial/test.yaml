@@ -1,7 +1,6 @@
 - description: learn-rejects-trivial
-  prompts:
-    - learn-rejects-trivial
   vars:
+    prompt: file://scenarios/learn/rejects-trivial/prompt.md
     scenario: learn-rejects-trivial
     backend: local
     container: kb-hub

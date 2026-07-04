@@ -1,7 +1,6 @@
 - description: onboard-wake-phrase
-  prompts:
-    - onboard-wake-phrase
   vars:
+    prompt: file://scenarios/onboard/wake-phrase/prompt.md
     scenario: onboard-wake-phrase
     backend: local
     provision: empty

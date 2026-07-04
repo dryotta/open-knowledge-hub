@@ -1,7 +1,6 @@
 - description: remember-no-conclusions
-  prompts:
-    - remember-no-conclusions
   vars:
+    prompt: file://scenarios/remember/no-conclusions/prompt.md
     scenario: remember-no-conclusions
     backend: local
     container: kb-hub

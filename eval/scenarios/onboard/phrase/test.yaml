@@ -1,7 +1,6 @@
 - description: onboard-phrase
-  prompts:
-    - onboard-phrase
   vars:
+    prompt: file://scenarios/onboard/phrase/prompt.md
     scenario: onboard-phrase
     backend: local
     provision: empty

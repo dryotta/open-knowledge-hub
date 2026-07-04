@@ -1,7 +1,6 @@
 - description: ask-declines-when-absent
-  prompts:
-    - ask-declines-when-absent
   vars:
+    prompt: file://scenarios/ask/declines-when-absent/prompt.md
     scenario: ask-declines-when-absent
     backend: local
     container: kb-hub

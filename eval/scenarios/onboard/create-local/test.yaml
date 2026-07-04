@@ -1,7 +1,6 @@
 - description: onboard-create-local
-  prompts:
-    - onboard-create-local
   vars:
+    prompt: file://scenarios/onboard/create-local/prompt.md
     scenario: onboard-create-local
     backend: local
     provision: empty

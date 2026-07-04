@@ -1,7 +1,6 @@
 - description: ask-multi-container
-  prompts:
-    - ask-multi-container
   vars:
+    prompt: file://scenarios/ask/multi-container/prompt.md
     scenario: ask-multi-container
     backend: local
     provision: registered

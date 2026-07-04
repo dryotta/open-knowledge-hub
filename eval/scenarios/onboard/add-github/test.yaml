@@ -1,7 +1,6 @@
 - description: onboard-add-github
-  prompts:
-    - onboard-add-github
   vars:
+    prompt: file://scenarios/onboard/add-github/prompt.md
     scenario: onboard-add-github
     backend: local
     provision: empty

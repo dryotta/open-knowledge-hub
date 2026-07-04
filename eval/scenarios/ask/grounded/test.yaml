@@ -1,7 +1,6 @@
 - description: ask-grounded
-  prompts:
-    - ask-grounded
   vars:
+    prompt: file://scenarios/ask/grounded/prompt.md
     scenario: ask-grounded
     backend: local
     container: kb-hub

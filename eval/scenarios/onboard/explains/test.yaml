@@ -1,7 +1,6 @@
 - description: onboard-explains
-  prompts:
-    - onboard-explains
   vars:
+    prompt: file://scenarios/onboard/explains/prompt.md
     scenario: onboard-explains
     backend: local
     provision: empty

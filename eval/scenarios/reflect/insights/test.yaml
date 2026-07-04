@@ -1,7 +1,6 @@
 - description: reflect-insights
-  prompts:
-    - reflect-insights
   vars:
+    prompt: file://scenarios/reflect/insights/prompt.md
     scenario: reflect-insights
     backend: local
     container: kb-hub

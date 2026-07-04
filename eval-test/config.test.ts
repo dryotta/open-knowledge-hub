@@ -33,19 +33,17 @@ describe("promptfooconfig.yaml", () => {
     expect(String(cfg.tests)).toContain("scenarios");
   });
 
-  it("defines one named prompt per scenario, each pointing at an existing prompt.md", async () => {
+  it("uses a single pass-through prompt and a two-level tests glob", async () => {
     const cfg = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
-    const scenarios = await discoverScenarios();
     expect(Array.isArray(cfg.prompts)).toBe(true);
-    const byLabel = new Map<string, string>(
-      cfg.prompts.map((p: { id: string; label: string }) => [p.label, p.id]),
-    );
-    expect([...byLabel.keys()].sort()).toEqual(scenarios.map((s) => s.id));
-    for (const s of scenarios) {
-      expect(byLabel.get(s.id)).toBe(s.relPrompt);
+    expect(cfg.prompts).toHaveLength(1);
+    expect(cfg.prompts[0].raw).toBe("{{prompt}}");
+    expect(cfg.prompts[0].label).toBe("OKH scenario prompt");
+    expect(String(cfg.tests)).toContain("scenarios/*/*/test.yaml");
+    // every scenario still has a prompt.md that its `prompt` var points at
+    for (const s of await discoverScenarios()) {
       expect(await exists(join(s.dir, "prompt.md"))).toBe(true);
     }
-    expect(String(cfg.tests)).toContain("scenarios/*/*/test.yaml");
   });
 });
 
@@ -76,7 +74,7 @@ describe("scenarios", () => {
       expect(Array.isArray(list)).toBe(true);
       const test = list[0];
       expect(test.description).toBe(s.id);
-      expect(test.prompts).toEqual([s.id]);
+      expect(test.vars.prompt).toBe(s.relPrompt);
       expect((await readFile(join(s.dir, "prompt.md"), "utf8")).trim().length).toBeGreaterThan(0);
       expect(await exists(join(EVAL, String(test.vars.fixture)))).toBe(true);
       const judges = test.assert.filter(

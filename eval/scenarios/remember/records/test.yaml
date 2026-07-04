@@ -1,7 +1,6 @@
 - description: remember-records
-  prompts:
-    - remember-records
   vars:
+    prompt: file://scenarios/remember/records/prompt.md
     scenario: remember-records
     backend: local
     container: kb-hub

@@ -1,7 +1,6 @@
 - description: context-includes-skills-tools
-  prompts:
-    - context-includes-skills-tools
   vars:
+    prompt: file://scenarios/context/includes-skills-tools/prompt.md
     scenario: context-includes-skills-tools
     backend: local
     container: kb-hub
