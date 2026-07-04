@@ -9,6 +9,8 @@ export interface OkhPaths {
   readonly containersDir: string;
   /** The per-machine registry file: <home>/registry.json. */
   readonly registryFile: string;
+  /** The per-machine preferences file: <home>/preferences.json. */
+  readonly preferencesFile: string;
 }
 
 const DEFAULT_DIRNAME = ".open-knowledge-hub";
@@ -27,6 +29,7 @@ export function resolvePaths(
     home: root,
     containersDir: join(root, "containers"),
     registryFile: join(root, "registry.json"),
+    preferencesFile: join(root, "preferences.json"),
   };
 }
 

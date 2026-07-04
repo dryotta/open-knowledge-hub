@@ -28,6 +28,7 @@ export function makePaths(home: string): OkhPaths {
     home,
     containersDir: join(home, "containers"),
     registryFile: join(home, "registry.json"),
+    preferencesFile: join(home, "preferences.json"),
   };
 }
 

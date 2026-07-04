@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { listScenarios, loadScenario, setupScenario, runChecks, clean, buildEnterInvocation } from "../eval/okh-eval.js";
 import { type RunRecord } from "../eval/run-state.js";
@@ -11,8 +11,8 @@ afterEach(async () => {
 });
 
 describe("okh-eval manual CLI", () => {
-  it("lists all 8 scenarios", async () => {
-    expect((await listScenarios()).length).toBe(9);
+  it("lists all 15 scenarios", async () => {
+    expect((await listScenarios()).length).toBe(15);
   });
 
   it("loads a scenario's prompt + backend", async () => {
@@ -45,6 +45,13 @@ describe("okh-eval manual CLI", () => {
     roots.push(res.root);
     expect(res.scenario).toBe("ask-grounded");
     expect(res.backend).toBe("local");
+  });
+
+  it("setup registers both containers for the multi-container scenario", async () => {
+    const res = await setupScenario("ask-multi-container", { model: "test-model" });
+    roots.push(res.root);
+    const reg = JSON.parse(await readFile(join(res.root, "okh-home", "registry.json"), "utf8"));
+    expect(reg.containers.map((c: { name: string }) => c.name).sort()).toEqual(["git-hub", "kb-hub"]);
   });
 
   it("buildEnterInvocation targets the isolated env and workspace", () => {
@@ -88,13 +95,13 @@ describe("okh-eval manual CLI", () => {
     expect(results.some((r) => r.name.endsWith("tools-called.ts"))).toBe(false);
   });
 
-  it("runChecks reports a clear error when the scenario container is not registered", async () => {
+  it("runChecks tolerates a scenario container that is not registered", async () => {
     const root = await makeTempDir("okh-eval-empty-");
     roots.push(root);
     const okhHome = join(root, "okh-home");
     await mkdir(okhHome, { recursive: true });
     await writeFile(join(okhHome, "registry.json"), JSON.stringify({ version: 1, containers: [] }), "utf8");
 
-    await expect(runChecks(root, "ask-grounded")).rejects.toThrow('No container named "kb-hub"');
+    await expect(runChecks(root, "ask-grounded")).resolves.toEqual([]);
   });
 });

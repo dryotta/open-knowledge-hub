@@ -8,6 +8,9 @@ import okfValid from "../eval/assertions/okf-valid.js";
 import memoryAppend from "../eval/assertions/memory-append.js";
 import gitCommitted from "../eval/assertions/git-committed.js";
 import moduleUnchanged from "../eval/assertions/module-unchanged.js";
+import containerRegistered from "../eval/assertions/container-registered.js";
+import manifestInitialized from "../eval/assertions/manifest-initialized.js";
+import wakePhraseSet from "../eval/assertions/wake-phrase-set.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -112,5 +115,74 @@ describe("git-committed", () => {
   });
   it("fails cleanly for a non-git container", async () => {
     expect((await gitCommitted("", ctx({}, {}))).pass).toBe(false);
+  });
+});
+
+async function okhHomeWith(name: string): Promise<string> {
+  const home = await makeTempDir(); cleanups.push(home);
+  const containers = join(home, "containers", name);
+  await mkdir(join(containers, ".okh"), { recursive: true });
+  await writeFile(join(containers, ".okh", "okh.yaml"), `name: ${name}\nsync: auto\nmodules: []\n`, "utf8");
+  await writeFile(join(home, "registry.json"), JSON.stringify({
+    version: 1,
+    containers: [{ name, backend: "local", localPath: containers, addedAt: new Date().toISOString() }],
+  }), "utf8");
+  return home;
+}
+
+describe("onboarding assertions", () => {
+  it("container-registered passes when the container exists with a valid manifest", async () => {
+    const okhHome = await okhHomeWith("my-notes");
+    const r = await containerRegistered("", { providerResponse: { metadata: { okhHome } }, config: { name: "my-notes", backend: "local" } });
+    expect(r.pass).toBe(true);
+  });
+
+  it("container-registered fails when nothing is registered", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    await writeFile(join(home, "registry.json"), JSON.stringify({ version: 1, containers: [] }), "utf8");
+    const r = await containerRegistered("", { providerResponse: { metadata: { okhHome: home } }, config: { name: "my-notes" } });
+    expect(r.pass).toBe(false);
+  });
+
+  it("manifest-initialized passes for a registered container", async () => {
+    const okhHome = await okhHomeWith("my-notes");
+    const r = await manifestInitialized("", { providerResponse: { metadata: { okhHome } }, config: { name: "my-notes" } });
+    expect(r.pass).toBe(true);
+  });
+
+  it("manifest-initialized fails when a registered container has no manifest", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    const containers = join(home, "containers", "my-notes");
+    await mkdir(containers, { recursive: true });
+    await writeFile(join(home, "registry.json"), JSON.stringify({
+      version: 1,
+      containers: [{ name: "my-notes", backend: "local", localPath: containers, addedAt: new Date().toISOString() }],
+    }), "utf8");
+    const r = await manifestInitialized("", { providerResponse: { metadata: { okhHome: home } }, config: { name: "my-notes" } });
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/manifest missing\/invalid/);
+  });
+
+  it("wake-phrase-set passes when a non-default phrase is persisted", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    await writeFile(join(home, "preferences.json"), JSON.stringify({ wakePhrase: "brain" }), "utf8");
+    const r = await wakePhraseSet("", { providerResponse: { metadata: { okhHome: home } }, config: {} });
+    expect(r.pass).toBe(true);
+  });
+
+  it("wake-phrase-set fails when the default phrase is unchanged", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    await writeFile(join(home, "preferences.json"), JSON.stringify({ wakePhrase: "hub" }), "utf8");
+    const r = await wakePhraseSet("", { providerResponse: { metadata: { okhHome: home } }, config: { default: "hub" } });
+    expect(r.pass).toBe(false);
+    expect(r.reason).toContain("unchanged");
+  });
+
+  it("wake-phrase-set reports malformed preferences separately from a missing file", async () => {
+    const home = await makeTempDir(); cleanups.push(home);
+    await writeFile(join(home, "preferences.json"), "{", "utf8");
+    const r = await wakePhraseSet("", { providerResponse: { metadata: { okhHome: home } }, config: {} });
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/invalid preferences\.json/);
   });
 });

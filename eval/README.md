@@ -31,17 +31,14 @@ Two modes, one set of scenarios (`scenarios/*/test.yaml`):
 ```bash
 npm run build
 $env:GH_TOKEN = "..."         # Linux/CI only; skip on logged-in macOS/Windows
+npm run eval:validate         # structural promptfoo validation via node --import tsx
 npm run eval                  # runs promptfoo under `node --import tsx` (see note below)
 npm run eval:view             # open the report + side-by-side comparison UI
 ```
 
-> **Why `node --import tsx`?** The provider (`provider/copilotProvider.ts`) and its
-> imports use NodeNext `.js` specifiers that point at sibling `.ts` files (and at
-> `../src/*.js`). promptfoo loads the provider via Node's native TypeScript support,
-> which does **not** remap `.js`→`.ts`, so a plain `promptfoo eval` fails with
-> `ERR_MODULE_NOT_FOUND: ...provision.js`. Preloading `tsx` (already a devDependency)
-> registers a loader that resolves the whole graph. The `npm run eval` script does
-> this for you; the promptfoo version-mismatch warning it prints is cosmetic.
+> **Validation:** Use `npm run eval:validate` for structural validation. It launches
+> promptfoo via `node --import tsx`, matching `npm run eval`, so the TypeScript
+> provider can keep NodeNext `.js` import specifiers.
 
 **Model matrix (goal 1):** add more `providers` entries in `promptfooconfig.yaml`,
 each pointing at `file://provider/copilotProvider.ts` (paths are relative to `eval/`)
@@ -56,6 +53,18 @@ Run the scenarios by hand in Copilot CLI, inspect results yourself, and do
 free-form exploration. Provisioned runs are recorded, so follow-up commands are
 path-free: `setup <scenario>` → `enter` → `check` → `clean`. See
 **[MANUAL-TESTING.md](./MANUAL-TESTING.md)**.
+
+## Onboarding scenarios
+
+`provision` (per-scenario var) selects the starting state:
+- `registered` (default) — the fixture is pre-registered as a container.
+- `empty` — empty registry + empty workspace (agent adds from scratch or a URL).
+- `unregistered-local` — the fixture sits in the workspace, unregistered, for the
+  agent to `add`.
+
+`onboard-add-github` clones the **private** repo `dryotta/okh-eval-hub`. Cloning a
+private repo relies on the machine's `gh` credential helper (macOS/Windows) or a
+token with `repo` read (Linux/CI). No push/sync is exercised.
 
 ## Caveats
 
@@ -77,7 +86,7 @@ Confirmed end-to-end by running real `copilot -p` against provisioned containers
   `extractToolCalls` (in `copilot.ts`) parses that form.
 - promptfoo resolves `file://` paths **relative to the config file's dir (`eval/`)** —
   hence `file://provider/…`, `file://assertions/…`, `file://scenarios/*/test.yaml`.
-  `promptfoo validate -c eval/promptfooconfig.yaml` passes.
+  `npm run eval:validate` passes.
 - Validated flows: `remember` (append-only memory entry), `learn`+`sync` (OKF change
   committed & pushed to the git-auto origin), and `learn` correctly REJECTING
   out-of-scope input (no write).

@@ -43,7 +43,7 @@ export const spawnCopilot: CopilotRunner = (opts) =>
     });
   });
 
-const OKH_TOOLS = ["inspect", "add", "sync", "ask", "context", "learn", "remember", "reflect"] as const;
+const OKH_TOOLS = ["inspect", "add", "sync", "onboard", "ask", "context", "learn", "remember", "reflect"] as const;
 
 /**
  * Extract which OKH tools were invoked, from the transcript.

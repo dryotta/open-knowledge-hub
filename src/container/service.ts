@@ -96,13 +96,52 @@ export interface AddContainerInput {
   sync?: "auto" | "pr";
   /** Only meaningful for path sources; distinguishes onedrive from plain local. */
   backend?: "local" | "onedrive";
+  /** Authorize side-effectful creation/initialization. Default false => preview only. */
+  create?: boolean;
 }
+
+export type ContainerAction = "create-folder" | "clone" | "init-manifest";
+
+export interface AddContainerPlan {
+  kind: "container";
+  actions: ContainerAction[];
+  name: string;
+  backend: Backend;
+  source: string;
+  /** Absolute local path to create / clone into / register. */
+  target: string;
+  /** Effective sync mode used when initializing a new manifest. */
+  sync: SyncMode;
+  /** Whether the caller explicitly set sync (controls overriding an existing manifest). */
+  syncExplicit: boolean;
+}
+
+export type AddContainerOutcome =
+  | { kind: "plan"; plan: AddContainerPlan }
+  | { kind: "applied"; entry: ContainerEntry };
+
+export type ModuleAction = "init-manifest" | "create-folder" | "scaffold";
+
+export interface AddModulePlan {
+  kind: "module";
+  actions: ModuleAction[];
+  container: string;
+  path: string;
+  type: ModuleType;
+  moduleRoot: string;
+  config?: Record<string, unknown>;
+}
+
+export type AddModuleOutcome =
+  | { kind: "plan"; plan: AddModulePlan }
+  | { kind: "applied"; entry: ModuleEntry; moduleRoot: string };
 
 export interface AddModuleInput {
   container: string;
   path: string;
   type: ModuleType;
   config?: Record<string, unknown>;
+  create?: boolean;
 }
 
 export interface GitStatus {
@@ -503,80 +542,108 @@ export class ContainerService {
     return result!;
   }
 
-  addContainer(input: AddContainerInput): Promise<ContainerEntry> {
+  addContainer(input: AddContainerInput): Promise<AddContainerOutcome> {
     return this.mutex.run(() => this.addContainerImpl(input));
   }
 
-  private async addContainerImpl(input: AddContainerInput): Promise<ContainerEntry> {
+  /** Resolve what `add` would do, with no side effects. Throws on doomed actions. */
+  async planAddContainer(input: AddContainerInput): Promise<AddContainerPlan> {
     const isGit = looksLikeGitUrl(input.source);
     const name = validate(containerNameSchema, input.name ?? deriveName(input.source), "name");
     const reg = await loadRegistry(this.paths);
     if (findContainer(reg, name)) {
       throw new OkhError("ALREADY_EXISTS", `A container named "${name}" already exists.`);
     }
-
-    let backend: Backend;
-    let localPath: string;
-    let origin: string | undefined;
-
+    const sync: SyncMode = input.sync ?? "auto";
+    const syncExplicit = input.sync !== undefined;
     if (isGit) {
       validate(repoUrlSchema, input.source, "source");
-      backend = "git";
-      origin = input.source;
-      const clone = containerCloneDir(this.paths, name);
-      await this.assertDirAvailable(clone);
+      return {
+        kind: "container",
+        actions: ["clone"],
+        name,
+        backend: "git",
+        source: input.source,
+        target: containerCloneDir(this.paths, name),
+        sync,
+        syncExplicit,
+      };
+    }
+    const backend: Backend = input.backend ?? "local";
+    const target = resolve(input.source);
+    const s = await stat(target).catch(() => null);
+    if (s && !s.isDirectory()) {
+      throw new OkhError("INVALID_ARGUMENT", `Path "${input.source}" exists but is not a directory.`);
+    }
+    const exists = !!s;
+    const actions: ContainerAction[] = [];
+    if (!exists) actions.push("create-folder");
+    const hasManifest = exists && await manifestExists(target);
+    if (!hasManifest) {
+      actions.push("init-manifest");
+    } else if (syncExplicit) {
+      const manifest = await loadContainerManifest(target);
+      if (manifest.sync !== sync) actions.push("init-manifest");
+    }
+    return { kind: "container", actions, name, backend, source: input.source, target, sync, syncExplicit };
+  }
+
+  private async addContainerImpl(input: AddContainerInput): Promise<AddContainerOutcome> {
+    const plan = await this.planAddContainer(input);
+    if (plan.actions.length > 0 && !input.create) return { kind: "plan", plan };
+    return { kind: "applied", entry: await this.applyAddContainer(plan) };
+  }
+
+  private async applyAddContainer(plan: AddContainerPlan): Promise<ContainerEntry> {
+    const reg = await loadRegistry(this.paths);
+    if (findContainer(reg, plan.name)) {
+      throw new OkhError("ALREADY_EXISTS", `A container named "${plan.name}" already exists.`);
+    }
+    let origin: string | undefined;
+    if (plan.backend === "git") {
+      origin = plan.source;
+      await this.assertDirAvailable(plan.target);
       await mkdir(this.paths.containersDir, { recursive: true });
       try {
-        await this.git.clone(input.source, clone);
+        await this.git.clone(plan.source, plan.target);
       } catch (err) {
-        await rm(clone, { recursive: true, force: true });
+        await rm(plan.target, { recursive: true, force: true });
         throw err;
       }
-      localPath = clone;
     } else {
-      backend = input.backend ?? "local";
-      const abs = resolve(input.source);
-      const s = await stat(abs).catch(() => null);
-      if (!s || !s.isDirectory()) {
-        throw new OkhError("NOT_FOUND", `Path "${input.source}" is not an existing directory.`);
-      }
-      localPath = abs;
+      await mkdir(plan.target, { recursive: true });
     }
-
-    if (!(await manifestExists(localPath))) {
-      await saveContainerManifest(localPath, {
-        ...scaffoldManifest(name),
-        sync: input.sync ?? "auto",
-      });
-    } else if (input.sync) {
-      const m = await loadContainerManifest(localPath);
-      await saveContainerManifest(localPath, { ...m, sync: input.sync });
+    if (!(await manifestExists(plan.target))) {
+      await saveContainerManifest(plan.target, { ...scaffoldManifest(plan.name), sync: plan.sync });
+    } else if (plan.syncExplicit) {
+      const m = await loadContainerManifest(plan.target);
+      if (m.sync !== plan.sync) {
+        await saveContainerManifest(plan.target, { ...m, sync: plan.sync });
+      }
     }
 
     const entry: ContainerEntry = {
-      name,
-      backend,
+      name: plan.name,
+      backend: plan.backend,
       ...(origin ? { origin } : {}),
-      localPath,
+      localPath: plan.target,
       addedAt: new Date().toISOString(),
     };
     await saveRegistry(this.paths, withContainerAdded(reg, entry));
     return entry;
   }
 
-  addModule(input: AddModuleInput): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
+  addModule(input: AddModuleInput): Promise<AddModuleOutcome> {
     return this.mutex.run(() => this.addModuleImpl(input));
   }
 
-  private async addModuleImpl(
-    input: AddModuleInput,
-  ): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
+  async planAddModule(input: AddModuleInput): Promise<AddModulePlan> {
     validate(modulePathSchema, input.path, "module path");
     validate(moduleTypeSchema, input.type, "module type");
     const reg = await loadRegistry(this.paths);
     const container = requireContainer(reg, input.container);
     const root = container.localPath;
-    const manifest = await this.loadOrScaffold(root, container.name);
+    const manifest = await this.loadManifestOrEmpty(root, container.name);
     if (manifest.modules.some((m) => m.path === input.path)) {
       throw new OkhError(
         "ALREADY_EXISTS",
@@ -584,22 +651,55 @@ export class ContainerService {
       );
     }
     const moduleRoot = this.moduleRoot(root, input.path);
-    await mkdir(moduleRoot, { recursive: true });
-    const loader = getLoader(input.type);
+    const actions: ModuleAction[] = [];
+    if (!(await manifestExists(root))) actions.push("init-manifest");
+    const modDir = await stat(moduleRoot).then((s) => s.isDirectory()).catch(() => false);
+    if (!modDir) actions.push("create-folder");
+    if (getLoader(input.type).scaffold) actions.push("scaffold");
+    return {
+      kind: "module",
+      actions,
+      container: input.container,
+      path: input.path,
+      type: input.type,
+      moduleRoot,
+      ...(input.config ? { config: input.config } : {}),
+    };
+  }
+
+  private async addModuleImpl(input: AddModuleInput): Promise<AddModuleOutcome> {
+    const plan = await this.planAddModule(input);
+    if (!input.create) return { kind: "plan", plan };
+    return { kind: "applied", ...(await this.applyAddModule(plan)) };
+  }
+
+  private async applyAddModule(plan: AddModulePlan): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
+    const reg = await loadRegistry(this.paths);
+    const container = requireContainer(reg, plan.container);
+    const root = container.localPath;
+    const manifest = await this.loadOrScaffold(root, container.name);
+    if (manifest.modules.some((m) => m.path === plan.path)) {
+      throw new OkhError(
+        "ALREADY_EXISTS",
+        `Module path "${plan.path}" already exists in container "${plan.container}".`,
+      );
+    }
+    await mkdir(plan.moduleRoot, { recursive: true });
+    const loader = getLoader(plan.type);
     if (loader.scaffold) {
       try {
-        await loader.scaffold(moduleRoot);
+        await loader.scaffold(plan.moduleRoot);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
     }
     const entry: ModuleEntry = {
-      path: input.path,
-      type: input.type,
-      ...(input.config ? { config: input.config } : {}),
+      path: plan.path,
+      type: plan.type,
+      ...(plan.config ? { config: plan.config } : {}),
     };
     await saveContainerManifest(root, { ...manifest, modules: [...manifest.modules, entry] });
-    return { entry, moduleRoot };
+    return { entry, moduleRoot: plan.moduleRoot };
   }
 
   /** Absolute path to a container's root on disk. */
@@ -622,6 +722,12 @@ export class ContainerService {
     const m = scaffoldManifest(name);
     await saveContainerManifest(root, m);
     return m;
+  }
+
+  /** In-memory manifest for planning: never writes. Missing file => empty scaffold. */
+  protected async loadManifestOrEmpty(root: string, name: string): Promise<ContainerManifest> {
+    if (await manifestExists(root)) return loadContainerManifest(root);
+    return scaffoldManifest(name);
   }
 
   private async assertDirAvailable(dir: string): Promise<void> {

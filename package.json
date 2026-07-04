@@ -1,7 +1,7 @@
 {
   "name": "open-knowledge-hub",
   "version": "0.2.0",
-  "description": "A minimalist MCP that organizes agent knowledge and capabilities into containers of typed modules (knowledge, skills, tools, memory, project), with five cognitive prompts and three operational tools.",
+  "description": "A minimalist MCP that organizes agent knowledge and capabilities into containers of typed modules, with five cognitive prompts, an onboarding prompt, and four operational/setup tools.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
     "typecheck:eval": "tsc -p tsconfig.eval.json",
     "test:eval": "vitest run --config vitest.eval.config.ts",
     "eval": "node --import tsx ./node_modules/promptfoo/dist/src/entrypoint.js eval -c eval/promptfooconfig.yaml --no-cache",
+    "eval:validate": "node --import tsx ./node_modules/promptfoo/dist/src/entrypoint.js validate -c eval/promptfooconfig.yaml",
     "eval:view": "promptfoo view",
     "eval:setup": "tsx eval/okh-eval.ts"
   },

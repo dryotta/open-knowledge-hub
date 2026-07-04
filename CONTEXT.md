@@ -42,5 +42,7 @@ as both MCP prompts and tools. `container`/`module` are optional filters.
 ## Runtime & surface
 - TypeScript on `@modelcontextprotocol/sdk`, `zod`, `yaml`; run via `npx`. Requires
   `git`; `gh` only for `pr`-mode containers. See ADR-0001, 0002, 0004.
-- Tools (deterministic): `inspect`, `add`, `sync`.
-- Prompts/flows (discipline text): `ask`, `context`, `learn`, `remember`, `reflect`.
+- Tools (deterministic/setup): `inspect`, `add`, `sync`, `onboard` (`onboard`
+  guides setup and can persist a wake phrase).
+- Prompts/flows (discipline text): five cognitive prompts (`ask`, `context`,
+  `learn`, `remember`, `reflect`) plus the setup prompt `onboard`.

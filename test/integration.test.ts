@@ -31,8 +31,12 @@ describe("end-to-end", () => {
     const origin = await makeOrigin();
     const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
 
-    const entry = await service.addContainer({ source: origin, name: "hub" });
-    const { moduleRoot } = await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    const addContainer = await service.addContainer({ source: origin, name: "hub", create: true });
+    if (addContainer.kind !== "applied") throw new Error("expected applied");
+    const entry = addContainer.entry;
+    const addModule = await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
+    if (addModule.kind !== "applied") throw new Error("expected applied");
+    const { moduleRoot } = addModule;
     await writeFile(join(moduleRoot, "auth.md"), "---\ntitle: Auth\ndescription: Login\ntype: Flow\n---\nbody", "utf8");
 
     const [res] = await service.sync("hub");
@@ -58,9 +62,9 @@ describe("end-to-end", () => {
     cleanups.push(dir);
     const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
 
-    await service.addContainer({ source: dir, name: "notes" });
+    await service.addContainer({ source: dir, name: "notes", create: true });
     for (const [path, type] of [["kb", "knowledge"], ["skills", "skills"], ["mem", "memory"]] as const) {
-      await service.addModule({ container: "notes", path, type });
+      await service.addModule({ container: "notes", path, type, create: true });
     }
 
     const targets = await service.resolveTargets("notes");

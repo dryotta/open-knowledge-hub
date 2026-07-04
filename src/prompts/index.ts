@@ -109,3 +109,19 @@ ${discipline}
 
 ${WRITE_POLICY}`;
 }
+
+export async function buildOnboard(targets: ResolvedContainer[], wakePhrase: string): Promise<string> {
+  const discipline = await loadDiscipline("onboard");
+  return `# OKH: onboard
+
+**Wake phrase:** \`${wakePhrase}\`
+
+**Current hubs:**
+${renderTargets(targets)}
+
+<discipline name="onboard">
+
+${discipline}
+
+</discipline>`;
+}

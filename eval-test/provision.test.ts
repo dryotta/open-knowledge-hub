@@ -54,4 +54,22 @@ describe("provision", () => {
     await testRun("git", ["clone", prov.originPath!, join(verify, "c")]);
     expect(await readFile(join(verify, "c", "kb", "index.md"), "utf8")).toContain("# Knowledge");
   });
+
+  it("empty mode registers nothing and leaves an empty registry", async () => {
+    const prov = await provision({ scenario: "s", backend: "local", container: "hub", fixtureDir: "unused", repoRoot: "C:/repo", runner: testRun, mode: "empty" });
+    cleanups.push(prov.root);
+    const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers).toHaveLength(0);
+    expect(prov.containerPath).toBe("");
+  });
+
+  it("unregistered-local drops the fixture in the workspace without registering", async () => {
+    const fixtureDir = await makeFixture();
+    const prov = await provision({ scenario: "s", backend: "local", container: "notes", fixtureDir, repoRoot: "C:/repo", runner: testRun, mode: "unregistered-local" });
+    cleanups.push(prov.root);
+    const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers).toHaveLength(0);
+    expect(await readFile(join(prov.containerPath, ".okh", "okh.yaml"), "utf8")).toContain("name: hub");
+    expect(prov.containerPath.startsWith(prov.workspace)).toBe(true);
+  });
 });

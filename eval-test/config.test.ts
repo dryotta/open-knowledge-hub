@@ -13,13 +13,14 @@ describe("promptfooconfig.yaml", () => {
     const cfg = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
     const providerId: string = cfg.providers[0].id;
     expect(providerId.startsWith("file://")).toBe(true);
+    expect(providerId).toBe("file://provider/copilotProvider.ts");
     expect(await exists(join(EVAL, providerId.replace("file://", "")))).toBe(true);
     expect(String(cfg.tests)).toContain("scenarios");
   });
 });
 
 describe("scenarios", () => {
-  it("all 8 scenarios parse, reference existing fixtures + assertion files, and have a rubric", async () => {
+  it("all 15 scenarios parse, reference existing fixtures + assertion files, and have a rubric", async () => {
     const dirs = (await readdir(join(EVAL, "scenarios"), { withFileTypes: true }))
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
@@ -27,10 +28,16 @@ describe("scenarios", () => {
     expect(dirs).toEqual([
       "ask-declines-when-absent",
       "ask-grounded",
+      "ask-multi-container",
       "context-assembly",
       "context-includes-skills-tools",
       "learn-integrates",
       "learn-rejects-trivial",
+      "onboard-add-existing-folder",
+      "onboard-add-github",
+      "onboard-create-local",
+      "onboard-explains",
+      "onboard-wake-phrase",
       "reflect-insights",
       "remember-no-conclusions",
       "remember-records",

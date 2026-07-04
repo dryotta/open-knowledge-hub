@@ -2,13 +2,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type {
+  AddContainerPlan,
+  AddModulePlan,
   ContainerService,
   InspectResult,
   SyncResult,
 } from "../container/service.js";
+import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
 import { moduleTypeSchema } from "../modules/types.js";
-import { buildAsk, buildContext, buildLearn, buildReflect, buildRemember } from "../prompts/index.js";
+import { loadPreferences, savePreferences, wakePhraseSchema } from "../preferences.js";
+import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
   return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
@@ -70,6 +74,25 @@ function formatInspect(r: InspectResult): string {
   return [head, ...items].join("\n");
 }
 
+function formatContainerPlan(plan: AddContainerPlan): string {
+  const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
+  if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.target}`);
+  if (plan.actions.includes("clone"))
+    lines.push(`- Clone ${plan.source} → ${plan.target} (initialize a manifest if the repo has none)`);
+  if (plan.actions.includes("init-manifest")) lines.push(`- Initialize manifest: name=${plan.name} sync=${plan.sync}`);
+  lines.push(`- Register container "${plan.name}" [${plan.backend}]`);
+  return lines.join("\n");
+}
+
+function formatModulePlan(plan: AddModulePlan): string {
+  const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
+  if (plan.actions.includes("init-manifest")) lines.push(`- Initialize manifest for "${plan.container}"`);
+  if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.moduleRoot}`);
+  if (plan.actions.includes("scaffold")) lines.push(`- Scaffold ${plan.type} module content`);
+  lines.push(`- Add ${plan.type} module "${plan.path}" to "${plan.container}"`);
+  return lines.join("\n");
+}
+
 function formatSync(rs: SyncResult[]): string {
   if (rs.length === 0) return "Nothing to sync.";
   return rs
@@ -81,14 +104,15 @@ function formatSync(rs: SyncResult[]): string {
     .join("\n");
 }
 
-/** Register the three operational tools + five cognitive prompt-tools. */
-export function registerTools(server: McpServer, service: ContainerService): void {
+/** Register the four operational/setup tools + five cognitive prompt-tools. */
+export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
     {
       title: "Inspect containers/modules",
       description:
         "List registered containers (no args), a container's modules + status (container), or a module's items (container + module).",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         container: z.string().optional().describe("Container name to inspect."),
         module: z.string().optional().describe("Module path within the container."),
@@ -111,7 +135,9 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       title: "Add a container or module",
       description:
         "Add a container with { source, name?, sync?, backend? } (source is a git URL or a local/OneDrive path), " +
-        "or add a module with { container, path, type, config? }.",
+        "or add a module with { container, path, type, config? }. " +
+        "By default add returns a plan and makes no changes; show it to the user, get confirmation, then re-call with create:true.",
+      annotations: { openWorldHint: true },
       inputSchema: {
         source: z.string().optional().describe("Git URL or local/OneDrive path (new container)."),
         name: z.string().optional().describe("Container name (defaults to the source basename)."),
@@ -121,6 +147,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         path: z.string().optional().describe("Module folder path within the container (new module)."),
         type: moduleTypeSchema.optional().describe("Module type (new module)."),
         config: z.record(z.string(), z.unknown()).optional().describe("Optional module config."),
+        create: z.boolean().optional().describe("Apply the change. Omit to preview a plan (no changes)."),
       },
     },
     handler(
@@ -133,6 +160,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         path?: string;
         type?: "knowledge" | "skills" | "tools" | "memory" | "project";
         config?: Record<string, unknown>;
+        create?: boolean;
       }) => {
         const hasSource = args.source !== undefined;
         const hasModuleFields =
@@ -142,13 +170,17 @@ export function registerTools(server: McpServer, service: ContainerService): voi
         }
         if (args.source !== undefined) {
           if (isBlank(args.source)) return fail("source cannot be empty.");
-          const entry = await service.addContainer({
+          const outcome = await service.addContainer({
             source: args.source,
             ...(args.name ? { name: args.name } : {}),
             ...(args.sync ? { sync: args.sync } : {}),
             ...(args.backend ? { backend: args.backend } : {}),
+            ...(args.create ? { create: true } : {}),
           });
-          return ok(`Registered container "${entry.name}" [${entry.backend}] at ${entry.localPath}.`, { entry });
+          if (outcome.kind === "plan") {
+            return ok(formatContainerPlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
+          }
+          return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
         }
         if (hasModuleFields) {
           if (args.container === undefined || args.path === undefined || args.type === undefined) {
@@ -156,13 +188,17 @@ export function registerTools(server: McpServer, service: ContainerService): voi
           }
           if (isBlank(args.container)) return fail("container cannot be empty.");
           if (isBlank(args.path)) return fail("path cannot be empty.");
-          const { entry, moduleRoot } = await service.addModule({
+          const outcome = await service.addModule({
             container: args.container,
             path: args.path,
             type: args.type,
             ...(args.config ? { config: args.config } : {}),
+            ...(args.create ? { create: true } : {}),
           });
-          return ok(`Added ${entry.type} module "${entry.path}" to "${args.container}" at ${moduleRoot}.`, { entry });
+          if (outcome.kind === "plan") {
+            return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
+          }
+          return ok(`Added ${outcome.entry.type} module "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`, { entry: outcome.entry });
         }
         return fail("add requires either { source } (new container) or { container, path, type } (new module).");
       },
@@ -175,6 +211,7 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       title: "Sync containers",
       description:
         "Validate and synchronize a container (or all containers). Git containers commit+push (auto) or open a PR (pr).",
+      annotations: { openWorldHint: true },
       inputSchema: {
         container: z.string().optional().describe("Container to sync (default: all)."),
         message: z.string().optional().describe("Commit/PR message."),
@@ -184,6 +221,38 @@ export function registerTools(server: McpServer, service: ContainerService): voi
       if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
       const results = await service.sync(args.container, args.message);
       return ok(formatSync(results), { results });
+    }),
+  );
+
+  server.registerTool(
+    "onboard",
+    {
+      title: "Onboard / set wake phrase",
+      description:
+        "Guide first-run setup (explain OKH, inspect, create the first hub). With { wakePhrase } persist a custom phrase to address the hub.",
+      inputSchema: {
+        wakePhrase: z
+          .string()
+          .optional()
+          .describe("Set a custom wake phrase (1-32 chars: a letter then letters, digits or dashes)."),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false },
+    },
+    handler(async (args: { wakePhrase?: string }) => {
+      if (args.wakePhrase !== undefined) {
+        const parsed = wakePhraseSchema.safeParse(args.wakePhrase);
+        if (!parsed.success) {
+          return fail(`Invalid wake phrase: ${parsed.error.issues[0]?.message ?? "invalid"}`, "Use 1-32 chars: a letter then letters, digits or dashes.");
+        }
+        await savePreferences(paths, { wakePhrase: parsed.data });
+        return ok(
+          `Wake phrase set to "${parsed.data}". It takes effect on the next client restart; you can already say "${parsed.data}, …".`,
+          { wakePhrase: parsed.data },
+        );
+      }
+      const { wakePhrase } = await loadPreferences(paths);
+      const targets = await service.resolveTargets();
+      return ok(await buildOnboard(targets, wakePhrase));
     }),
   );
 
@@ -202,6 +271,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Ask (flow)",
       description: "Return discipline to answer a question from the hub's modules.",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, question: z.string().optional().describe("The question to answer.") },
     },
     handler(async (args: { container?: string; module?: string; question?: string }) => {
@@ -215,6 +285,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Context (flow)",
       description: "Return discipline to assemble a task-relevant working set across the hub.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         container: z.string().optional().describe("Container name (default: all)."),
         task: z.string().optional().describe("The task to prepare for."),
@@ -231,6 +302,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Learn (flow)",
       description: "Return discipline to integrate new knowledge into a knowledge module (OKF).",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, knowledge: z.string().optional().describe("The candidate knowledge.") },
     },
     handler(async (args: { container?: string; module?: string; knowledge?: string }) => {
@@ -244,6 +316,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Remember (flow)",
       description: "Return discipline to record an observation into a memory module.",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, observation: z.string().optional().describe("The observation to record.") },
     },
     handler(async (args: { container?: string; module?: string; observation?: string }) => {
@@ -257,6 +330,7 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
     {
       title: "Reflect (flow)",
       description: "Return discipline to turn memory/experience into insight and updates.",
+      annotations: { readOnlyHint: true },
       inputSchema: { ...promptArgs, focus: z.string().optional().describe("Optional area to focus on.") },
     },
     handler(async (args: { container?: string; module?: string; focus?: string }) => {

@@ -1,0 +1,29 @@
+- vars:
+    scenario: onboard-create-local
+    backend: local
+    provision: empty
+    container: my-notes
+    fixture: fixtures/plain-notes
+    prompt: |
+      hub, create a new knowledge hub in a folder called "my-notes" and add a
+      knowledge module named "kb". Show me the plan and wait for my confirmation
+      before creating anything; when you ask, assume I say yes.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [add] }
+    - type: javascript
+      value: file://assertions/container-registered.ts
+      config: { name: my-notes, backend: local, module: kb }
+    - type: javascript
+      value: file://assertions/manifest-initialized.ts
+      config: { name: my-notes }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        threshold: 0.8
+        rubric: |
+          PASS iff the agent first previewed/presented a plan describing the folder +
+          manifest creation (rather than creating blindly in a single step), and then
+          created the hub and a "kb" knowledge module. (This runs headless, so the agent
+          proceeds after presenting the plan; it need not pause for an interactive reply.)

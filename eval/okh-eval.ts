@@ -5,14 +5,22 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { parse as parseYaml } from "yaml";
 import { provision, type EvalBackend } from "./provision.js";
-import { loadRegistry, requireContainer } from "../src/registry/registry.js";
+import { loadRegistry, findContainer } from "../src/registry/registry.js";
 import { recordRun, resolveRun, forgetRun, type RunRecord } from "./run-state.js";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
 
 /** Manual-mode check assertions: only objective filesystem/git side-effects (need no transcript). */
-const SIDE_EFFECT_ASSERTIONS = ["okf-valid.ts", "memory-append.ts", "git-committed.ts", "module-unchanged.ts"];
+const SIDE_EFFECT_ASSERTIONS = [
+  "okf-valid.ts",
+  "memory-append.ts",
+  "git-committed.ts",
+  "module-unchanged.ts",
+  "container-registered.ts",
+  "manifest-initialized.ts",
+  "wake-phrase-set.ts",
+];
 
 function shellQuote(value: string): string {
   if (process.platform === "win32") return `'${value.replace(/'/g, "''")}'`;
@@ -53,7 +61,17 @@ async function reportChecks(root: string, name: string): Promise<number> {
 }
 
 export interface ScenarioTest {
-  vars: { scenario: string; backend: EvalBackend; container: string; fixture: string; prompt: string };
+  vars: {
+    scenario: string;
+    backend: EvalBackend;
+    container: string;
+    fixture: string;
+    prompt: string;
+    provision?: "registered" | "empty" | "unregistered-local";
+    /** Optional second local container for multi-container scenarios. */
+    container2?: string;
+    fixture2?: string;
+  };
   assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }>;
 }
 
@@ -88,7 +106,20 @@ export async function setupScenario(
   const backend = opts.backend ?? scenario.vars.backend;
   const fixtureRaw = scenario.vars.fixture;
   const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
-  const prov = await provision({ scenario: name, backend, container: scenario.vars.container, fixtureDir, repoRoot: REPO_ROOT });
+  const fixture2Dir = scenario.vars.fixture2
+    ? (isAbsolute(scenario.vars.fixture2) ? scenario.vars.fixture2 : resolve(EVAL_ROOT, scenario.vars.fixture2))
+    : undefined;
+  const prov = await provision({
+    scenario: name,
+    backend,
+    container: scenario.vars.container,
+    fixtureDir,
+    repoRoot: REPO_ROOT,
+    ...(scenario.vars.provision ? { mode: scenario.vars.provision } : {}),
+    ...(scenario.vars.container2 && fixture2Dir
+      ? { additional: [{ name: scenario.vars.container2, fixtureDir: fixture2Dir }] }
+      : {}),
+  });
   const model = opts.model ?? "claude-sonnet-4.5";
   const prompt = shellQuote(scenario.vars.prompt.trim());
   const command =
@@ -127,16 +158,21 @@ export interface CheckResult {
 export async function runChecks(root: string, name: string): Promise<CheckResult[]> {
   const scenario = await loadScenario(name);
   const okhHome = join(root, "okh-home");
-  const reg = await loadRegistry({ home: okhHome, containersDir: join(okhHome, "containers"), registryFile: join(okhHome, "registry.json") });
-  const entry = requireContainer(reg, scenario.vars.container);
+  const reg = await loadRegistry({
+    home: okhHome,
+    containersDir: join(okhHome, "containers"),
+    registryFile: join(okhHome, "registry.json"),
+    preferencesFile: join(okhHome, "preferences.json"),
+  });
+  const entry = findContainer(reg, scenario.vars.container);
   const fixtureRaw = scenario.vars.fixture;
   const fixtureDir = isAbsolute(fixtureRaw) ? fixtureRaw : resolve(EVAL_ROOT, fixtureRaw);
   const metadata = {
     workspace: root,
     okhHome,
-    containerPath: entry.localPath,
+    containerPath: entry?.localPath ?? "",
     fixtureDir,
-    originPath: entry.backend === "git" ? entry.origin : undefined,
+    originPath: entry && entry.backend === "git" ? entry.origin : undefined,
     toolCalls: [] as string[],
   };
   const results: CheckResult[] = [];

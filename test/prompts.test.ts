@@ -37,8 +37,8 @@ describe("resolveTargets", () => {
     const home = await makeTempDir(); cleanups.push(home);
     const dir = await makeTempDir(); cleanups.push(dir);
     const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
-    await service.addContainer({ source: dir, name: "hub" });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge" });
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
     const targets = await service.resolveTargets("hub");
     expect(targets).toHaveLength(1);
     expect(targets[0]!.modules[0]!.absPath).toContain("kb");
@@ -50,8 +50,8 @@ describe("resolveTargets", () => {
     const a = await makeTempDir(); cleanups.push(a);
     const b = await makeTempDir(); cleanups.push(b);
     const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
-    await service.addContainer({ source: a, name: "a" });
-    await service.addContainer({ source: b, name: "b" });
+    await service.addContainer({ source: a, name: "a", create: true });
+    await service.addContainer({ source: b, name: "b", create: true });
     expect(await service.resolveTargets()).toHaveLength(2);
   });
 });

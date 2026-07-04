@@ -2,8 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GetPromptResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ContainerService, ResolvedContainer } from "../container/service.js";
+import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
-import { buildAsk, buildContext, buildLearn, buildReflect, buildRemember } from "../prompts/index.js";
+import { loadPreferences } from "../preferences.js";
+import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
 
 function message(text: string): GetPromptResult {
   return { messages: [{ role: "user", content: { type: "text", text } }] };
@@ -33,7 +35,7 @@ const promptArgs = {
 };
 
 /** Register the five cognitive prompts (mirrors the prompt-tools in tools.ts). */
-export function registerPrompts(server: McpServer, service: ContainerService): void {
+export function registerPrompts(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerPrompt(
     "ask",
     {
@@ -82,5 +84,24 @@ export function registerPrompts(server: McpServer, service: ContainerService): v
       argsSchema: { ...promptArgs, focus: z.string().optional() },
     },
     (args) => build(service, args.container, args.module, (t) => buildReflect(t, args.focus)),
+  );
+
+  server.registerPrompt(
+    "onboard",
+    {
+      title: "Onboard",
+      description: "Guide first-run setup and how to set a wake phrase for the hub.",
+      argsSchema: {},
+    },
+    async () => {
+      try {
+        const { wakePhrase } = await loadPreferences(paths);
+        const targets = await service.resolveTargets();
+        return message(await buildOnboard(targets, wakePhrase));
+      } catch (err) {
+        if (isOkhError(err)) return message(`Cannot start this flow: [${err.code}] ${err.message}`);
+        throw err;
+      }
+    },
   );
 }

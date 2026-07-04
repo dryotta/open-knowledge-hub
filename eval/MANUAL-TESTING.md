@@ -26,7 +26,9 @@ npm run eval:setup -- list
 
 Scenarios: `ask-grounded`, `ask-declines-when-absent`, `context-assembly`,
 `context-includes-skills-tools`, `learn-integrates`, `learn-rejects-trivial`,
-`remember-records`, `remember-no-conclusions`, `reflect-insights`.
+`remember-records`, `remember-no-conclusions`, `reflect-insights`,
+`onboard-create-local`, `onboard-add-existing-folder`, `onboard-add-github`,
+`onboard-explains`, `onboard-wake-phrase`, `ask-multi-container`.
 
 ---
 
@@ -115,6 +117,16 @@ cases. Good ones to watch interactively:
   commits **and pushes** to a bare git origin (`git-committed` verifies it).
 - **`learn-rejects-trivial`** — the okf-learn gate should refuse to store junk
   ("the sky is blue"); `module-unchanged` verifies nothing was written.
+
+---
+
+## PR-mode sync (manual only)
+
+Automated e2e cannot open real pull requests. To test `pr`-mode:
+1. Create/register a `pr`-mode git container against a repo you can push to.
+2. `hub, learn this: <fact>` then confirm; `hub, open a PR with my changes.`
+3. Verify `sync` created a branch `okh/<name>/sync-*`, pushed it, and opened a PR
+   via `gh`, then returned you to the base branch.
 
 ---
 
