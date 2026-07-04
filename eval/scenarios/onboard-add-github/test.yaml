@@ -17,7 +17,12 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the agent cloned the repo, registered it as a git container, and
-          summarized its actual knowledge content (from the kb module). No push/sync required.
+        criteria:
+          - id: cloned-registered-git
+            text: The repo was cloned and registered as a git container with a "kb" knowledge module.
+            check: { kind: container, name: okh-eval-hub, backend: git, module: kb }
+          - id: used-inspect
+            text: The agent inspected the hub's contents.
+            check: { kind: tool, name: inspect }
+          - id: summarized-kb-content
+            text: The agent summarized the repo's actual knowledge content (from the kb module).

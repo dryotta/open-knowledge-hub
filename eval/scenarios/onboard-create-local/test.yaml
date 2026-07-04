@@ -21,9 +21,12 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the agent first previewed/presented a plan describing the folder +
-          manifest creation (rather than creating blindly in a single step), and then
-          created the hub and a "kb" knowledge module. (This runs headless, so the agent
-          proceeds after presenting the plan; it need not pause for an interactive reply.)
+        criteria:
+          - id: previewed-before-apply
+            text: The agent showed/echoed a plan describing what it would create before creating anything.
+          - id: created-hub-and-kb
+            text: A container "my-notes" with a "kb" knowledge module was created.
+            check: { kind: container, name: my-notes, backend: local, module: kb }
+          - id: called-add
+            text: The agent used the add tool.
+            check: { kind: tool, name: add }

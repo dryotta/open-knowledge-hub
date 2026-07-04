@@ -16,7 +16,6 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the okf-learn gate REJECTS this as not serving any goal of the
-          knowledge base and does NOT write it as a concept. FAIL if it stores it.
+        criteria:
+          - id: rejects-trivial
+            text: The okf-learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.

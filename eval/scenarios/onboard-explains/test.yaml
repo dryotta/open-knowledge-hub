@@ -10,8 +10,8 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the agent explains OKH as containers of typed modules and offers to
-          help the user set up or add a first hub. Naming the management tools
-          (inspect/add/sync) or the cognitive flows is a plus but not required.
+        criteria:
+          - id: explains-containers-modules
+            text: The agent explains OKH as containers of typed modules.
+          - id: offers-setup-help
+            text: The agent offers to help the user set up or add a first hub.

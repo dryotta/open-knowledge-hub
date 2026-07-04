@@ -16,6 +16,12 @@
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        threshold: 0.8
-        rubric: |
-          PASS iff the agent explained onboarding and set the wake phrase to "brain".
+        criteria:
+          - id: explained-onboarding
+            text: The agent explained getting started / onboarding.
+          - id: set-wake-phrase
+            text: The agent set the wake phrase to "brain".
+            check: { kind: wake-phrase, default: hub }
+          - id: called-onboard
+            text: The agent used the onboard tool.
+            check: { kind: tool, name: onboard }
