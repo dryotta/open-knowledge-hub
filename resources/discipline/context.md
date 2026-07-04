@@ -1,7 +1,7 @@
 # Discipline: context
 
-Assemble a compact, task-relevant working set from the hub before acting. Do NOT
-dump whole modules into context.
+Assemble a compact, task-relevant working set from your containers before acting.
+Do NOT dump whole modules into context.
 
 1. Read the provided list of containers -> modules -> paths.
 2. Enumerate what each relevant module actually contains: inspect the module

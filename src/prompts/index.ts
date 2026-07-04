@@ -116,7 +116,7 @@ export async function buildOnboard(targets: ResolvedContainer[], wakePhrase: str
 
 **Wake phrase:** \`${wakePhrase}\`
 
-**Current hubs:**
+**Current containers:**
 ${renderTargets(targets)}
 
 <discipline name="onboard">

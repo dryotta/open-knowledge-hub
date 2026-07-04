@@ -1,11 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GetPromptResult } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
 import type { ContainerService, ResolvedContainer } from "../container/service.js";
 import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
 import { loadPreferences } from "../preferences.js";
 import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
+import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function message(text: string): GetPromptResult {
   return { messages: [{ role: "user", content: { type: "text", text } }] };
@@ -29,19 +29,14 @@ async function build(
   }
 }
 
-const promptArgs = {
-  container: z.string().optional().describe("Container name (default: all registered containers)."),
-  module: z.string().optional().describe("Module path within the container."),
-};
-
-/** Register the five cognitive prompts (mirrors the prompt-tools in tools.ts). */
+/** Register the six flows as prompts. Content mirrors the prompt-tools in tools.ts exactly (see prompts/meta.ts). */
 export function registerPrompts(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerPrompt(
     "ask",
     {
-      title: "Ask the hub",
-      description: "Answer a question from the hub's modules using the okf-ask discipline.",
-      argsSchema: { ...promptArgs, question: z.string().optional() },
+      title: flowMeta.ask.title,
+      description: flowMeta.ask.description,
+      argsSchema: flowArgShapes.ask,
     },
     (args) => build(service, args.container, args.module, (t) => buildAsk(t, args.question)),
   );
@@ -49,9 +44,9 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
   server.registerPrompt(
     "context",
     {
-      title: "Assemble context",
-      description: "Assemble a task-relevant working set across the hub.",
-      argsSchema: { container: z.string().optional(), task: z.string().optional() },
+      title: flowMeta.context.title,
+      description: flowMeta.context.description,
+      argsSchema: flowArgShapes.context,
     },
     (args) => build(service, args.container, undefined, (t) => buildContext(t, args.task)),
   );
@@ -59,9 +54,9 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
   server.registerPrompt(
     "learn",
     {
-      title: "Learn into knowledge",
-      description: "Integrate new knowledge into a knowledge module (OKF learn gate + writer).",
-      argsSchema: { ...promptArgs, knowledge: z.string().optional() },
+      title: flowMeta.learn.title,
+      description: flowMeta.learn.description,
+      argsSchema: flowArgShapes.learn,
     },
     (args) => build(service, args.container, args.module, (t) => buildLearn(t, args.knowledge)),
   );
@@ -69,9 +64,9 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
   server.registerPrompt(
     "remember",
     {
-      title: "Remember an observation",
-      description: "Record a raw observation into a memory module.",
-      argsSchema: { ...promptArgs, observation: z.string().optional() },
+      title: flowMeta.remember.title,
+      description: flowMeta.remember.description,
+      argsSchema: flowArgShapes.remember,
     },
     (args) => build(service, args.container, args.module, (t) => buildRemember(t, args.observation)),
   );
@@ -79,9 +74,9 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
   server.registerPrompt(
     "reflect",
     {
-      title: "Reflect on memory",
-      description: "Turn memory/experience into insight and propose updates.",
-      argsSchema: { ...promptArgs, focus: z.string().optional() },
+      title: flowMeta.reflect.title,
+      description: flowMeta.reflect.description,
+      argsSchema: flowArgShapes.reflect,
     },
     (args) => build(service, args.container, args.module, (t) => buildReflect(t, args.focus)),
   );
@@ -89,9 +84,9 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
   server.registerPrompt(
     "onboard",
     {
-      title: "Onboard",
-      description: "Guide first-run setup and how to set a wake phrase for the hub.",
-      argsSchema: {},
+      title: flowMeta.onboard.title,
+      description: flowMeta.onboard.description,
+      argsSchema: flowArgShapes.onboard,
     },
     async () => {
       try {
