@@ -40,6 +40,25 @@ npm run eval:view             # open the report + side-by-side comparison UI
 > promptfoo via `node --import tsx`, matching `npm run eval`, so the TypeScript
 > provider can keep NodeNext `.js` import specifiers.
 
+## Judge reliability
+
+The judge grades each scenario against a list of **binary criteria** (not a 0–1
+score). For robustness it uses **self-consistency**: the agent runs once, then the
+Copilot-CLI judge grades that transcript **`k` times** (default 3, override with
+`config.k` per assertion or the `OKH_JUDGE_K` env var) and each criterion is
+decided by **majority vote**. A criterion with fewer than `ceil(k/2)` valid votes,
+or a tie, is `UNRELIABLE` (fails).
+
+Any criterion that is objectively checkable carries a `check` (`tool`, `container`,
+`manifest`, `wake-phrase`, `transcript-contains`, `transcript-absent`). The judge
+still grades it, but its majority verdict is **cross-checked against deterministic
+ground truth**; a judge/deterministic disagreement fails the scenario and is
+flagged in the reason. A green result is therefore reproducible within majority
+tolerance and self-auditing.
+
+Cost: one agent call + `k` judge calls per scenario. Set `OKH_JUDGE_K=1` for cheap
+local iteration.
+
 **Model matrix (goal 1):** add more `providers` entries in `promptfooconfig.yaml`,
 each pointing at `file://provider/copilotProvider.ts` (paths are relative to `eval/`)
 with a different `config.model`. Default is a single pinned model.
@@ -68,10 +87,10 @@ token with `repo` read (Linux/CI). No push/sync is exercised.
 
 ## Caveats
 
-- Each run consumes premium requests: **2 Copilot CLI calls per test × models** — one
-  for the agent, one for the judge. Keep the default matrix small.
-- Copilot CLI temperature isn't directly controllable — rely on judge thresholds
-  (and promptfoo `repeat`). **Do not** gate required CI on this suite.
+- Each run consumes premium requests: **one agent call + `k` judge calls per
+  scenario × models** (default `k=3`). Keep the default matrix small.
+- Copilot CLI temperature isn't directly controllable — rely on self-consistent
+  judging (and promptfoo `repeat`). **Do not** gate required CI on this suite.
 - Response caching is disabled for the agent provider (`--no-cache`).
 
 ## Verified against a live run (Windows, Copilot CLI + this OKH build)
