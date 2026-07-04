@@ -37,9 +37,10 @@ is why the first `add` shows a plan instead of doing the work immediately.
 ## Choosing a wake phrase
 
 The default is `hub`. To change it: `hub, call yourself brain.` — your agent
-persists it via the `onboard` tool. It takes effect the next time your MCP client
-restarts. For the most reliable routing, you can also rename this server's key in
-your MCP client config to the same phrase (client-specific).
+persists it via the `config` tool (`config { set: { wakePhrase: "brain" } }`). It
+takes effect the next time your MCP client restarts. For the most reliable
+routing, you can also rename this server's key in your MCP client config to the
+same phrase (client-specific).
 
 ## Everyday use
 

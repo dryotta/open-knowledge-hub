@@ -18,6 +18,18 @@ export const preferencesSchema = z
   .strict();
 export type Preferences = z.infer<typeof preferencesSchema>;
 
+/** Human-facing metadata for each configurable key. Keep in sync with preferencesSchema. */
+export const configFieldMeta: ReadonlyArray<{ key: keyof Preferences; description: string }> = [
+  {
+    key: "wakePhrase",
+    description:
+      'Short phrase used to address the hub (1-32 chars: a letter then letters, digits or dashes; default "hub"). Takes effect on the next client restart.',
+  },
+];
+
+/** The list of known/valid config keys, derived from configFieldMeta. */
+export const configKeys: readonly string[] = configFieldMeta.map((f) => f.key);
+
 const mutex = new Mutex();
 
 function parseOrDefault(raw: string): Preferences {

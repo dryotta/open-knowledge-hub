@@ -43,7 +43,7 @@ export const spawnCopilot: CopilotRunner = (opts) =>
     });
   });
 
-const OKH_TOOLS = ["inspect", "add", "sync", "onboard", "ask", "context", "learn", "remember", "reflect"] as const;
+const OKH_TOOLS = ["inspect", "add", "sync", "onboard", "config", "ask", "context", "learn", "remember", "reflect"] as const;
 
 /**
  * Extract which OKH tools were invoked, from the transcript.
@@ -52,15 +52,19 @@ const OKH_TOOLS = ["inspect", "add", "sync", "onboard", "ask", "context", "learn
  * rendered on a line containing `(MCP: open-knowledge-hub)` with the tool's title,
  * e.g. `● Remember (flow) (MCP: open-knowledge-hub) · container: ...` or
  * `● Sync containers (MCP: open-knowledge-hub) · ...`. We match the OKH tool name
- * as a word on such a line. A server-qualified fallback (`open-knowledge-hub<sep>TOOL`)
- * covers other renderings/versions.
+ * as a word against the tool title only — the text before `(MCP:` — so argument
+ * names that collide with tool names (e.g. add's `config`/`sync` arguments, which
+ * appear after the `·` separator) don't spoof a tool call. A server-qualified
+ * fallback (`open-knowledge-hub<sep>TOOL`) covers other renderings/versions.
  */
 export function extractToolCalls(transcript: string): string[] {
   const found = new Set<string>();
   for (const line of transcript.split(/\r?\n/)) {
-    if (!/\(MCP:\s*open-knowledge-hub\)/i.test(line)) continue;
+    const mcp = line.search(/\(MCP:\s*open-knowledge-hub\)/i);
+    if (mcp < 0) continue;
+    const title = line.slice(0, mcp);
     for (const t of OKH_TOOLS) {
-      if (new RegExp(`\\b${t}\\b`, "i").test(line)) found.add(t);
+      if (new RegExp(`\\b${t}\\b`, "i").test(title)) found.add(t);
     }
   }
   for (const t of OKH_TOOLS) {

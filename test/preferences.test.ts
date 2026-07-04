@@ -5,6 +5,9 @@ import {
   loadPreferencesSync,
   savePreferences,
   DEFAULT_WAKE_PHRASE,
+  configFieldMeta,
+  configKeys,
+  preferencesSchema,
 } from "../src/preferences.js";
 import { makePaths, makeTempDir } from "./helpers.js";
 
@@ -41,5 +44,14 @@ describe("preferences", () => {
     const p = await paths();
     await writeFile(p.preferencesFile, "{ not json", "utf8");
     expect((await loadPreferences(p)).wakePhrase).toBe(DEFAULT_WAKE_PHRASE);
+  });
+
+  it("exposes config metadata keys aligned with the schema", () => {
+    expect(configKeys).toContain("wakePhrase");
+    const wake = configFieldMeta.find((f) => f.key === "wakePhrase");
+    expect(wake).toBeDefined();
+    expect(wake!.description.length).toBeGreaterThan(0);
+    // configKeys must exactly cover the schema's keys, so it can't drift when a field is added/removed
+    expect(configKeys).toEqual(Object.keys(preferencesSchema.shape));
   });
 });

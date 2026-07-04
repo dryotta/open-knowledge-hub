@@ -11,7 +11,14 @@ import type {
 import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
 import { moduleTypeSchema } from "../modules/types.js";
-import { loadPreferences, savePreferences, wakePhraseSchema } from "../preferences.js";
+import {
+  configFieldMeta,
+  configKeys,
+  loadPreferences,
+  preferencesSchema,
+  savePreferences,
+  type Preferences,
+} from "../preferences.js";
 import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
@@ -104,7 +111,27 @@ function formatSync(rs: SyncResult[]): string {
     .join("\n");
 }
 
-/** Register the four operational/setup tools + five cognitive prompt-tools. */
+function formatConfig(prefs: Preferences, paths: OkhPaths): string {
+  const lines = [`Config (${paths.preferencesFile}):`];
+  for (const { key, description } of configFieldMeta) {
+    const value = (prefs as Record<string, unknown>)[key];
+    lines.push(`- ${key}: ${JSON.stringify(value)} — ${description}`);
+  }
+  return lines.join("\n");
+}
+
+function describeConfigError(err: z.ZodError): string {
+  for (const issue of err.issues) {
+    if (issue.code === "unrecognized_keys") {
+      return `Unknown config key(s): ${issue.keys.join(", ")}. Valid keys: ${configKeys.join(", ")}.`;
+    }
+  }
+  const first = err.issues[0];
+  const key = first?.path.join(".") || "config";
+  return `Invalid value for "${key}": ${first?.message ?? "invalid value"}.`;
+}
+
+/** Register the five operational/setup tools + five cognitive prompt-tools. */
 export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
@@ -225,31 +252,55 @@ export function registerTools(server: McpServer, service: ContainerService, path
   );
 
   server.registerTool(
+    "config",
+    {
+      title: "Config (view or change settings)",
+      description:
+        "View or change OKH configuration (stored in preferences.json). Call with no args to list current " +
+        "settings; pass { set: { <key>: <value> } } to change one or more. Known keys: " +
+        `${configKeys.join(", ")}.`,
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      inputSchema: {
+        set: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('Config keys to set, e.g. { wakePhrase: "brain" }. Omit to list current config.'),
+      },
+    },
+    handler(async (args: { set?: Record<string, unknown> }) => {
+      if (args.set === undefined) {
+        const prefs = await loadPreferences(paths);
+        return ok(formatConfig(prefs, paths), { preferences: prefs, keys: configKeys });
+      }
+      if (Object.keys(args.set).length === 0) {
+        return fail("config { set } must include at least one key.", `Valid keys: ${configKeys.join(", ")}.`);
+      }
+      const current = await loadPreferences(paths);
+      const parsed = preferencesSchema.safeParse({ ...current, ...args.set });
+      if (!parsed.success) return fail(describeConfigError(parsed.error));
+      await savePreferences(paths, parsed.data);
+      const changed = Object.keys(args.set);
+      const restartNote = changed.includes("wakePhrase")
+        ? ` The wake phrase takes effect on the next client restart; you can already say "${parsed.data.wakePhrase}, …".`
+        : "";
+      return ok(`Updated ${changed.join(", ")}.${restartNote}\n\n${formatConfig(parsed.data, paths)}`, {
+        preferences: parsed.data,
+        changed,
+      });
+    }),
+  );
+
+  server.registerTool(
     "onboard",
     {
-      title: "Onboard / set wake phrase",
+      title: "Onboard (guided setup)",
       description:
-        "Guide first-run setup (explain OKH, inspect, create the first hub). With { wakePhrase } persist a custom phrase to address the hub.",
-      inputSchema: {
-        wakePhrase: z
-          .string()
-          .optional()
-          .describe("Set a custom wake phrase (1-32 chars: a letter then letters, digits or dashes)."),
-      },
-      annotations: { readOnlyHint: false, openWorldHint: false },
+        "Return multi-turn onboarding guidance (intro, wake phrase, first repo + modules) for a first-run user. " +
+        "Set the wake phrase via the config tool.",
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: {},
     },
-    handler(async (args: { wakePhrase?: string }) => {
-      if (args.wakePhrase !== undefined) {
-        const parsed = wakePhraseSchema.safeParse(args.wakePhrase);
-        if (!parsed.success) {
-          return fail(`Invalid wake phrase: ${parsed.error.issues[0]?.message ?? "invalid"}`, "Use 1-32 chars: a letter then letters, digits or dashes.");
-        }
-        await savePreferences(paths, { wakePhrase: parsed.data });
-        return ok(
-          `Wake phrase set to "${parsed.data}". It takes effect on the next client restart; you can already say "${parsed.data}, …".`,
-          { wakePhrase: parsed.data },
-        );
-      }
+    handler(async () => {
       const { wakePhrase } = await loadPreferences(paths);
       const targets = await service.resolveTargets();
       return ok(await buildOnboard(targets, wakePhrase));

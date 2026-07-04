@@ -9,7 +9,7 @@
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts
-      config: { expect: [onboard] }
+      config: { expect: [config] }
     - type: javascript
       value: file://assertions/wake-phrase-set.ts
       config: { default: hub }
@@ -22,6 +22,6 @@
           - id: set-wake-phrase
             text: The agent set the wake phrase to "brain".
             check: { kind: wake-phrase, default: hub }
-          - id: called-onboard
-            text: The agent used the onboard tool.
-            check: { kind: tool, name: onboard }
+          - id: used-config
+            text: The agent used the config tool to set the wake phrase.
+            check: { kind: tool, name: config }

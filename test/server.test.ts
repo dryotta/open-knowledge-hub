@@ -67,30 +67,48 @@ function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 9 tools and 6 prompts", async () => {
+  it("exposes exactly the 10 tools and 6 prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["add", "ask", "context", "inspect", "learn", "onboard", "reflect", "remember", "sync"]);
+    expect(tools).toEqual(["add", "ask", "config", "context", "inspect", "learn", "onboard", "reflect", "remember", "sync"]);
 
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
     expect(prompts).toEqual(["ask", "context", "learn", "onboard", "reflect", "remember"]);
   });
 
-  it("onboard returns guidance without args and persists a wake phrase with args", async () => {
+  it("onboard returns multi-turn guidance without args and does not mutate config", async () => {
     const { client, home } = await connect();
-
     const guide = await client.callTool({ name: "onboard", arguments: {} });
     expect(textOf(guide)).toContain("OKH: onboard");
-    expect(textOf(guide)).toContain("hub"); // default wake phrase
+    expect(textOf(guide)).toContain("hub"); // default wake phrase injected
 
-    const set = await client.callTool({ name: "onboard", arguments: { wakePhrase: "brain" } });
-    expect(textOf(set)).toContain('Wake phrase set to "brain"');
+    const { loadPreferences } = await import("../src/preferences.js");
+    // onboard has no wakePhrase arg anymore; prefs remain default.
+    expect((await loadPreferences(makePaths(home))).wakePhrase).toBe("hub");
+  });
+
+  it("config lists settings and persists changes via set", async () => {
+    const { client, home } = await connect();
+
+    const list = await client.callTool({ name: "config", arguments: {} });
+    expect(textOf(list)).toContain("wakePhrase");
+    expect(textOf(list)).toContain("hub");
+
+    const set = await client.callTool({ name: "config", arguments: { set: { wakePhrase: "brain" } } });
+    expect(textOf(set)).toContain("brain");
 
     const { loadPreferences } = await import("../src/preferences.js");
     expect((await loadPreferences(makePaths(home))).wakePhrase).toBe("brain");
 
-    const bad = await client.callTool({ name: "onboard", arguments: { wakePhrase: "no spaces" } });
-    expect(isErrorResult(bad)).toBe(true);
+    const badValue = await client.callTool({ name: "config", arguments: { set: { wakePhrase: "no spaces" } } });
+    expect(isErrorResult(badValue)).toBe(true);
+
+    const badKey = await client.callTool({ name: "config", arguments: { set: { nope: "x" } } });
+    expect(isErrorResult(badKey)).toBe(true);
+    expect(textOf(badKey)).toContain("wakePhrase"); // error lists valid keys
+
+    const empty = await client.callTool({ name: "config", arguments: { set: {} } });
+    expect(isErrorResult(empty)).toBe(true);
   });
 
   it("announces the configured wake phrase in server instructions", async () => {
@@ -107,6 +125,7 @@ describe("MCP server surface", () => {
     await Promise.all([client.connect(clientT), server.connect(serverT)]);
     const instructions = client.getInstructions();
     expect(instructions).toContain("brain");
+    expect(instructions).toContain("config");
   });
 
   it("declares accurate tool annotations", async () => {
@@ -117,8 +136,15 @@ describe("MCP server surface", () => {
     expect(byName.ask!.readOnlyHint).toBe(true);
     expect(byName.add!.openWorldHint).toBe(true);
     expect(byName.sync!.openWorldHint).toBe(true);
-    expect(byName.onboard!.readOnlyHint).toBe(false);
+    expect(byName.onboard!.readOnlyHint).toBe(true);
     expect(byName.onboard!.openWorldHint).toBe(false);
+  });
+
+  it("config tool title contains the word 'config' so its call is detectable in transcripts", async () => {
+    const { client } = await connect();
+    const tool = (await client.listTools()).tools.find((t) => t.name === "config");
+    const title = tool?.title ?? (tool?.annotations as { title?: string } | undefined)?.title ?? "";
+    expect(title).toMatch(/\bconfig\b/i);
   });
 
   it("add -> inspect round-trips through the tool interface", async () => {

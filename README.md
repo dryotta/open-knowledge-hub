@@ -35,14 +35,15 @@ modules:
 
 ## MCP surface
 
-**Tools (9)**
+**Tools (10)**
 
 | Tool | Args | Purpose |
 | --- | --- | --- |
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
 | `add` | `source,name?,sync?,backend?` or `container,path,type,config?` | Register a container, or add a module. Returns a plan unless `create:true`. |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
-| `onboard` | `wakePhrase?` | Guide first-run setup; persist a custom wake phrase. |
+| `onboard` | _(none)_ | Guide multi-turn first-run setup (intro, wake phrase, first repo + modules). |
+| `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 | `ask` | `container?`, `module?`, `question?` | Discipline to answer from the hub's modules. |
 | `context` | `container?`, `task?` | Discipline to assemble a task's working set. |
 | `learn` | `container?`, `module?`, `knowledge?` | Discipline to integrate knowledge (OKF). |
@@ -88,9 +89,9 @@ Run straight from GitHub via `npx` (builds on first launch):
 ## Wake phrase
 
 Address the hub by its wake phrase (default `hub`), e.g. `hub, remember that …`.
-Change it with the `onboard` tool; OKH stores it in `$OKH_HOME/preferences.json`
-and announces it in the server instructions. See **[USAGE.md](./USAGE.md)** for
-recommended prompts.
+Change it with the `config` tool (`config { set: { wakePhrase: "brain" } }`); OKH
+stores it in `$OKH_HOME/preferences.json` and announces it in the server
+instructions. See **[USAGE.md](./USAGE.md)** for recommended prompts.
 
 ## Development
 
