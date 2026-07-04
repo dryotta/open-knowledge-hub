@@ -40,7 +40,9 @@ npm run eval:setup -- setup ask-grounded
 
 This copies the scenario's fixture into a throwaway temp **Root** and builds an
 isolated `COPILOT_HOME` whose `mcp-config.json` points Copilot at the OKH server
-running against an isolated `OKH_HOME`. The run is **recorded**, so the follow-up
+running against an isolated `OKH_HOME`. Each scenario declares a single `env` (see
+`eval/environments.ts`); provisioning is driven entirely by that environment
+(`empty`, `git`, or `local-and-git`). The run is **recorded**, so the follow-up
 commands below need no path. It prints:
 
 - **Root** / **Workspace** paths (informational — you no longer copy them),
