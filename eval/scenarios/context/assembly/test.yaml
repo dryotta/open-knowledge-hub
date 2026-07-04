@@ -1,0 +1,20 @@
+- description: context-assembly
+  prompts:
+    - context-assembly
+  vars:
+    scenario: context-assembly
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [context] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: includes-auth
+            text: The response assembles a compact working set that includes the Auth knowledge concept and cites module paths.
+          - id: omits-irrelevant
+            text: It omits clearly irrelevant items and notes any gaps (does not dump everything).

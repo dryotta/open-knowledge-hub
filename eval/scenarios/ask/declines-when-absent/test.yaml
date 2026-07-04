@@ -1,0 +1,20 @@
+- description: ask-declines-when-absent
+  prompts:
+    - ask-declines-when-absent
+  vars:
+    scenario: ask-declines-when-absent
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: declines
+            text: The answer states the vacation-policy information is NOT in the knowledge base (declines / says not found).
+          - id: no-fabrication
+            text: The answer does NOT fabricate a vacation policy.

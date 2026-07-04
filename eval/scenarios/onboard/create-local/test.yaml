@@ -1,0 +1,31 @@
+- description: onboard-create-local
+  prompts:
+    - onboard-create-local
+  vars:
+    scenario: onboard-create-local
+    backend: local
+    provision: empty
+    container: my-notes
+    fixture: fixtures/plain-notes
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [add] }
+    - type: javascript
+      value: file://assertions/container-registered.ts
+      config: { name: my-notes, backend: local, module: kb }
+    - type: javascript
+      value: file://assertions/manifest-initialized.ts
+      config: { name: my-notes }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: previewed-before-apply
+            text: The agent showed/echoed a plan describing what it would create before creating anything.
+          - id: created-hub-and-kb
+            text: A container "my-notes" with a "kb" knowledge module was created.
+            check: { kind: container, name: my-notes, backend: local, module: kb }
+          - id: called-add
+            text: The agent used the add tool.
+            check: { kind: tool, name: add }

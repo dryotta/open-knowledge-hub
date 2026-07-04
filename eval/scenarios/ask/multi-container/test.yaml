@@ -1,0 +1,25 @@
+- description: ask-multi-container
+  prompts:
+    - ask-multi-container
+  vars:
+    scenario: ask-multi-container
+    backend: local
+    provision: registered
+    container: kb-hub
+    fixture: fixtures/kb-hub
+    container2: git-hub
+    fixture2: fixtures/git-hub
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: answered-with-citations
+            text: The agent answered from the registered knowledge modules with module-path citations.
+          - id: spans-hubs
+            text: The answer draws on more than one hub where the relevant facts live.
+          - id: no-fabrication
+            text: The agent invented nothing.

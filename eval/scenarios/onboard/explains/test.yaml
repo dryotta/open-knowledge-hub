@@ -1,0 +1,18 @@
+- description: onboard-explains
+  prompts:
+    - onboard-explains
+  vars:
+    scenario: onboard-explains
+    backend: local
+    provision: empty
+    container: hub
+    fixture: fixtures/plain-notes
+  assert:
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: explains-containers-modules
+            text: The agent explains OKH as containers of typed modules.
+          - id: offers-setup-help
+            text: The agent offers to help the user set up or add a first hub.

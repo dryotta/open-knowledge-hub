@@ -1,0 +1,22 @@
+- description: remember-records
+  prompts:
+    - remember-records
+  vars:
+    scenario: remember-records
+    backend: local
+    container: kb-hub
+    fixture: fixtures/kb-hub
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [remember] }
+    - type: javascript
+      value: file://assertions/memory-append.ts
+      config: { module: mem, baselineFileCount: 2 }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        artifacts: { module: mem }
+        criteria:
+          - id: recorded-incident
+            text: A factual, timestamped memory entry capturing the 500s incident was recorded (see the ON-DISK ARTIFACTS).
