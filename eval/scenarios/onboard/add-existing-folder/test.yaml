@@ -1,6 +1,8 @@
 - description: onboard-add-existing-folder
   prompts:
     - onboard-add-existing-folder
+  metadata:
+    verb: onboard
   vars:
     scenario: onboard-add-existing-folder
     backend: local

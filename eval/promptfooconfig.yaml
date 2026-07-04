@@ -8,6 +8,23 @@ providers:
       model: claude-sonnet-4.5
       timeoutMs: 300000
 prompts:
-  - raw: "{{prompt}}"
-    label: "OKH scenario prompt"
-tests: file://scenarios/*/test.yaml
+  # One named prompt per scenario, co-located with its test.yaml. Each test filters
+  # to its own prompt via `prompts: [<scenario>]`, so the Prompts view shows real
+  # content (not a `{{prompt}}` pass-through) and there is no prompt×test cross-product.
+  - { id: file://scenarios/ask/declines-when-absent/prompt.md, label: ask-declines-when-absent }
+  - { id: file://scenarios/ask/grounded/prompt.md, label: ask-grounded }
+  - { id: file://scenarios/ask/multi-container/prompt.md, label: ask-multi-container }
+  - { id: file://scenarios/context/assembly/prompt.md, label: context-assembly }
+  - { id: file://scenarios/context/includes-skills-tools/prompt.md, label: context-includes-skills-tools }
+  - { id: file://scenarios/learn/integrates/prompt.md, label: learn-integrates }
+  - { id: file://scenarios/learn/rejects-trivial/prompt.md, label: learn-rejects-trivial }
+  - { id: file://scenarios/onboard/add-existing-folder/prompt.md, label: onboard-add-existing-folder }
+  - { id: file://scenarios/onboard/add-github/prompt.md, label: onboard-add-github }
+  - { id: file://scenarios/onboard/create-local/prompt.md, label: onboard-create-local }
+  - { id: file://scenarios/onboard/explains/prompt.md, label: onboard-explains }
+  - { id: file://scenarios/onboard/phrase/prompt.md, label: onboard-phrase }
+  - { id: file://scenarios/onboard/wake-phrase/prompt.md, label: onboard-wake-phrase }
+  - { id: file://scenarios/reflect/insights/prompt.md, label: reflect-insights }
+  - { id: file://scenarios/remember/no-conclusions/prompt.md, label: remember-no-conclusions }
+  - { id: file://scenarios/remember/records/prompt.md, label: remember-records }
+tests: file://scenarios/*/*/test.yaml

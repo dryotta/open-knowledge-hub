@@ -1,6 +1,8 @@
 - description: onboard-explains
   prompts:
     - onboard-explains
+  metadata:
+    verb: onboard
   vars:
     scenario: onboard-explains
     backend: local

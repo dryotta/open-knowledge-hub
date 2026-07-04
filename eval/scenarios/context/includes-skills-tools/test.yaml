@@ -1,6 +1,8 @@
 - description: context-includes-skills-tools
   prompts:
     - context-includes-skills-tools
+  metadata:
+    verb: context
   vars:
     scenario: context-includes-skills-tools
     backend: local

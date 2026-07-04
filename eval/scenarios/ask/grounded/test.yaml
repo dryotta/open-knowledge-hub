@@ -1,6 +1,8 @@
 - description: ask-grounded
   prompts:
     - ask-grounded
+  metadata:
+    verb: ask
   vars:
     scenario: ask-grounded
     backend: local

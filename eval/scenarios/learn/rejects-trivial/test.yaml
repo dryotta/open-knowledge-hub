@@ -1,6 +1,8 @@
 - description: learn-rejects-trivial
   prompts:
     - learn-rejects-trivial
+  metadata:
+    verb: learn
   vars:
     scenario: learn-rejects-trivial
     backend: local

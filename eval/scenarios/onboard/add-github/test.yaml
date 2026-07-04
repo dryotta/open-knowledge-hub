@@ -1,6 +1,8 @@
 - description: onboard-add-github
   prompts:
     - onboard-add-github
+  metadata:
+    verb: onboard
   vars:
     scenario: onboard-add-github
     backend: local

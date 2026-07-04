@@ -1,6 +1,8 @@
 - description: ask-multi-container
   prompts:
     - ask-multi-container
+  metadata:
+    verb: ask
   vars:
     scenario: ask-multi-container
     backend: local

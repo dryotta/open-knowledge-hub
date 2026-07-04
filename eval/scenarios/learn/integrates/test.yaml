@@ -1,6 +1,8 @@
 - description: learn-integrates
   prompts:
     - learn-integrates
+  metadata:
+    verb: learn
   vars:
     scenario: learn-integrates
     backend: git-auto
