@@ -22,8 +22,9 @@ Two modes, one set of scenarios (`scenarios/*/test.yaml`):
     `COPILOT_HOME` (which the harness wipes per run), provide a token env var:
     `COPILOT_GITHUB_TOKEN` or `GH_TOKEN`.
 - The **judge also runs through GitHub Copilot CLI** (`eval/assertions/judge.ts`) —
-  **no external model/API key**. Each scenario makes ~2 Copilot calls: one for the
-  agent (via the provider) and one for the judge (grades the transcript vs the rubric).
+  **no external model/API key**. Automated runs make **1 agent call + k judge
+  calls** per scenario (default `k=3`): one for the agent (via the provider)
+  and `k` for the judge (grades the transcript).
 - `promptfoo` (installed as a devDependency).
 
 ## Automated eval

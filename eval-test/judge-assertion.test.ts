@@ -132,6 +132,20 @@ describe("judge assertion", () => {
     expect(r.reason).toMatch(/advisory/);
   });
 
+  it("advisory checked criterion gates on judge/deterministic disagreement", async () => {
+    const okhHome = await okhHomeWith("other"); // "my-notes" NOT registered
+    const r = await judge(
+      "t",
+      {
+        config: { criteria: [{ id: "created", text: "created", required: false, check: { kind: "container", name: "my-notes" } }] },
+        providerResponse: { metadata: { okhHome, toolCalls: [] } },
+      },
+      fakeJudge([{ id: "created", verdict: "PASS" }]),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/DISAGREE/);
+  });
+
   it("annotates a borderline (split-vote) pass", async () => {
     const r = await judge(
       "t",

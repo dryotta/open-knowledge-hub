@@ -114,6 +114,7 @@ export default async function judge(
         const det = await evaluateCheck(c.check, checkCtx);
         if ((r.verdict === "PASS") !== det.pass) {
           note = `✗DISAGREE judge=${r.verdict} det=${det.pass ? "PASS" : "FAIL"} (${det.reason})`;
+          pass = false;
           effective = "FAIL";
         } else {
           note = "✓det";

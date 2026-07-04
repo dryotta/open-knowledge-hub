@@ -106,5 +106,7 @@ export async function evaluateCheck(check: Check, ctx: CheckContext): Promise<Ch
         return { pass: false, reason: `bad pattern /${check.pattern}/` };
       }
     }
+    default:
+      return { pass: false, reason: `unknown check kind: ${(check as { kind?: string }).kind ?? "?"}` };
   }
 }

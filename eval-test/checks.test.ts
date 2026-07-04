@@ -44,4 +44,8 @@ describe("evaluateCheck", () => {
     const result = await evaluateCheck({ kind: "transcript-contains", pattern: "(" }, { transcript: "anything" });
     expect(result.pass).toBe(false);
   });
+  it("unknown check kind fails without throwing", async () => {
+    const result = await evaluateCheck({ kind: "bogus" } as any, { transcript: "" });
+    expect(result.pass).toBe(false);
+  });
 });
