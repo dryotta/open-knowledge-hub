@@ -1,8 +1,6 @@
 - description: onboard-phrase
   prompts:
     - onboard-phrase
-  metadata:
-    verb: onboard
   vars:
     scenario: onboard-phrase
     backend: local

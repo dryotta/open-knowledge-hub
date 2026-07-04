@@ -10,12 +10,11 @@ const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 async function discoverScenarios() {
   const root = join(EVAL, "scenarios");
-  const out: { id: string; verb: string; relPrompt: string; dir: string }[] = [];
+  const out: { id: string; relPrompt: string; dir: string }[] = [];
   for (const verb of (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory())) {
     for (const leaf of (await readdir(join(root, verb.name), { withFileTypes: true })).filter((e) => e.isDirectory())) {
       out.push({
         id: `${verb.name}-${leaf.name}`,
-        verb: verb.name,
         relPrompt: `file://scenarios/${verb.name}/${leaf.name}/prompt.md`,
         dir: join(root, verb.name, leaf.name),
       });
@@ -51,7 +50,7 @@ describe("promptfooconfig.yaml", () => {
 });
 
 describe("scenarios", () => {
-  it("all 16 scenarios parse, reference existing fixtures + assertion files, have judge criteria + verb metadata", async () => {
+  it("all 16 scenarios parse, reference existing fixtures + assertion files, and have judge criteria", async () => {
     const scenarios = await discoverScenarios();
     expect(scenarios.map((s) => s.id)).toEqual([
       "ask-declines-when-absent",
@@ -78,7 +77,6 @@ describe("scenarios", () => {
       const test = list[0];
       expect(test.description).toBe(s.id);
       expect(test.prompts).toEqual([s.id]);
-      expect(test.metadata?.verb).toBe(s.verb);
       expect((await readFile(join(s.dir, "prompt.md"), "utf8")).trim().length).toBeGreaterThan(0);
       expect(await exists(join(EVAL, String(test.vars.fixture)))).toBe(true);
       const judges = test.assert.filter(

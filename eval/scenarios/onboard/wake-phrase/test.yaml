@@ -1,8 +1,6 @@
 - description: onboard-wake-phrase
   prompts:
     - onboard-wake-phrase
-  metadata:
-    verb: onboard
   vars:
     scenario: onboard-wake-phrase
     backend: local

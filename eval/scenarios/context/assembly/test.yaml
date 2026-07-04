@@ -1,8 +1,6 @@
 - description: context-assembly
   prompts:
     - context-assembly
-  metadata:
-    verb: context
   vars:
     scenario: context-assembly
     backend: local

@@ -1,8 +1,6 @@
 - description: reflect-insights
   prompts:
     - reflect-insights
-  metadata:
-    verb: reflect
   vars:
     scenario: reflect-insights
     backend: local

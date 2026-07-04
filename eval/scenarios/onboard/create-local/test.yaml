@@ -1,8 +1,6 @@
 - description: onboard-create-local
   prompts:
     - onboard-create-local
-  metadata:
-    verb: onboard
   vars:
     scenario: onboard-create-local
     backend: local

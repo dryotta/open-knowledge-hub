@@ -1,8 +1,6 @@
 - description: remember-records
   prompts:
     - remember-records
-  metadata:
-    verb: remember
   vars:
     scenario: remember-records
     backend: local

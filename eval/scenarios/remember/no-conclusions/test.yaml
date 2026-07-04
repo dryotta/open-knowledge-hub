@@ -1,8 +1,6 @@
 - description: remember-no-conclusions
   prompts:
     - remember-no-conclusions
-  metadata:
-    verb: remember
   vars:
     scenario: remember-no-conclusions
     backend: local

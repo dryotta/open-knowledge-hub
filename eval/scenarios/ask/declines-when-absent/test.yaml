@@ -1,8 +1,6 @@
 - description: ask-declines-when-absent
   prompts:
     - ask-declines-when-absent
-  metadata:
-    verb: ask
   vars:
     scenario: ask-declines-when-absent
     backend: local
