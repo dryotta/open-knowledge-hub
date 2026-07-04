@@ -3,6 +3,7 @@ import { readFile, stat, readdir } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { environments } from "../eval/environments.js";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EVAL = join(REPO, "eval");
@@ -75,8 +76,9 @@ describe("scenarios", () => {
       const test = list[0];
       expect(test.description).toBe(s.id);
       expect(test.vars.prompt).toBe(s.relPrompt);
+      expect(Object.keys(test.vars).sort()).toEqual(["env", "prompt"]);
+      expect(Object.keys(environments)).toContain(test.vars.env);
       expect((await readFile(join(s.dir, "prompt.md"), "utf8")).trim().length).toBeGreaterThan(0);
-      expect(await exists(join(EVAL, String(test.vars.fixture)))).toBe(true);
       const judges = test.assert.filter(
         (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
       );
