@@ -3,13 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnCopilot, type CopilotRunner } from "./copilot.js";
 
-export interface JudgeVerdict {
-  pass: boolean;
-  score: number;
-  reason: string;
-  raw: string;
-}
-
 export interface Criterion {
   id: string;
   text: string;
@@ -109,19 +102,6 @@ export function extractJsonArray(text: string): unknown[] | null {
   return null;
 }
 
-function gradePrompt(rubric: string, transcript: string): string {
-  return `You are grading an AI agent's run against a rubric. Judge ONLY from the transcript.
-Respond with ONLY a JSON object (no prose, no code fences):
-{"pass": <true|false>, "score": <number between 0 and 1>, "reason": "<one short sentence>"}
-A score >= 0.8 means the run meets the rubric.
-
-RUBRIC:
-${rubric}
-
-AGENT TRANSCRIPT (what the agent did and said):
-${transcript}`;
-}
-
 /** Run one `copilot -p` grading call in an isolated, empty COPILOT_HOME; return raw stdout. */
 async function judgeOnce(
   prompt: string,
@@ -161,6 +141,11 @@ AGENT TRANSCRIPT (what the agent did and said):
 ${transcript}`;
 }
 
+function resolveK(optsK?: number): number {
+  const raw = optsK ?? Number(process.env.OKH_JUDGE_K);
+  return Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), 11) : 3;
+}
+
 /**
  * Grade a transcript against binary criteria using k independent Copilot-CLI judge
  * runs, then majority-vote each criterion. A run whose output doesn't parse (or
@@ -172,8 +157,7 @@ export async function runJudgeCriteria(
   transcript: string,
   opts: { k?: number; model?: string; timeoutMs?: number; runner?: CopilotRunner } = {},
 ): Promise<CriterionResult[]> {
-  const envK = Number(process.env.OKH_JUDGE_K);
-  const k = opts.k ?? (Number.isFinite(envK) && envK >= 1 ? Math.floor(envK) : 3);
+  const k = resolveK(opts.k);
   const prompt = gradeCriteriaPrompt(criteria, transcript);
   const votes: Array<Map<string, "PASS" | "FAIL">> = [];
   const evidence = new Map<string, string[]>();
@@ -216,43 +200,4 @@ export async function runJudgeCriteria(
     else verdict = "UNRELIABLE";
     return { id: c.id, verdict, passVotes, failVotes, validVotes, evidence: evidence.get(c.id) ?? [] };
   });
-}
-
-/**
- * Grade a transcript against a rubric using GitHub Copilot CLI as the judge
- * (no external model key). Runs `copilot -p` in an isolated, empty COPILOT_HOME.
- */
-export async function runJudge(
-  rubric: string,
-  transcript: string,
-  opts: { model?: string; timeoutMs?: number; runner?: CopilotRunner } = {},
-): Promise<JudgeVerdict> {
-  const runner = opts.runner ?? spawnCopilot;
-  const root = await mkdtemp(join(tmpdir(), "okh-judge-"));
-  const copilotHome = join(root, "copilot-home");
-  const workspace = join(root, "workspace");
-  await mkdir(copilotHome, { recursive: true });
-  await mkdir(workspace, { recursive: true });
-  try {
-    const res = await runner({
-      prompt: gradePrompt(rubric, transcript),
-      model: opts.model ?? "claude-sonnet-4.5",
-      copilotHome,
-      cwd: workspace,
-      timeoutMs: opts.timeoutMs ?? 180_000,
-    });
-    const parsed = extractJson(res.transcript);
-    const score = parsed && typeof parsed.score === "number" ? parsed.score : NaN;
-    if (!parsed || Number.isNaN(score)) {
-      return { pass: false, score: 0, reason: "judge returned unparseable output", raw: res.transcript };
-    }
-    return {
-      pass: parsed.pass === true,
-      score,
-      reason: typeof parsed.reason === "string" ? parsed.reason : "",
-      raw: res.transcript,
-    };
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
 }

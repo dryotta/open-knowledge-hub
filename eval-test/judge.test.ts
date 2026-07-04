@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
-import { extractJson, extractJsonArray, runJudge, runJudgeCriteria } from "../eval/judge.js";
+import { extractJson, extractJsonArray, runJudgeCriteria } from "../eval/judge.js";
 import { buildArtifactsSection } from "../eval/assertions/judge.js";
 import type { CopilotRunner } from "../eval/copilot.js";
 
@@ -31,25 +31,6 @@ describe("extractJsonArray", () => {
   });
   it("returns null when no JSON array is present", () => {
     expect(extractJsonArray("no array here {\"id\":1}")).toBeNull();
-  });
-});
-
-const fakeRunner = (transcript: string): CopilotRunner => async () => ({ transcript, code: 0 });
-
-describe("runJudge", () => {
-  it("parses a strict-JSON verdict from the judge output", async () => {
-    const v = await runJudge("rubric", "transcript", {
-      runner: fakeRunner('Here is my verdict: {"pass":true,"score":0.95,"reason":"great"}'),
-    });
-    expect(v.pass).toBe(true);
-    expect(v.score).toBe(0.95);
-    expect(v.reason).toBe("great");
-  });
-  it("fails safe on unparseable judge output", async () => {
-    const v = await runJudge("rubric", "transcript", { runner: fakeRunner("I think it is fine, no json") });
-    expect(v.pass).toBe(false);
-    expect(v.score).toBe(0);
-    expect(v.reason).toMatch(/unparseable/i);
   });
 });
 
@@ -113,6 +94,16 @@ describe("runJudgeCriteria", () => {
       if (prev === undefined) delete process.env.OKH_JUDGE_K;
       else process.env.OKH_JUDGE_K = prev;
     }
+  });
+
+  it("falls back to the default k when opts.k is invalid", async () => {
+    let calls = 0;
+    const runner: CopilotRunner = async () => {
+      calls++;
+      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+    };
+    await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 0, runner });
+    expect(calls).toBe(3);
   });
 });
 

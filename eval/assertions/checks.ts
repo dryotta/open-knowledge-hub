@@ -91,12 +91,20 @@ export async function evaluateCheck(check: Check, ctx: CheckContext): Promise<Ch
     case "wake-phrase":
       return checkWakePhrase(ctx.okhHome, check.default);
     case "transcript-contains": {
-      const ok = new RegExp(check.pattern, "i").test(ctx.transcript);
-      return { pass: ok, reason: ok ? `matched /${check.pattern}/` : `no match /${check.pattern}/` };
+      try {
+        const ok = new RegExp(check.pattern, "i").test(ctx.transcript);
+        return { pass: ok, reason: ok ? `matched /${check.pattern}/` : `no match /${check.pattern}/` };
+      } catch {
+        return { pass: false, reason: `bad pattern /${check.pattern}/` };
+      }
     }
     case "transcript-absent": {
-      const present = new RegExp(check.pattern, "i").test(ctx.transcript);
-      return { pass: !present, reason: present ? `unexpected /${check.pattern}/` : `absent /${check.pattern}/` };
+      try {
+        const present = new RegExp(check.pattern, "i").test(ctx.transcript);
+        return { pass: !present, reason: present ? `unexpected /${check.pattern}/` : `absent /${check.pattern}/` };
+      } catch {
+        return { pass: false, reason: `bad pattern /${check.pattern}/` };
+      }
     }
   }
 }

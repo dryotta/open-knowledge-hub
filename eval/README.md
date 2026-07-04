@@ -93,7 +93,7 @@ Confirmed end-to-end by running real `copilot -p` against provisioned containers
 
 ## Open items / notes
 
-- The judge runs through Copilot CLI (`eval/assertions/judge.ts` → `runJudge`), so the
+- The judge runs through Copilot CLI (`eval/assertions/judge.ts` → `runJudgeCriteria`), so the
   automated run needs **no external grader key** — only Copilot CLI auth. Deterministic
   assertions and the manual `check` need no judge at all.
 - On Windows, promptfoo may print a libuv assertion on process exit **after** a

@@ -40,4 +40,8 @@ describe("evaluateCheck", () => {
     expect((await evaluateCheck({ kind: "transcript-contains", pattern: "Plan \\(no changes" }, { transcript: "Plan (no changes made)" })).pass).toBe(true);
     expect((await evaluateCheck({ kind: "transcript-absent", pattern: "error" }, { transcript: "all good" })).pass).toBe(true);
   });
+  it("transcript regex checks fail structurally for an invalid pattern", async () => {
+    const result = await evaluateCheck({ kind: "transcript-contains", pattern: "(" }, { transcript: "anything" });
+    expect(result.pass).toBe(false);
+  });
 });
