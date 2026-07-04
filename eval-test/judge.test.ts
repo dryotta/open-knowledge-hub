@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
-import { extractJson, extractJsonArray, runJudge } from "../eval/judge.js";
+import { extractJson, extractJsonArray, runJudge, runJudgeCriteria } from "../eval/judge.js";
 import { buildArtifactsSection } from "../eval/assertions/judge.js";
 import type { CopilotRunner } from "../eval/copilot.js";
 
@@ -50,6 +50,69 @@ describe("runJudge", () => {
     expect(v.pass).toBe(false);
     expect(v.score).toBe(0);
     expect(v.reason).toMatch(/unparseable/i);
+  });
+});
+
+function seqRunner(outputs: string[]): CopilotRunner {
+  let i = 0;
+  return async () => ({ transcript: outputs[Math.min(i++, outputs.length - 1)]!, code: 0 });
+}
+
+const CRITERIA = [
+  { id: "a", text: "criterion a" },
+  { id: "b", text: "criterion b" },
+];
+
+describe("runJudgeCriteria", () => {
+  it("majority-votes each criterion across k runs", async () => {
+    const runs = [
+      '[{"id":"a","verdict":"PASS"},{"id":"b","verdict":"FAIL"}]',
+      '[{"id":"a","verdict":"PASS"},{"id":"b","verdict":"PASS"}]',
+      '[{"id":"a","verdict":"FAIL"},{"id":"b","verdict":"FAIL"}]',
+    ];
+    const res = await runJudgeCriteria(CRITERIA, "transcript", { k: 3, runner: seqRunner(runs) });
+    const a = res.find((r) => r.id === "a")!;
+    const b = res.find((r) => r.id === "b")!;
+    expect(a.verdict).toBe("PASS"); // 2 PASS / 1 FAIL
+    expect(a.passVotes).toBe(2);
+    expect(b.verdict).toBe("FAIL"); // 1 PASS / 2 FAIL
+  });
+
+  it("excludes unparseable runs from the vote", async () => {
+    const runs = [
+      '[{"id":"a","verdict":"PASS"}]',
+      "no json at all",
+      '[{"id":"a","verdict":"PASS"}]',
+    ];
+    const res = await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner: seqRunner(runs) });
+    expect(res[0]!.verdict).toBe("PASS");
+    expect(res[0]!.validVotes).toBe(2);
+  });
+
+  it("marks a criterion UNRELIABLE when too few valid votes", async () => {
+    const runs = ["garbage", "garbage", '[{"id":"a","verdict":"PASS"}]'];
+    const res = await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner: seqRunner(runs) });
+    expect(res[0]!.verdict).toBe("UNRELIABLE"); // 1 valid < ceil(3/2)=2
+  });
+
+  it("marks a tie UNRELIABLE", async () => {
+    const runs = ['[{"id":"a","verdict":"PASS"}]', '[{"id":"a","verdict":"FAIL"}]'];
+    const res = await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 2, runner: seqRunner(runs) });
+    expect(res[0]!.verdict).toBe("UNRELIABLE"); // 1-1 tie
+  });
+
+  it("honors OKH_JUDGE_K when k is not passed", async () => {
+    const prev = process.env.OKH_JUDGE_K;
+    process.env.OKH_JUDGE_K = "1";
+    try {
+      let calls = 0;
+      const runner: CopilotRunner = async () => { calls++; return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 }; };
+      await runJudgeCriteria([{ id: "a", text: "a" }], "t", { runner });
+      expect(calls).toBe(1);
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_K;
+      else process.env.OKH_JUDGE_K = prev;
+    }
   });
 });
 
