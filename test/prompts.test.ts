@@ -30,6 +30,15 @@ describe("discipline loader", () => {
     expect(combined).toContain('<discipline name="okf-ask">');
     expect(combined).toContain("</discipline>");
   });
+
+  it("onboard discipline is staged and routes wake-phrase changes to config", async () => {
+    const text = await loadDiscipline("onboard");
+    expect(text).toMatch(/Stage 1/);
+    expect(text).toMatch(/Stage 2/);
+    expect(text).toMatch(/Stage 3/);
+    expect(text).toContain("config { set: { wakePhrase");
+    expect(text).not.toContain("onboard { wakePhrase");
+  });
 });
 
 describe("resolveTargets", () => {
