@@ -18,6 +18,11 @@ describe("extractToolCalls", () => {
     const transcript = "● Config (view or change settings) (MCP: open-knowledge-hub) · set: {…}";
     expect(extractToolCalls(transcript)).toEqual(["config"]);
   });
+  it("does not treat add's config/sync arguments as separate tool calls", () => {
+    const transcript =
+      '● Add a container or module (MCP: open-knowledge-hub) · container: "notes", path: "kb", type: "knowledge", config: {…}, sync: "auto"';
+    expect(extractToolCalls(transcript)).toEqual(["add"]);
+  });
   it("detects a server-qualified tool call (fallback rendering)", () => {
     expect(extractToolCalls("Calling open-knowledge-hub__ask with {q}")).toEqual(["ask"]);
     expect(extractToolCalls("invoked open-knowledge-hub.sync now")).toEqual(["sync"]);
