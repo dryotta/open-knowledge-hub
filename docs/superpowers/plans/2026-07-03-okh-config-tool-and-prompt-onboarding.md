@@ -259,7 +259,7 @@ In `src/server/tools.ts`, delete the entire existing `onboard` tool registration
       description:
         "Return multi-turn onboarding guidance (intro, wake phrase, first repo + modules) for a first-run user. " +
         "Set the wake phrase via the config tool.",
-      annotations: { readOnlyHint: false, openWorldHint: false },
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {},
     },
     handler(async () => {
@@ -270,10 +270,15 @@ In `src/server/tools.ts`, delete the entire existing `onboard` tool registration
   );
 ```
 
+The thin `onboard` is side-effect-free (like `ask`/`context`/etc.), so it is
+`readOnlyHint: true`. Update the annotations test accordingly: change the existing
+`expect(byName.onboard!.readOnlyHint).toBe(false);` assertion to
+`expect(byName.onboard!.readOnlyHint).toBe(true);` (keep `openWorldHint` false).
+
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `npx vitest run test/server.test.ts`
-Expected: PASS. (The annotations test at lines ~117-121 still passes — `onboard` keeps `readOnlyHint:false`, `openWorldHint:false`.)
+Expected: PASS. (The annotations test now asserts `onboard` `readOnlyHint:true`, `openWorldHint:false`.)
 
 - [ ] **Step 7: Typecheck**
 
