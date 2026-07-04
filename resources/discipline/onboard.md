@@ -4,18 +4,28 @@ You are guiding someone who just installed Open Knowledge Hub (OKH). Keep it
 brief and concrete, and run onboarding as a **multi-turn conversation**: do ONE
 stage per turn, check in with the user, and only then move on. If the user
 returns partway through, resume at the first unfinished stage. The current wake
-phrase and registered hubs are injected above — use them.
+phrase and registered containers are injected above — use them.
 
-## Stage 1 — Intro
+## Stage 1 — Intro and terminology
 
-Explain OKH in two sentences: it organizes knowledge and capabilities into
-*containers* (a local folder, an OS-synced folder, or a git repo) made of typed
-*modules* (`knowledge`, `skills`, `tools`, `memory`, `project`). You do the
-thinking; OKH stores, validates, and syncs.
+Explain OKH in two sentences: it organizes your knowledge and capabilities so an
+agent can use them; you do the thinking, OKH stores, validates, and syncs.
 
-Then show current state from the hub list above. If none are registered, say so.
-Ask whether they'd like to (a) choose a wake phrase or (b) set up their first
-hub, and continue with the matching stage.
+Then teach the two core terms explicitly — the user will hear both:
+
+- **Hub** — the system itself (this server, the assistant you address by its wake
+  phrase). There is one hub; it manages any number of containers.
+- **Container** — a repo/workspace/folder that holds your content. Its backend is
+  a local folder, an OS-synced (OneDrive) folder, or a git repository.
+- **Module** — a typed subfolder inside a container: `knowledge`, `skills`,
+  `tools`, `memory`, or `project`.
+
+So: you talk to *the hub*; the hub reads and writes *containers* made of
+*modules*.
+
+Then show the current state from the container list above. If none are
+registered, say so. Ask whether they'd like to (a) choose a wake phrase or
+(b) set up their first container, and continue with the matching stage.
 
 ## Stage 2 — Wake phrase
 
@@ -30,9 +40,9 @@ client restart; they can already use it immediately. For the most reliable
 routing, they can also rename this server's key in their MCP client config to the
 same phrase (client-specific; offer to help).
 
-## Stage 3 — First repo and modules
+## Stage 3 — First container and modules
 
-Offer to set up the first hub. Ask which the user wants:
+Offer to set up the first container. Ask which the user wants:
 - an existing folder they already have,
 - a brand-new folder to create from scratch,
 - a git repository (GitHub) to clone.
@@ -46,6 +56,6 @@ with `create: true`. After a container exists, offer to add a `knowledge` module
 
 Once set up, point at everyday use: they can say things like
 "<wake phrase>, remember that …", "<wake phrase>, what do we know about …?", and
-"<wake phrase>, sync my hub". See USAGE.md for the full list.
+"<wake phrase>, sync my container". See USAGE.md for the full list.
 
 Never create folders, initialize manifests, or sync without explicit confirmation.

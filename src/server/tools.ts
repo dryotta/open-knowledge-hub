@@ -20,6 +20,7 @@ import {
   type Preferences,
 } from "../preferences.js";
 import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
+import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
   return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
@@ -131,7 +132,7 @@ function describeConfigError(err: z.ZodError): string {
   return `Invalid value for "${key}": ${first?.message ?? "invalid value"}.`;
 }
 
-/** Register the five operational/setup tools + five cognitive prompt-tools. */
+/** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the six flows. */
 export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
@@ -293,12 +294,10 @@ export function registerTools(server: McpServer, service: ContainerService, path
   server.registerTool(
     "onboard",
     {
-      title: "Onboard (guided setup)",
-      description:
-        "Return multi-turn onboarding guidance (intro, wake phrase, first repo + modules) for a first-run user. " +
-        "Set the wake phrase via the config tool.",
+      title: flowMeta.onboard.title,
+      description: flowMeta.onboard.description,
       annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: {},
+      inputSchema: flowArgShapes.onboard,
     },
     handler(async () => {
       const { wakePhrase } = await loadPreferences(paths);
@@ -307,23 +306,23 @@ export function registerTools(server: McpServer, service: ContainerService, path
     }),
   );
 
-  registerCognitiveTools(server, service);
+  registerFlowTools(server, service);
 }
 
-const promptArgs = {
-  container: z.string().optional().describe("Container name (default: all registered containers)."),
-  module: z.string().optional().describe("Module path within the container."),
-};
-
-/** The five cognitive prompts, also exposed as tools for clients without prompt support. */
-function registerCognitiveTools(server: McpServer, service: ContainerService): void {
+/**
+ * The five cognitive flows, exposed as tools for clients without prompt support.
+ * Like all flows they return discipline text (instructions) for the agent to
+ * follow — they do not read or write on their own. `onboard` is the sixth flow,
+ * registered above alongside the operational tools.
+ */
+function registerFlowTools(server: McpServer, service: ContainerService): void {
   server.registerTool(
     "ask",
     {
-      title: "Ask (flow)",
-      description: "Return discipline to answer a question from the hub's modules.",
+      title: flowMeta.ask.title,
+      description: flowMeta.ask.description,
       annotations: { readOnlyHint: true },
-      inputSchema: { ...promptArgs, question: z.string().optional().describe("The question to answer.") },
+      inputSchema: flowArgShapes.ask,
     },
     handler(async (args: { container?: string; module?: string; question?: string }) => {
       const targets = await service.resolveTargets(args.container, args.module);
@@ -334,13 +333,10 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
   server.registerTool(
     "context",
     {
-      title: "Context (flow)",
-      description: "Return discipline to assemble a task-relevant working set across the hub.",
+      title: flowMeta.context.title,
+      description: flowMeta.context.description,
       annotations: { readOnlyHint: true },
-      inputSchema: {
-        container: z.string().optional().describe("Container name (default: all)."),
-        task: z.string().optional().describe("The task to prepare for."),
-      },
+      inputSchema: flowArgShapes.context,
     },
     handler(async (args: { container?: string; task?: string }) => {
       const targets = await service.resolveTargets(args.container);
@@ -351,10 +347,10 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
   server.registerTool(
     "learn",
     {
-      title: "Learn (flow)",
-      description: "Return discipline to integrate new knowledge into a knowledge module (OKF).",
+      title: flowMeta.learn.title,
+      description: flowMeta.learn.description,
       annotations: { readOnlyHint: true },
-      inputSchema: { ...promptArgs, knowledge: z.string().optional().describe("The candidate knowledge.") },
+      inputSchema: flowArgShapes.learn,
     },
     handler(async (args: { container?: string; module?: string; knowledge?: string }) => {
       const targets = await service.resolveTargets(args.container, args.module);
@@ -365,10 +361,10 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
   server.registerTool(
     "remember",
     {
-      title: "Remember (flow)",
-      description: "Return discipline to record an observation into a memory module.",
+      title: flowMeta.remember.title,
+      description: flowMeta.remember.description,
       annotations: { readOnlyHint: true },
-      inputSchema: { ...promptArgs, observation: z.string().optional().describe("The observation to record.") },
+      inputSchema: flowArgShapes.remember,
     },
     handler(async (args: { container?: string; module?: string; observation?: string }) => {
       const targets = await service.resolveTargets(args.container, args.module);
@@ -379,10 +375,10 @@ function registerCognitiveTools(server: McpServer, service: ContainerService): v
   server.registerTool(
     "reflect",
     {
-      title: "Reflect (flow)",
-      description: "Return discipline to turn memory/experience into insight and updates.",
+      title: flowMeta.reflect.title,
+      description: flowMeta.reflect.description,
       annotations: { readOnlyHint: true },
-      inputSchema: { ...promptArgs, focus: z.string().optional().describe("Optional area to focus on.") },
+      inputSchema: flowArgShapes.reflect,
     },
     handler(async (args: { container?: string; module?: string; focus?: string }) => {
       const targets = await service.resolveTargets(args.container, args.module);
