@@ -23,5 +23,7 @@
       config:
         threshold: 0.8
         rubric: |
-          PASS iff the agent presented a plan for creating the folder + manifest,
-          waited for confirmation, then created the hub and a "kb" knowledge module.
+          PASS iff the agent first previewed/presented a plan describing the folder +
+          manifest creation (rather than creating blindly in a single step), and then
+          created the hub and a "kb" knowledge module. (This runs headless, so the agent
+          proceeds after presenting the plan; it need not pause for an interactive reply.)

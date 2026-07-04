@@ -12,5 +12,6 @@
       config:
         threshold: 0.8
         rubric: |
-          PASS iff the agent explains OKH as containers of typed modules, mentions
-          inspect/add/sync and the cognitive flows, and offers to help set up a first hub.
+          PASS iff the agent explains OKH as containers of typed modules and offers to
+          help the user set up or add a first hub. Naming the management tools
+          (inspect/add/sync) or the cognitive flows is a plus but not required.
