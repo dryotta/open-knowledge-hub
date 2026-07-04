@@ -1,4 +1,5 @@
-- vars:
+- description: remember-no-conclusions
+  vars:
     scenario: remember-no-conclusions
     backend: local
     container: kb-hub

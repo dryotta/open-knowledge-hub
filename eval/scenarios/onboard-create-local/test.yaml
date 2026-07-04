@@ -1,4 +1,5 @@
-- vars:
+- description: onboard-create-local
+  vars:
     scenario: onboard-create-local
     backend: local
     provision: empty

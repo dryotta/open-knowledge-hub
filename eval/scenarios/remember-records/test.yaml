@@ -1,4 +1,5 @@
-- vars:
+- description: remember-records
+  vars:
     scenario: remember-records
     backend: local
     container: kb-hub

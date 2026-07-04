@@ -1,4 +1,5 @@
-- vars:
+- description: context-includes-skills-tools
+  vars:
     scenario: context-includes-skills-tools
     backend: local
     container: kb-hub

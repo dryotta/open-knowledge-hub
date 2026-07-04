@@ -8,5 +8,6 @@ providers:
       model: claude-sonnet-4.5
       timeoutMs: 300000
 prompts:
-  - "{{prompt}}"
+  - raw: "{{prompt}}"
+    label: "OKH scenario prompt"
 tests: file://scenarios/*/test.yaml

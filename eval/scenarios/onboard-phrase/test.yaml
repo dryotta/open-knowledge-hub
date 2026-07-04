@@ -1,4 +1,5 @@
-- vars:
+- description: onboard-phrase
+  vars:
     scenario: onboard-phrase
     backend: local
     provision: empty

@@ -1,4 +1,5 @@
-- vars:
+- description: context-assembly
+  vars:
     scenario: context-assembly
     backend: local
     container: kb-hub

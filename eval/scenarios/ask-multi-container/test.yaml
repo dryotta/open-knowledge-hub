@@ -1,4 +1,5 @@
-- vars:
+- description: ask-multi-container
+  vars:
     scenario: ask-multi-container
     backend: local
     provision: registered

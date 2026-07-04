@@ -1,4 +1,5 @@
-- vars:
+- description: onboard-explains
+  vars:
     scenario: onboard-explains
     backend: local
     provision: empty

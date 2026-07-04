@@ -1,4 +1,5 @@
-- vars:
+- description: onboard-add-github
+  vars:
     scenario: onboard-add-github
     backend: local
     provision: empty

@@ -1,4 +1,5 @@
-- vars:
+- description: ask-grounded
+  vars:
     scenario: ask-grounded
     backend: local
     container: kb-hub

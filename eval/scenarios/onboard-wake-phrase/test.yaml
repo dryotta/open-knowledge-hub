@@ -1,4 +1,5 @@
-- vars:
+- description: onboard-wake-phrase
+  vars:
     scenario: onboard-wake-phrase
     backend: local
     provision: empty

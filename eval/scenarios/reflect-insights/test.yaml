@@ -1,4 +1,5 @@
-- vars:
+- description: reflect-insights
+  vars:
     scenario: reflect-insights
     backend: local
     container: kb-hub

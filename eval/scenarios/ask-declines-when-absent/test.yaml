@@ -1,4 +1,5 @@
-- vars:
+- description: ask-declines-when-absent
+  vars:
     scenario: ask-declines-when-absent
     backend: local
     container: kb-hub

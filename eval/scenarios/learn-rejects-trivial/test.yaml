@@ -1,4 +1,5 @@
-- vars:
+- description: learn-rejects-trivial
+  vars:
     scenario: learn-rejects-trivial
     backend: local
     container: kb-hub
