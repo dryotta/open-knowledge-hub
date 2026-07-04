@@ -61,12 +61,13 @@ async function reportChecks(root: string, name: string): Promise<number> {
 }
 
 export interface ScenarioTest {
+  /** Prompt text, loaded from scenarios/<name>/prompt.md (the promptfoo prompt for this scenario). */
+  prompt: string;
   vars: {
     scenario: string;
     backend: EvalBackend;
     container: string;
     fixture: string;
-    prompt: string;
     provision?: "registered" | "empty" | "unregistered-local";
     /** Optional second local container for multi-container scenarios. */
     container2?: string;
@@ -75,16 +76,33 @@ export interface ScenarioTest {
   assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }>;
 }
 
+/** Map scenario id (`<verb>-<case>`) -> leaf dir, discovered from scenarios/<verb>/<case>/. */
+async function scenarioDirs(): Promise<Map<string, string>> {
+  const root = join(EVAL_ROOT, "scenarios");
+  const map = new Map<string, string>();
+  for (const verb of await readdir(root, { withFileTypes: true })) {
+    if (!verb.isDirectory()) continue;
+    for (const leaf of await readdir(join(root, verb.name), { withFileTypes: true })) {
+      if (!leaf.isDirectory()) continue;
+      map.set(`${verb.name}-${leaf.name}`, join(root, verb.name, leaf.name));
+    }
+  }
+  return map;
+}
+
 export async function listScenarios(): Promise<string[]> {
-  const dirs = await readdir(join(EVAL_ROOT, "scenarios"), { withFileTypes: true });
-  return dirs.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  return [...(await scenarioDirs()).keys()].sort();
 }
 
 export async function loadScenario(name: string): Promise<ScenarioTest> {
-  const raw = await readFile(join(EVAL_ROOT, "scenarios", name, "test.yaml"), "utf8");
+  const dir = (await scenarioDirs()).get(name);
+  if (!dir) throw new Error(`scenario "${name}": not found under eval/scenarios/<verb>/<case>/`);
+  const raw = await readFile(join(dir, "test.yaml"), "utf8");
   const list = parseYaml(raw);
   if (!Array.isArray(list) || list.length === 0) throw new Error(`scenario "${name}": expected a non-empty test list`);
-  return list[0] as ScenarioTest;
+  const test = list[0] as ScenarioTest;
+  test.prompt = await readFile(join(dir, "prompt.md"), "utf8");
+  return test;
 }
 
 export interface SetupResult {
@@ -121,7 +139,7 @@ export async function setupScenario(
       : {}),
   });
   const model = opts.model ?? "claude-sonnet-4.5";
-  const prompt = shellQuote(scenario.vars.prompt.trim());
+  const prompt = shellQuote(scenario.prompt.trim());
   const command =
     process.platform === "win32"
       ? `Set-Location -LiteralPath ${shellQuote(prov.workspace)}; $env:COPILOT_HOME=${shellQuote(prov.copilotHome)}; copilot -p ${prompt} --allow-all --model ${model}`
