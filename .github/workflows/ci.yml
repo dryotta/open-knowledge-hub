@@ -24,6 +24,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure git identity
+        # The eval harness runs real git in temp repos (e.g. a seed commit);
+        # CI runners have no global identity, so set one to avoid
+        # "empty ident name" failures.
+        run: |
+          git config --global user.email "ci@okh.invalid"
+          git config --global user.name "OKH CI"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
