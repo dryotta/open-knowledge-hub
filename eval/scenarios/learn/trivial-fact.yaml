@@ -3,15 +3,12 @@ description: Learn - trivial fact - rejects, no write
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: learn-trivial-fact
-    raw: |
-      Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
-      "The sky is blue on a clear day."
+  - |
+    Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
+    "The sky is blue on a clear day."
 tests:
   - vars:
       env: local-and-git
-    prompts:
-      - learn-trivial-fact
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

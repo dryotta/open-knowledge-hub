@@ -3,15 +3,12 @@ description: Ask - across hubs - cites each module path
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: ask-across-hubs
-    raw: |
-      hub, across all my registered hubs, what do we know about authentication and
-      session tokens? Cite the module path for each fact.
+  - |
+    hub, across all my registered hubs, what do we know about authentication and
+    session tokens? Cite the module path for each fact.
 tests:
   - vars:
       env: local-and-git
-    prompts:
-      - ask-across-hubs
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

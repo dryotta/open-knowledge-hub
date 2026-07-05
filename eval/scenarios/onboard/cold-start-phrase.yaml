@@ -3,14 +3,11 @@ description: Onboard - cold-start phrase - runs onboard flow
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: onboard-cold-start-phrase
-    raw: |
-      Use the Open Knowledge Hub MCP and run onboard to set me up.
+  - |
+    Use the Open Knowledge Hub MCP and run onboard to set me up.
 tests:
   - vars:
       env: empty
-    prompts:
-      - onboard-cold-start-phrase
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

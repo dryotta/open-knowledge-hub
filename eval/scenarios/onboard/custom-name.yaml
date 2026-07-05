@@ -3,14 +3,11 @@ description: Onboard - custom name - sets wake phrase
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: onboard-custom-name
-    raw: |
-      hub, help me get started. I'd like to call you "brain" from now on.
+  - |
+    hub, help me get started. I'd like to call you "brain" from now on.
 tests:
   - vars:
       env: empty
-    prompts:
-      - onboard-custom-name
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

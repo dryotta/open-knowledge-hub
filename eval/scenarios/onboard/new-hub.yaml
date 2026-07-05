@@ -3,16 +3,13 @@ description: Onboard - new hub - previews, then creates
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: onboard-new-hub
-    raw: |
-      hub, create a new knowledge hub in a folder called "my-notes" and add a
-      knowledge module named "kb". Show me the plan and wait for my confirmation
-      before creating anything; when you ask, assume I say yes.
+  - |
+    hub, create a new knowledge hub in a folder called "my-notes" and add a
+    knowledge module named "kb". Show me the plan and wait for my confirmation
+    before creating anything; when you ask, assume I say yes.
 tests:
   - vars:
       env: empty
-    prompts:
-      - onboard-new-hub
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

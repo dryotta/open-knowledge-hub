@@ -58,9 +58,8 @@ describe("scenario configs", () => {
     expect(counts).toEqual(EXPECTED_COUNTS);
   });
 
-  it("every config is complete: shared provider, one labeled prompt, one env-bound test filtered to its prompt, judge criteria, existing assertions", async () => {
+  it("every config is complete: shared provider, one inline prompt, one env-bound test, judge criteria, existing assertions", async () => {
     const seenDescriptions = new Set<string>();
-    const seenLabels = new Set<string>();
     for (const file of await scenarioFiles()) {
       const dir = dirname(join(SCENARIOS, file));
       const cfg = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
@@ -76,23 +75,20 @@ describe("scenario configs", () => {
       expect(cfg.providers).toEqual(["file://../shared/provider.ts"]);
       expect(await exists(resolve(dir, "../shared/provider.ts"))).toBe(true);
 
-      // exactly one prompt, inline (no {{prompt}} var), with a globally-unique label
+      // exactly one inline prompt — a bare string (no {{prompt}} var, no label needed)
       expect(Array.isArray(cfg.prompts)).toBe(true);
       expect(cfg.prompts).toHaveLength(1);
-      const { label, raw } = cfg.prompts[0];
-      expect(typeof label, `${file}: prompt label`).toBe("string");
-      expect(typeof raw).toBe("string");
-      expect(raw.trim().length).toBeGreaterThan(0);
-      expect(raw).not.toContain("{{prompt}}");
-      expect(seenLabels.has(label), `${file}: duplicate label ${label}`).toBe(false);
-      seenLabels.add(label);
+      const prompt = cfg.prompts[0];
+      expect(typeof prompt, `${file}: prompt is a bare string`).toBe("string");
+      expect(prompt.trim().length).toBeGreaterThan(0);
+      expect(prompt).not.toContain("{{prompt}}");
 
-      // exactly one test: known env, filtered to this file's own prompt label
+      // exactly one test with a known env; no per-test prompt filter (configs run one-by-one)
       expect(Array.isArray(cfg.tests)).toBe(true);
       expect(cfg.tests).toHaveLength(1);
       const test = cfg.tests[0];
       expect(Object.keys(environments)).toContain(test.vars.env);
-      expect(test.prompts).toEqual([label]);
+      expect(test.prompts, `${file}: no prompt filter needed`).toBeUndefined();
 
       // judge criteria present and well-formed
       const judges = test.assert.filter(

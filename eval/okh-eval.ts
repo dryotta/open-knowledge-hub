@@ -67,10 +67,11 @@ export async function loadScenarios(): Promise<ScenarioTest[]> {
   const out: ScenarioTest[] = [];
   for (const file of await scenarioConfigFiles()) {
     const cfg = parseYaml(await readFile(join(root, file), "utf8"));
-    const prompt = cfg?.prompts?.[0]?.raw;
+    const rawPrompt = cfg?.prompts?.[0];
+    const prompt = typeof rawPrompt === "string" ? rawPrompt : rawPrompt?.raw;
     const test = cfg?.tests?.[0];
     if (typeof cfg?.description !== "string" || typeof prompt !== "string" || !test) {
-      throw new Error(`scenarios/${file}: expected description + prompts[0].raw + tests[0]`);
+      throw new Error(`scenarios/${file}: expected description + prompts[0] + tests[0]`);
     }
     out.push({
       file,

@@ -3,16 +3,13 @@ description: Learn - useful fact - integrates, syncs
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: learn-useful-fact
-    raw: |
-      Use the open-knowledge-hub MCP tools. Learn the following into container
-      "git-hub" and persist it: "Session tokens are signed with RS256 and the
-      public keys are rotated weekly." Then sync.
+  - |
+    Use the open-knowledge-hub MCP tools. Learn the following into container
+    "git-hub" and persist it: "Session tokens are signed with RS256 and the
+    public keys are rotated weekly." Then sync.
 tests:
   - vars:
       env: git
-    prompts:
-      - learn-useful-fact
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

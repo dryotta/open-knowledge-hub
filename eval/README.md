@@ -51,6 +51,7 @@ folder, so scenarios use `../shared/…` and `../../assertions/…` to reach up 
 | `provider/copilotProvider.ts` | provisions the scenario's env, runs `copilot -p`, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI; `extractToolCalls` parses MCP tool calls from the transcript |
 | `assertions/*.ts` | deterministic checks + the judge |
+| `run-scenarios.ts` | runs `promptfoo eval`/`validate` once **per config file** (no cross-product) |
 | `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`) |
 
@@ -95,14 +96,12 @@ description: Ask - answerable question - grounded answer, cites source
 providers:
   - file://../shared/provider.ts   # inject the shared provider (model/timeout live there)
 prompts:
-  - label: ask-answerable          # globally-unique label, used to bind the test below
-    raw: |                         # the exact prompt sent to the agent (inline, no var)
-      Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
-      from its knowledge module: How does auth work?
+  - |                              # the exact prompt sent to the agent (inline bare string)
+    Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+    from its knowledge module: How does auth work?
 tests:
   - vars:
       env: local-and-git           # which environment to provision (see below)
-    prompts: [ask-answerable]      # run only against this file's own prompt
     assert:
       - { type: javascript, value: file://../../assertions/tools-called.ts, config: { expect: [ask] } }
       - { type: javascript, value: file://../../assertions/transcript.ts, config: { mustContain: ["token"] } }
@@ -120,11 +119,11 @@ tests:
 - **`providers`** injects `scenarios/shared/provider.ts` — the one place the model and
   timeout are set, so all 16 configs share them (a `.ts` module because promptfoo inlines
   a `file://…ts` referenced from inside a provider *yaml*).
-- **`prompts[0].raw`** is the prompt, inline (no `{{prompt}}` var); its **`label`** is unique.
+- **`prompts[0]`** is the prompt, an inline bare string (no `{{prompt}}` var, no label).
 - **`vars.env`** names the environment to provision — no per-test backend/container/fixture.
-- **`tests[0].prompts: [label]`** binds the test to its own prompt. This matters for the
-  full run: `npm run eval` combines every config via a glob, and the filter keeps each test
-  on its own prompt (a diagonal grid) instead of the prompt×test cross-product.
+- **One prompt + one test per file, run one-by-one.** `npm run eval` runs a **separate
+  `promptfoo` process per config** (see `run-scenarios.ts`), so configs are never combined —
+  there is no prompt×test cross-product and no need for per-test prompt filters.
 
 ### Environments
 
@@ -197,26 +196,27 @@ result is therefore reproducible within majority tolerance and self-auditing.
 ```powershell
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
-npm run eval:validate    # structural promptfoo validation (via node --import tsx)
-npm run eval             # full live run (premium usage) — all 16 scenarios
+npm run eval:validate    # structural promptfoo validation, one config at a time
+npm run eval             # full live run (premium usage) — all 16 scenarios, one at a time
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
 # a single scenario: promptfoo eval -c eval/scenarios/ask/answerable.yaml
 ```
 
-> **Validation:** `npm run eval:validate` launches promptfoo via `node --import tsx`,
-> matching `npm run eval`, so the TypeScript provider can keep NodeNext `.js` import
-> specifiers. Both combine every config via the glob
-> `eval/scenarios/{ask,context,learn,remember,reflect,onboard}/*.yaml` (the `shared/`
-> folder is excluded). Expect validation to end with `Configuration is valid.`
+> **One config at a time.** `npm run eval` / `eval:validate` run a **separate `promptfoo`
+> process per config** via `run-scenarios.ts` (recursing `scenarios/`, skipping `shared/`),
+> so configs are never merged into a prompt×test cross-product. Each scenario becomes its
+> own eval record — pick one in `npm run eval:view`. The runner exits non-zero if any
+> config fails. Both invoke promptfoo through `node --import tsx`, so the TypeScript
+> provider keeps NodeNext `.js` import specifiers; validation prints `Configuration is
+> valid.` per file.
 
 **Cost:** each scenario is **one agent call + `k` judge calls** (default `k=3`). Set
 `OKH_JUDGE_K=1` for cheap local iteration. Response caching is disabled for the agent
 (`--no-cache`).
 
-**Model matrix:** change the default `model` in `scenarios/shared/provider.ts`, or add a
-second provider entry (`{ id: file://../shared/provider.ts, config: { model: … } }`) to the
-configs you want to compare; view them side-by-side in `npm run eval:view`. **Comparing
-builds:** run the suite on two OKH git branches and compare in the viewer.
+**Model matrix:** change the default `model` in `scenarios/shared/provider.ts` (one place),
+then compare runs in `npm run eval:view`. **Comparing builds:** run the suite on two OKH
+git branches and compare in the viewer.
 
 **Unit-testing the harness itself** (no premium usage, no Copilot CLI):
 

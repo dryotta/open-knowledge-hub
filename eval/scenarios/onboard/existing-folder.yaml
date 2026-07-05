@@ -3,16 +3,13 @@ description: Onboard - existing folder - previews, then registers
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: onboard-existing-folder
-    raw: |
-      hub, add my existing folder "notes" (in the current working directory) as a
-      knowledge hub. Show the plan first and only initialize it after I confirm;
-      assume I say yes.
+  - |
+    hub, add my existing folder "notes" (in the current working directory) as a
+    knowledge hub. Show the plan first and only initialize it after I confirm;
+    assume I say yes.
 tests:
   - vars:
       env: empty
-    prompts:
-      - onboard-existing-folder
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

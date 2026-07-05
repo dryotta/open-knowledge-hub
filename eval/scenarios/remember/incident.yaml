@@ -3,15 +3,12 @@ description: Remember - incident - appends raw timestamped entry
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: remember-incident
-    raw: |
-      Use the open-knowledge-hub MCP tools. Remember this observation in container
-      "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
+  - |
+    Use the open-knowledge-hub MCP tools. Remember this observation in container
+    "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
 tests:
   - vars:
       env: local-and-git
-    prompts:
-      - remember-incident
     assert:
       - type: javascript
         value: file://../../assertions/tools-called.ts

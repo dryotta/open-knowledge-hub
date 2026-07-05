@@ -3,15 +3,12 @@ description: Onboard - explain request - explains OKH and setup
 providers:
   - file://../shared/provider.ts
 prompts:
-  - label: onboard-explain
-    raw: |
-      hub, explain what the Open Knowledge Hub is and how it organizes knowledge,
-      and tell me how I'd set up my first hub.
+  - |
+    hub, explain what the Open Knowledge Hub is and how it organizes knowledge,
+    and tell me how I'd set up my first hub.
 tests:
   - vars:
       env: empty
-    prompts:
-      - onboard-explain
     assert:
       - type: javascript
         value: file://../../assertions/judge.ts
