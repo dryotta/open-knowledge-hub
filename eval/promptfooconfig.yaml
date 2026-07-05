@@ -1,0 +1,9 @@
+# Single default eval config: one {{prompt}} pass-through, the shared Copilot
+# provider, and every case pulled in as a scenario. Run via `npm run eval`.
+description: OKH E2E eval (Copilot CLI)
+prompts:
+  - "{{prompt}}"
+providers:
+  - file://scenarios/shared/provider.ts
+scenarios:
+  - file://scenarios/**/*.yaml
