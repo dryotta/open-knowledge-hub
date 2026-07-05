@@ -95,15 +95,15 @@ so all cases land in **one** eval record you can browse in `npm run eval:view`.
 
 ```yaml
 # scenarios/ask/answerable.yaml — one scenario
-- description: Ask - answerable question - grounded answer, cites source
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
           from its knowledge module: How does auth work?
   tests:
-    - assert:
+    - description: Ask - answerable question - grounded answer, cites source
+      assert:
         - { type: javascript, value: file://assertions/tools-called.ts, config: { expect: [ask] } }
         - { type: javascript, value: file://assertions/transcript.ts, config: { mustContain: ["token"] } }
         - type: javascript
@@ -116,7 +116,7 @@ so all cases land in **one** eval record you can browse in `npm run eval:view`.
 
 - **Assertion `file://` paths are relative to `eval/`** (the config dir) — `file://assertions/…`,
   not `../../assertions/…`. promptfoo resolves nested `file://` refs against the base config.
-- **`description`** names the case (row) in the viewer.
+- **`tests[0].description`** names the case — it labels the row in `npm run eval:view` and is selectable via `--filter-pattern "<description>"`.
 - **`config[0].vars.env`** names the environment to provision (see below).
 
 ### Environments

@@ -1,13 +1,13 @@
 # reflect flow — surface a recurring pattern across memory entries.
-- description: Reflect - memory module - finds pattern, proposes update
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. Reflect on the memory module of
           container "kb-hub" and produce lessons and proposed updates.
   tests:
-    - assert:
+    - description: Reflect - memory module - finds pattern, proposes update
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [reflect] }

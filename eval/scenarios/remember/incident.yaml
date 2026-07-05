@@ -1,13 +1,13 @@
 # remember flow — append a raw, timestamped observation.
-- description: Remember - incident - appends raw timestamped entry
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. Remember this observation in container
           "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
   tests:
-    - assert:
+    - description: Remember - incident - appends raw timestamped entry
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [remember] }

@@ -1,6 +1,5 @@
 # learn flow — integrate a useful fact, then persist it via sync.
-- description: Learn - useful fact - integrates, syncs
-  config:
+- config:
     - vars:
         env: git
         prompt: |
@@ -8,7 +7,8 @@
           "git-hub" and persist it: "Session tokens are signed with RS256 and the
           public keys are rotated weekly." Then sync.
   tests:
-    - assert:
+    - description: Learn - useful fact - integrates, syncs
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [learn, sync] }

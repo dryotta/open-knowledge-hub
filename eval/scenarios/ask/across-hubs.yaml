@@ -1,13 +1,13 @@
 # ask flow — answer across all registered hubs, citing each module path.
-- description: Ask - across hubs - cites each module path
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
           hub, across all my registered hubs, what do we know about authentication and
           session tokens? Cite the module path for each fact.
   tests:
-    - assert:
+    - description: Ask - across hubs - cites each module path
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [ask] }

@@ -1,6 +1,5 @@
 # onboard flow — clone a GitHub repo, register it, inspect and summarize its kb.
-- description: Onboard - GitHub repo - clones, registers, summarizes
-  config:
+- config:
     - vars:
         env: empty
         prompt: |
@@ -8,7 +7,8 @@
           (preview the clone first; assume I confirm), then inspect its kb module and
           summarize the actual knowledge it contains.
   tests:
-    - assert:
+    - description: Onboard - GitHub repo - clones, registers, summarizes
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [add, inspect] }

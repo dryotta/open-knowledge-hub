@@ -82,12 +82,8 @@ describe("scenario configs", () => {
       expect(sc.providers, `${file}: no per-file providers`).toBeUndefined();
       expect(sc.prompts, `${file}: no per-file prompts`).toBeUndefined();
 
-      // a unique, descriptive sentence — not a one-word dashed id
-      expect(typeof sc.description, `${file}: description is a string`).toBe("string");
-      expect(sc.description.trim().length).toBeGreaterThan(10);
-      expect(sc.description).toContain(" ");
-      expect(seenDescriptions.has(sc.description)).toBe(false);
-      seenDescriptions.add(sc.description);
+      // description lives on the test (labels the viewer row + is filterable), not the scenario
+      expect(sc.description, `${file}: no scenario-level description`).toBeUndefined();
 
       // exactly one config set with a bare-string prompt (no {{prompt}}) and a known env
       expect(Array.isArray(sc.config)).toBe(true);
@@ -103,6 +99,11 @@ describe("scenario configs", () => {
       expect(Array.isArray(sc.tests)).toBe(true);
       expect(sc.tests).toHaveLength(1);
       const test = sc.tests[0];
+      expect(typeof test.description, `${file}: test description is a string`).toBe("string");
+      expect(test.description.trim().length).toBeGreaterThan(10);
+      expect(test.description).toContain(" ");
+      expect(seenDescriptions.has(test.description)).toBe(false);
+      seenDescriptions.add(test.description);
       expect(test.vars, `${file}: env lives in config, not the test`).toBeUndefined();
       expect(test.prompts, `${file}: no prompt filter`).toBeUndefined();
       expect(Array.isArray(test.assert)).toBe(true);

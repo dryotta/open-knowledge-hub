@@ -1,12 +1,12 @@
 # onboard flow — getting started while setting a custom wake phrase.
-- description: Onboard - custom name - sets wake phrase
-  config:
+- config:
     - vars:
         env: empty
         prompt: |
           hub, help me get started. I'd like to call you "brain" from now on.
   tests:
-    - assert:
+    - description: Onboard - custom name - sets wake phrase
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [config] }

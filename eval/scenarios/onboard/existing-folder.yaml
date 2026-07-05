@@ -1,6 +1,5 @@
 # onboard flow — preview, then register an existing folder as a hub.
-- description: Onboard - existing folder - previews, then registers
-  config:
+- config:
     - vars:
         env: empty
         prompt: |
@@ -8,7 +7,8 @@
           knowledge hub. Show the plan first and only initialize it after I confirm;
           assume I say yes.
   tests:
-    - assert:
+    - description: Onboard - existing folder - previews, then registers
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [add] }

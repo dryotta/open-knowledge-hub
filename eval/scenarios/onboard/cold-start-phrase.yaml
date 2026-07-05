@@ -1,12 +1,12 @@
 # onboard flow — the cold-start phrase runs the onboard flow.
-- description: Onboard - cold-start phrase - runs onboard flow
-  config:
+- config:
     - vars:
         env: empty
         prompt: |
           Use the Open Knowledge Hub MCP and run onboard to set me up.
   tests:
-    - assert:
+    - description: Onboard - cold-start phrase - runs onboard flow
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [onboard] }

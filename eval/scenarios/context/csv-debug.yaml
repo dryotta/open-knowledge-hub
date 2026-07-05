@@ -1,6 +1,5 @@
 # context flow — include every helpful module type (skill + tool), not just knowledge.
-- description: Context - CSV debug task - includes skill and tool
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
@@ -10,7 +9,8 @@
           knowledge, but any applicable skill and any tool that can do part of the
           work — and cite each selected item by its path.
   tests:
-    - assert:
+    - description: Context - CSV debug task - includes skill and tool
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [context] }

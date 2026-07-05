@@ -72,12 +72,13 @@ export async function loadScenarios(): Promise<ScenarioTest[]> {
       const vars = sc?.config?.[0]?.vars ?? {};
       const prompt = vars.prompt;
       const test = sc?.tests?.[0];
-      if (typeof sc?.description !== "string" || typeof prompt !== "string" || !test) {
-        throw new Error(`scenarios/${file}: expected description + config[0].vars.prompt + tests[0]`);
+      const description = test?.description;
+      if (typeof description !== "string" || typeof prompt !== "string") {
+        throw new Error(`scenarios/${file}: expected tests[0].description + config[0].vars.prompt`);
       }
       out.push({
         file,
-        description: sc.description,
+        description,
         env: vars.env,
         prompt,
         assert: test.assert ?? [],

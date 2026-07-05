@@ -1,13 +1,13 @@
 # learn flow — reject a trivial fact; nothing is written.
-- description: Learn - trivial fact - rejects, no write
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
           "The sky is blue on a clear day."
   tests:
-    - assert:
+    - description: Learn - trivial fact - rejects, no write
+      assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config: { expect: [learn] }
