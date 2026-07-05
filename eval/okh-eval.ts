@@ -61,7 +61,7 @@ async function scenarioConfigFiles(): Promise<string[]> {
   return out.sort();
 }
 
-/** Load every scenario config file (one prompt per file) and normalize it. */
+/** Load every scenario file (a one-element scenario list) and normalize it. */
 export async function loadScenarios(): Promise<ScenarioTest[]> {
   const root = join(EVAL_ROOT, "scenarios");
   const out: ScenarioTest[] = [];
@@ -73,8 +73,8 @@ export async function loadScenarios(): Promise<ScenarioTest[]> {
       const prompt = vars.prompt;
       const test = sc?.tests?.[0];
       const description = test?.description;
-      if (typeof description !== "string" || typeof prompt !== "string") {
-        throw new Error(`scenarios/${file}: expected tests[0].description + config[0].vars.prompt`);
+      if (typeof description !== "string" || typeof prompt !== "string" || !isEnvName(vars.env)) {
+        throw new Error(`scenarios/${file}: expected tests[0].description + config[0].vars.prompt + config[0].vars.env`);
       }
       out.push({
         file,
