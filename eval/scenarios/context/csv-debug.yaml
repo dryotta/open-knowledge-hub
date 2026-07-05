@@ -1,31 +1,29 @@
 # context flow — include every helpful module type (skill + tool), not just knowledge.
-description: Context - CSV debug task - includes skill and tool
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    Use the open-knowledge-hub MCP tools to assemble a working set for this task
-    in container "kb-hub": debug a failing test that parses a CSV file. Inspect
-    the relevant modules and include every module type that helps — not just
-    knowledge, but any applicable skill and any tool that can do part of the
-    work — and cite each selected item by its path.
-tests:
-  - vars:
-      env: local-and-git
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [context] }
-      - type: javascript
-        value: file://../../assertions/transcript.ts
-        config: { mustContain: ["debugging", "csv2json"] }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: selects-skill-and-tool
-              text: The working set selects the Debugging skill and the csv2json tool, each cited by path.
-            - id: one-line-why
-              text: It notes one line on why each selected item matters.
-            - id: no-auth-pad
-              text: It does NOT pad the set with the unrelated Auth knowledge concept.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools to assemble a working set for this task
+          in container "kb-hub": debug a failing test that parses a CSV file. Inspect
+          the relevant modules and include every module type that helps — not just
+          knowledge, but any applicable skill and any tool that can do part of the
+          work — and cite each selected item by its path.
+  tests:
+    - description: Context - CSV debug task - includes skill and tool
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [context] }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config: { mustContain: ["debugging", "csv2json"] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: selects-skill-and-tool
+                text: The working set selects the Debugging skill and the csv2json tool, each cited by path.
+              - id: one-line-why
+                text: It notes one line on why each selected item matters.
+              - id: no-auth-pad
+                text: It does NOT pad the set with the unrelated Auth knowledge concept.

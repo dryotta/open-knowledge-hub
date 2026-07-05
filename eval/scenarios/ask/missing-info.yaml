@@ -1,23 +1,21 @@
 # ask flow — decline when the knowledge module lacks the answer.
-description: Ask - missing info - declines, no fabrication
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
-    from its knowledge module: What is the company's paid vacation policy?
-tests:
-  - vars:
-      env: local-and-git
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [ask] }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: declines
-              text: The answer states the vacation-policy information is NOT in the knowledge base (declines / says not found).
-            - id: no-fabrication
-              text: The answer does NOT fabricate a vacation policy.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+          from its knowledge module: What is the company's paid vacation policy?
+  tests:
+    - description: Ask - missing info - declines, no fabrication
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [ask] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: declines
+                text: The answer states the vacation-policy information is NOT in the knowledge base (declines / says not found).
+              - id: no-fabrication
+                text: The answer does NOT fabricate a vacation policy.

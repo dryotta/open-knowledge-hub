@@ -1,31 +1,29 @@
 # learn flow — integrate a useful fact, then persist it via sync.
-description: Learn - useful fact - integrates, syncs
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    Use the open-knowledge-hub MCP tools. Learn the following into container
-    "git-hub" and persist it: "Session tokens are signed with RS256 and the
-    public keys are rotated weekly." Then sync.
-tests:
-  - vars:
-      env: git
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [learn, sync] }
-      - type: javascript
-        value: file://../../assertions/okf-valid.ts
-        config: { module: kb, requireCitations: false, requireChanged: true }
-      - type: javascript
-        value: file://../../assertions/git-committed.ts
-        config: { minCommits: 2 }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: integrated-rs256
-              text: A valid OKF knowledge concept capturing the RS256 / weekly-key-rotation fact was added to the knowledge module.
-            - id: persisted-via-sync
-              text: The change was persisted via the sync tool.
-              check: { kind: tool, name: sync }
+- config:
+    - vars:
+        env: git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Learn the following into container
+          "git-hub" and persist it: "Session tokens are signed with RS256 and the
+          public keys are rotated weekly." Then sync.
+  tests:
+    - description: Learn - useful fact - integrates, syncs
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [learn, sync] }
+        - type: javascript
+          value: file://assertions/okf-valid.ts
+          config: { module: kb, requireCitations: false, requireChanged: true }
+        - type: javascript
+          value: file://assertions/git-committed.ts
+          config: { minCommits: 2 }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: integrated-rs256
+                text: A valid OKF knowledge concept capturing the RS256 / weekly-key-rotation fact was added to the knowledge module.
+              - id: persisted-via-sync
+                text: The change was persisted via the sync tool.
+                check: { kind: tool, name: sync }

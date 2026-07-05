@@ -61,25 +61,29 @@ async function scenarioConfigFiles(): Promise<string[]> {
   return out.sort();
 }
 
-/** Load every scenario config file (one prompt per file) and normalize it. */
+/** Load every scenario file (a one-element scenario list) and normalize it. */
 export async function loadScenarios(): Promise<ScenarioTest[]> {
   const root = join(EVAL_ROOT, "scenarios");
   const out: ScenarioTest[] = [];
   for (const file of await scenarioConfigFiles()) {
-    const cfg = parseYaml(await readFile(join(root, file), "utf8"));
-    const rawPrompt = cfg?.prompts?.[0];
-    const prompt = typeof rawPrompt === "string" ? rawPrompt : rawPrompt?.raw;
-    const test = cfg?.tests?.[0];
-    if (typeof cfg?.description !== "string" || typeof prompt !== "string" || !test) {
-      throw new Error(`scenarios/${file}: expected description + prompts[0] + tests[0]`);
+    const doc = parseYaml(await readFile(join(root, file), "utf8"));
+    const scenarios = Array.isArray(doc) ? doc : [doc];
+    for (const sc of scenarios) {
+      const vars = sc?.config?.[0]?.vars ?? {};
+      const prompt = vars.prompt;
+      const test = sc?.tests?.[0];
+      const description = test?.description;
+      if (typeof description !== "string" || typeof prompt !== "string" || !isEnvName(vars.env)) {
+        throw new Error(`scenarios/${file}: expected tests[0].description + config[0].vars.prompt + config[0].vars.env`);
+      }
+      out.push({
+        file,
+        description,
+        env: vars.env,
+        prompt,
+        assert: test.assert ?? [],
+      });
     }
-    out.push({
-      file,
-      description: cfg.description,
-      env: test.vars?.env,
-      prompt,
-      assert: test.assert ?? [],
-    });
   }
   return out;
 }

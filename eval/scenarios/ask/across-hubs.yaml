@@ -1,25 +1,23 @@
 # ask flow — answer across all registered hubs, citing each module path.
-description: Ask - across hubs - cites each module path
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    hub, across all my registered hubs, what do we know about authentication and
-    session tokens? Cite the module path for each fact.
-tests:
-  - vars:
-      env: local-and-git
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [ask] }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: answered-with-citations
-              text: The agent answered from the registered knowledge modules with module-path citations.
-            - id: spans-hubs
-              text: The answer draws on more than one hub where the relevant facts live.
-            - id: no-fabrication
-              text: The agent invented nothing.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          hub, across all my registered hubs, what do we know about authentication and
+          session tokens? Cite the module path for each fact.
+  tests:
+    - description: Ask - across hubs - cites each module path
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [ask] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: answered-with-citations
+                text: The agent answered from the registered knowledge modules with module-path citations.
+              - id: spans-hubs
+                text: The answer draws on more than one hub where the relevant facts live.
+              - id: no-fabrication
+                text: The agent invented nothing.
