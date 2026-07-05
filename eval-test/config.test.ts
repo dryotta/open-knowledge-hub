@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import { readFile, stat, readdir } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +93,7 @@ describe("scenario configs", () => {
       expect(Array.isArray(sc.config)).toBe(true);
       expect(sc.config).toHaveLength(1);
       const vars = sc.config[0].vars;
+      expect(vars, `${file}: config[0].vars is defined`).toBeDefined();
       expect(typeof vars.prompt, `${file}: prompt is a bare string`).toBe("string");
       expect(vars.prompt.trim().length).toBeGreaterThan(0);
       expect(vars.prompt).not.toContain("{{prompt}}");
