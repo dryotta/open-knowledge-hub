@@ -4,7 +4,7 @@ End-to-end tests that exercise the **real** Open Knowledge Hub MCP server **insi
 GitHub Copilot CLI** against real fixture containers. There is **no external grader
 key** — both the agent and the judge run through Copilot CLI.
 
-The same 16 scenarios run two ways:
+The same 17 scenarios run two ways:
 
 - **Automated** — [promptfoo](https://promptfoo.dev) drives a custom Copilot-CLI
   provider, applies deterministic `javascript` assertions plus a Copilot-CLI **judge**,
@@ -29,8 +29,10 @@ promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios
        │      okh-home/      (OKH_HOME: registry + copied fixture containers)
        │      copilot-home/  (COPILOT_HOME: mcp-config.json → node dist/index.js)
        │      workspace/     (the agent's cwd)
-       │    launches:  copilot -p "<prompt>" --allow-all --model <model>
-       └─ returns the transcript + metadata (containerPath, originPath, toolCalls, …)
+       ├─ runConversation(...)  ← copilot.ts
+       │    turn 1:  copilot -p "<prompt>" --session-id <uuid> --allow-all --output-format json --model <model>
+       │    then per scripted reply:  copilot -p "<reply>" --resume=<uuid> ...   (single-turn = just turn 1)
+       └─ returns the aggregated transcript + metadata (containerPath, originPath, toolCalls, cost, …)
   └─ assertions grade the transcript + on-disk side-effects:
        • deterministic javascript assertions (tools called, files changed, git commits…)
        • a Copilot-CLI judge (binary criteria, self-consistency, cross-checked)
@@ -48,8 +50,8 @@ Key files:
 | `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout |
 | `scenarios/<verb>/<case>.yaml` | one scenario (a one-element list): `config.vars` (prompt+env) + `tests[0].assert` |
 | `environments.ts` | defines the 3 environments **and** provisions them (`provisionEnvironment`) |
-| `provider/copilotProvider.ts` | provisions the scenario's env, runs `copilot -p`, returns transcript + metadata |
-| `copilot.ts` | spawns Copilot CLI; `extractToolCalls` parses MCP tool calls from the transcript |
+| `provider/copilotProvider.ts` | provisions the scenario's env, drives the (multi-turn) conversation, returns transcript + metadata |
+| `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
 | `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
@@ -129,7 +131,7 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 |-----|-----------|------|----------|
 | `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git) | the 8 `kb-hub` scenarios + `ask/across-hubs` |
 | `git` | registered | `git-hub` (git-auto, with a seeded push origin) | `learn/useful-fact` (sync) |
-| `empty` | workspace | `notes` (unregistered folder in the cwd) | the 6 `onboard/*` scenarios |
+| `empty` | workspace | `notes` (unregistered folder in the cwd) | the 7 `onboard/*` scenarios |
 
 - **`registered`** copies each hub into `OKH_HOME/containers/<name>` and registers it;
   `git-auto` hubs also get a throwaway **bare origin** seeded and cloned so `sync` has
@@ -150,6 +152,38 @@ Fixtures (`fixtures/`):
   token-refresh / clock-skew issue.
 - **`git-hub`** — a `kb` knowledge module (used as the git-backed hub).
 - **`plain-notes`** — a minimal folder used as the unregistered `notes` hub.
+
+### Multi-turn scenarios
+
+Most scenarios are single-turn: one prompt, one agent reply. Conversational flows
+(onboard) can instead declare `vars.turns` — a list of scripted **user** replies that the
+harness sends across a resumed Copilot session (`--session-id` on turn 1, then
+`--resume=<id>`), one `copilot -p` invocation per turn. In `-p` mode the agent ends each
+turn with its question rather than blocking, so each turn is one conversational step.
+
+Each entry is a string (an ordered reply) or `{ send, when }`, where `when` is a
+case-insensitive regex matched against the **agent's last message**. Per step the harness
+picks the first unsent reply whose `when` matches; otherwise the first unsent unguarded
+reply; otherwise the conversation ends (a `maxTurns` cap, default `turns.length + 2`,
+guards against loops). This adapts if the agent reorders or combines stages.
+
+```yaml
+# scenarios/onboard/cold-start-conversation.yaml (excerpt)
+vars:
+  env: empty
+  prompt: "Use the Open Knowledge Hub MCP and run onboard to set me up."
+  turns:
+    - { when: "wake phrase|name|call it", send: "Let's call it 'brain'." }
+    - { when: "new folder|which|container", send: "Create a new folder 'my-notes' with a 'kb' module." }
+    - { when: "plan|confirm|go ahead|create", send: "Yes, go ahead and create it." }
+    - { send: "Thanks — how would I use it day to day?" }   # unguarded fallback
+```
+
+The provider reads each turn via `--output-format json`, extracting the agent's message,
+OKH tool calls (`mcpServerName: open-knowledge-hub`), and the run's cumulative cost
+(`result.usage.premiumRequests`). The aggregated transcript (labelled `USER`/`AGENT`
+blocks per turn) is what the judge and `transcript` assertions grade, and
+`metadata.toolCalls` is the union across all turns.
 
 ### Assertions
 
@@ -191,7 +225,7 @@ result is therefore reproducible within majority tolerance and self-auditing.
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
 npm run eval:validate    # structural promptfoo validation
-npm run eval             # full live run (premium usage) — all 16 scenarios, concurrently
+npm run eval             # full live run (premium usage) — all 17 scenarios, concurrently
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
 # a single scenario: filter by description, e.g. promptfoo eval -c eval/promptfooconfig.yaml --filter-pattern "Ask - answerable"
 ```
@@ -203,7 +237,8 @@ npm run eval:view        # open the report + Prompts/Datasets/Results UI
 > through `node --import tsx` so the TypeScript provider keeps NodeNext `.js` import specifiers;
 > validation prints `Configuration is valid.`
 
-**Cost:** each scenario is **one agent call + `k` judge calls** (default `k=3`). Set
+**Cost:** each scenario is **N agent turns + `k` judge calls** (single-turn scenarios have
+`N=1`; multi-turn scenarios run one agent turn per scripted reply; `k` defaults to 3). Set
 `OKH_JUDGE_K=1` for cheap local iteration. Response caching is disabled for the agent
 (`--no-cache`).
 
@@ -342,5 +377,7 @@ Automated e2e can't open real pull requests. To test `pr`-mode by hand:
   interactive turn consumes premium requests.
 - On Windows, promptfoo may print a libuv assertion on process exit **after** a successful
   run — cosmetic.
-- If a future Copilot CLI version renders MCP tool calls differently (currently
-  `● <Title> (MCP: open-knowledge-hub) · args`), adjust `extractToolCalls` in `copilot.ts`.
+- If a future Copilot CLI version changes its `--output-format json` event shape (currently
+  `assistant.message.toolRequests[]` / `tool.execution_start` carry `mcpServerName` +
+  `mcpToolName`, and `result` carries `sessionId` + `usage.premiumRequests`), adjust
+  `parseCopilotEvents` in `copilot.ts`.
