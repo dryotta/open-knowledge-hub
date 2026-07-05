@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
         env:
-          # onnxruntime-node recognizes "skip"; CI does not need CUDA binaries.
+          # The onnxruntime-node installer treats skip as a no-CUDA sentinel.
           ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
       - name: Build
