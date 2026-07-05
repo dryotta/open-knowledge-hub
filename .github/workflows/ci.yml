@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Build, typecheck, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure git identity
+        # The eval harness runs real git in temp repos (e.g. a seed commit);
+        # CI runners have no global identity, so set one to avoid
+        # "empty ident name" failures.
+        run: |
+          git config --global user.email "ci@okh.invalid"
+          git config --global user.name "OKH CI"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # The onnxruntime-node installer treats skip as a no-CUDA sentinel.
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck eval harness
+        run: npm run typecheck:eval
+
+      - name: Test eval harness
+        run: npm run test:eval
+
+      - name: Validate eval configuration
+        run: npm run eval:validate
