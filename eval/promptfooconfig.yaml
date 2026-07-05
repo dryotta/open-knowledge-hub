@@ -14,4 +14,4 @@ prompts:
   # the results grid dense (no sparse prompt×test matrix / "Error loading cell").
   - raw: "{{prompt}}"
     label: "OKH scenario prompt"
-tests: file://scenarios/*/*/test.yaml
+tests: file://scenarios/*.yaml

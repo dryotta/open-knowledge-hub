@@ -44,11 +44,11 @@ Key files (all `file://` paths in the config resolve relative to `eval/`):
 
 | File | Role |
 |------|------|
-| `promptfooconfig.yaml` | provider + a single `{{prompt}}` prompt + `tests: file://scenarios/*/*/test.yaml` |
+| `promptfooconfig.yaml` | provider + a single `{{prompt}}` prompt + `tests: file://scenarios/*.yaml` |
 | `environments.ts` | defines the 3 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, runs `copilot -p`, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI; `extractToolCalls` parses MCP tool calls from the transcript |
-| `scenarios/<verb>/<case>/` | one scenario: `test.yaml` (vars + asserts) + `prompt.md` (the prompt text) |
+| `scenarios/*.yaml` | grouped tests (per flow); each test = a descriptive `description` + inline `prompt` + `env` + asserts |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`) |
@@ -73,59 +73,50 @@ Key files (all `file://` paths in the config resolve relative to `eval/`):
 
 ## How test cases work
 
-Each scenario is a folder `scenarios/<verb>/<case>/` holding two files.
+Tests are grouped into per-flow files under `scenarios/` — each file is a YAML list of
+tests:
 
-**`prompt.md`** — the exact natural-language prompt sent to the agent. It's the single
-source of truth for the prompt: the manual harness reads it directly, and promptfoo
-injects it via a `file://` var (below).
+| file | tests |
+|------|-------|
+| `ask.yaml` (3) | answer from knowledge; decline when absent; answer across hubs |
+| `context.yaml` (2) | assemble a working set; include skills + tools |
+| `learn.yaml` (2) | integrate a fact (+ sync); reject a trivial fact |
+| `remember.yaml` (2) | record an observation; keep it raw |
+| `reflect.yaml` (1) | surface a recurring pattern across memory |
+| `onboard-getting-started.yaml` (3) | explain OKH; cold-start phrase; set a wake phrase |
+| `onboard-add-create.yaml` (3) | create a hub; add an existing folder; add from GitHub |
 
-**`test.yaml`** — a one-element list describing the case:
+Each test looks like:
 
 ```yaml
-- description: ask-grounded                              # the scenario id, shown in the viewer
+# scenarios/ask.yaml — a list of tests
+- description: Answers strictly from the container's knowledge module, citing the source
   vars:
-    prompt: file://scenarios/ask/grounded/prompt.md      # prompt text (resolved to file contents)
-    env: local-and-git                                   # which environment to provision
+    env: local-and-git            # which environment to provision (see below)
+    prompt: |                     # the exact prompt sent to the agent (embedded inline)
+      Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+      from its knowledge module: How does auth work?
   assert:
-    - type: javascript
-      value: file://assertions/tools-called.ts
-      config: { expect: [ask] }                          # the `ask` tool must be called
-    - type: javascript
-      value: file://assertions/transcript.ts
-      config: { mustContain: ["token"] }                 # transcript substring checks
+    - { type: javascript, value: file://assertions/tools-called.ts, config: { expect: [ask] } }
+    - { type: javascript, value: file://assertions/transcript.ts, config: { mustContain: ["token"] } }
     - type: javascript
       value: file://assertions/judge.ts
       config:
-        criteria:                                        # binary pass/fail statements (see Judge)
+        criteria:                 # binary pass/fail statements (see Judge)
           - id: grounded-token-auth
             text: The answer reflects token-based auth from the Auth concept.
           - id: cites-auth
             text: The answer cites the Auth concept or its source path.
 ```
 
-Why this shape:
-
+- **`description`** is a readable sentence — it names the test case (row) in the viewer.
+- **`vars.prompt`** is the prompt, embedded inline (one source of truth per test).
+- **`vars.env`** names the environment to provision — no per-test backend/container/fixture.
 - **One prompt strategy, many test cases.** `promptfooconfig.yaml` defines a single
-  pass-through prompt (`{{prompt}}`), and each scenario supplies its own text through the
-  `prompt` var. This is promptfoo's idiomatic model — the **Prompts** tab shows one
-  strategy, and the results grid stays a dense 16×1 (one row per scenario, no empty
+  pass-through prompt (`{{prompt}}`), and each test supplies its own text via the `prompt`
+  var. This is promptfoo's idiomatic model — the **Prompts** tab shows one strategy, and the
+  results grid stays a dense 16×1 (one row per test, named by its description, no empty
   cells).
-- **`env` replaces per-case setup.** Instead of spelling out backend/container/fixture in
-  every file, each scenario names an **environment** (see below); provisioning is derived
-  entirely from that.
-- **`description`** is the scenario id (`<verb>-<case>`); it names the row/test case in the
-  viewer.
-
-Scenarios live under six verbs (16 total):
-
-| verb | cases |
-|------|-------|
-| `ask` | grounded, declines-when-absent, multi-container |
-| `context` | assembly, includes-skills-tools |
-| `learn` | integrates, rejects-trivial |
-| `remember` | records, no-conclusions |
-| `reflect` | insights |
-| `onboard` | explains, phrase, wake-phrase, create-local, add-existing-folder, add-github |
 
 ### Environments
 
@@ -227,88 +218,85 @@ npm run test:eval        # vitest unit tests for environments/provider/assertion
 
 ## Running manually (with example prompts)
 
-The manual flow provisions a scenario, drops you into an interactive Copilot session in
-the isolated environment, and lets you judge the answer and inspect side-effects. Runs are
-**recorded**, so follow-up commands need no paths.
+Manual mode is **environment-centric**: you provision one of the three environments, and
+the harness prints every test prompt that uses it (with an expected-outcome checklist) for
+you to run by hand and eyeball. Runs are **recorded**, so follow-up commands need no paths.
 
 ```powershell
-npm run eval:setup -- list                     # list all scenario ids
-npm run eval:setup -- setup ask-grounded        # provision one scenario's environment
-npm run eval:setup -- enter                     # interactive Copilot session in that env
-npm run eval:setup -- check                     # re-run the deterministic side-effect checks
-npm run eval:setup -- clean                     # delete the temp run
+npm run eval:setup -- list                 # list environments + how many prompts each has
+npm run eval:setup -- setup local-and-git  # provision an environment; print its test prompts
+npm run eval:setup -- enter                # interactive Copilot session in that environment
+npm run eval:setup -- clean                # delete the temp run
 ```
 
-- **`setup <scenario>`** builds the isolated temp Root and prints the Root/Workspace paths,
-  the `enter`/headless commands, an expected-outcome checklist, and the `check`/`clean`
-  commands. Nothing is spawned yet; no premium usage.
-- **`enter`** targets the most-recent run; pass a scenario name to pick another, or
-  `--model <M>` to override the model. Inside the session, `/mcp` confirms
-  **open-knowledge-hub** is loaded. Paste the scenario's prompt (from
-  `scenarios\<verb>\<case>\prompt.md`) — or use the headless `copilot -p '…'` line that
-  `setup` printed.
-- **`check`** re-runs only the deterministic side-effect assertions (answer quality you
-  eyeball yourself; the automated run adds the judge for that). Explicit form still works:
-  `npm run eval:setup -- check <root> --scenario <name>`.
-- **`clean`** removes the most-recent run (or pass a scenario name / explicit path).
+- **`setup <env>`** (`empty` | `git` | `local-and-git`) builds the isolated temp Root and
+  prints the Root/Workspace paths, the `enter`/`clean` commands, and — for every test that
+  uses this environment — its description, prompt, and expected-outcome checklist. Nothing
+  is spawned yet; no premium usage.
+- **`enter [env]`** opens an interactive session (most-recent run, or the named env); `/mcp`
+  confirms **open-knowledge-hub** is loaded. Paste one of the printed prompts, watch it
+  work, and verify against that prompt's checklist and by inspecting the workspace.
+  `--model <M>` overrides the model.
+- **`clean [env]`** removes the run (or pass an explicit path).
 
-### Example prompts (one per verb)
+There is no automated `check` in manual mode — verification is by eye (the printed
+checklist says what to look for); the deterministic assertions run in `npm run eval`.
 
-Provision the matching scenario, `enter`, and paste:
+### Example prompts (one per flow)
 
-- **ask** (`ask-grounded`, env `local-and-git`):
+`setup <env>` prints all of an environment's prompts; a few highlights:
+
+- **ask** (env `local-and-git`):
   > Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly from its
   > knowledge module: How does auth work?
 
   Expect: calls `ask`, mentions session tokens, cites the Auth concept, invents nothing.
-  Contrast with `ask-declines-when-absent` ("…the company's paid vacation policy?") which
-  should **decline** rather than fabricate.
+  The sibling "decline" test asks for a vacation policy and should **decline** rather than
+  fabricate.
 
-- **context** (`context-includes-skills-tools`, env `local-and-git`):
+- **context** (env `local-and-git`):
   > …assemble a working set for this task in container "kb-hub": debug a failing test that
   > parses a CSV file. Include every module type that helps and cite each by path.
 
   Expect: selects the `debugging` skill and the `csv2json` tool, not just knowledge.
 
-- **learn** (`learn-integrates`, env `git`):
+- **learn** (env `git`):
   > Learn the following into container "git-hub" and persist it: "Session tokens are signed
   > with RS256 and the public keys are rotated weekly." Then sync.
 
   Expect: writes a valid OKF concept and `sync` commits **and pushes** to the bare origin
-  (`git-committed` verifies it). Contrast with `learn-rejects-trivial` ("the sky is blue")
-  which the okf-learn gate should **reject** (`module-unchanged` verifies nothing changed).
+  (`git-committed` verifies it). The sibling "reject" test ("the sky is blue") should be
+  **rejected** by the okf-learn gate (`module-unchanged` verifies nothing changed).
 
-- **remember** (`remember-records`, env `local-and-git`):
+- **remember** (env `local-and-git`):
   > Remember this observation in container "kb-hub": "The login endpoint returned 500s for
   > ~3 minutes at 14:05 UTC during deploy."
 
   Expect: a new timestamped `mem/` entry (append-only), raw fact only, no conclusions.
 
-- **reflect** (`reflect-insights`, env `local-and-git`):
+- **reflect** (env `local-and-git`):
   > Reflect on the memory module of container "kb-hub" and produce lessons and proposed
   > updates.
 
   Expect: identifies the recurring token-refresh / clock-skew pattern across both memory
   entries and proposes a concrete update.
 
-- **onboard** (`onboard-create-local`, env `empty`):
+- **onboard** (env `empty`):
   > hub, create a new knowledge hub in a folder called "my-notes" and add a knowledge
   > module named "kb". Show me the plan and wait for my confirmation; assume I say yes.
 
   Expect: previews a plan, then `add` creates & registers `my-notes` with a `kb` module.
-  Other onboarding prompts: explain OKH (`onboard-explains`), the cold-start phrase
-  `onboard-phrase` ("Use the Open Knowledge Hub MCP and run onboard to set me up."), set a
-  wake phrase (`onboard-wake-phrase`), add an existing folder (`onboard-add-existing-folder`),
-  or clone from GitHub (`onboard-add-github`).
+  The `empty` environment also covers explaining OKH, the cold-start phrase ("Use the Open
+  Knowledge Hub MCP and run onboard to set me up."), setting a wake phrase, adding an
+  existing folder, and cloning a hub from GitHub.
 
 ### Exploratory (free-form) testing
 
-**Poke at a seeded fixture.** Provision the rich `kb-hub` (any `local-and-git` scenario,
-e.g. `context-assembly`), `enter`, and throw your own prompts at it — adversarial ones too
-(prompt-injection in a question, ambiguous container/module, "rewrite an existing memory
-entry" which should stay append-only). After each, inspect
-`<Root>\okh-home\containers\kb-hub` (files + `git`) to see exactly what happened, then
-`clean`.
+**Poke at a seeded fixture.** `setup local-and-git` (the rich `kb-hub`), `enter`, and throw
+your own prompts at it — adversarial ones too (prompt-injection in a question, ambiguous
+container/module, "rewrite an existing memory entry" which should stay append-only). After
+each, inspect `<Root>\okh-home\containers\kb-hub` (files + `git`) to see exactly what
+happened, then `clean`.
 
 **Dogfood against a real hub.** Wire OKH into your normal Copilot CLI by adding to
 `~/.copilot/mcp-config.json`:

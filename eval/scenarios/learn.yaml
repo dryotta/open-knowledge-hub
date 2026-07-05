@@ -1,0 +1,46 @@
+# learn flow — integrating vs. rejecting facts.
+- description: Integrates a new fact as an OKF concept and persists it via sync
+  vars:
+    env: git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Learn the following into container
+      "git-hub" and persist it: "Session tokens are signed with RS256 and the
+      public keys are rotated weekly." Then sync.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [learn, sync] }
+    - type: javascript
+      value: file://assertions/okf-valid.ts
+      config: { module: kb, requireCitations: false, requireChanged: true }
+    - type: javascript
+      value: file://assertions/git-committed.ts
+      config: { minCommits: 2 }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: integrated-rs256
+            text: A valid OKF knowledge concept capturing the RS256 / weekly-key-rotation fact was added to the knowledge module.
+          - id: persisted-via-sync
+            text: The change was persisted via the sync tool.
+            check: { kind: tool, name: sync }
+- description: Rejects a trivial, goal-less fact instead of writing it to the module
+  vars:
+    env: local-and-git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
+      "The sky is blue on a clear day."
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [learn] }
+    - type: javascript
+      value: file://assertions/module-unchanged.ts
+      config: { module: kb }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: rejects-trivial
+            text: The okf-learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.

@@ -1,0 +1,62 @@
+# ask flow — answering from container knowledge (env: local-and-git).
+- description: Answers strictly from the container's knowledge module, citing the source
+  vars:
+    env: local-and-git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+      from its knowledge module: How does auth work?
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://assertions/transcript.ts
+      config: { mustContain: ["token"] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: grounded-token-auth
+            text: The answer reflects token-based auth from the Auth concept (e.g. session tokens, ~24h expiry, or refresh rotation).
+          - id: cites-auth
+            text: The answer cites the Auth concept or its source path.
+          - id: no-fabrication
+            text: The answer invents nothing beyond the container's knowledge module.
+- description: Declines when the knowledge base lacks the information, without fabricating
+  vars:
+    env: local-and-git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+      from its knowledge module: What is the company's paid vacation policy?
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: declines
+            text: The answer states the vacation-policy information is NOT in the knowledge base (declines / says not found).
+          - id: no-fabrication
+            text: The answer does NOT fabricate a vacation policy.
+- description: Answers across all registered hubs, citing each fact's module path
+  vars:
+    env: local-and-git
+    prompt: |
+      hub, across all my registered hubs, what do we know about authentication and
+      session tokens? Cite the module path for each fact.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [ask] }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: answered-with-citations
+            text: The agent answered from the registered knowledge modules with module-path citations.
+          - id: spans-hubs
+            text: The answer draws on more than one hub where the relevant facts live.
+          - id: no-fabrication
+            text: The agent invented nothing.

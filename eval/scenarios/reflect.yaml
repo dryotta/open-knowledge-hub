@@ -1,7 +1,10 @@
-- description: reflect-insights
+# reflect flow — cross-entry pattern-finding (env: local-and-git).
+- description: Reflects across memory entries to surface a recurring pattern and propose an update
   vars:
-    prompt: file://scenarios/reflect/insights/prompt.md
     env: local-and-git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Reflect on the memory module of
+      container "kb-hub" and produce lessons and proposed updates.
   assert:
     - type: javascript
       value: file://assertions/tools-called.ts

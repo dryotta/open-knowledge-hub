@@ -36,9 +36,7 @@ export default class CopilotProvider {
     if (!isEnvName(env)) {
       throw new Error(`scenario is missing a valid \`env\` var (got ${JSON.stringify(env)})`);
     }
-    const label = context.test?.description ?? env;
-
-    const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label });
+    const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label: env });
 
     const runner: CopilotRunner = this.config.runner ?? spawnCopilot;
     const res = await runner({
