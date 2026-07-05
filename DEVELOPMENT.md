@@ -35,6 +35,21 @@ npm run eval            # full live run (Copilot CLI; premium usage)
 
 See **[eval/README.md](./eval/README.md)** for automated and manual eval runs.
 
+## Inspect with MCP Inspector
+
+The server speaks **stdio**, so the [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
+spawns it as a subprocess. Two scripts are provided:
+
+```bash
+npm run inspect      # build, then inspect dist/index.js
+npm run inspect:dev  # inspect src/index.ts directly (no build) via tsx
+```
+
+Either opens a web UI (a `localhost` URL with an auth token) to list and call the
+operational tools (`ask`, `add`, `sync`, `config`, `inspect`) and flows (`context`,
+`learn`, `remember`, `reflect`, `onboard`). Set `OKH_HOME` to a scratch dir to
+isolate data, e.g. `OKH_HOME=/tmp/okh npm run inspect`.
+
 ## Run a dev build in your client
 
 Build, then point your client at the local `dist/index.js`:
