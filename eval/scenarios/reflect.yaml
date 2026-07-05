@@ -1,8 +1,7 @@
-- vars:
-    scenario: reflect-insights
-    backend: local
-    container: kb-hub
-    fixture: fixtures/kb-hub
+# reflect flow — cross-entry pattern-finding (env: local-and-git).
+- description: Reflect - memory module - finds pattern, proposes update
+  vars:
+    env: local-and-git
     prompt: |
       Use the open-knowledge-hub MCP tools. Reflect on the memory module of
       container "kb-hub" and produce lessons and proposed updates.

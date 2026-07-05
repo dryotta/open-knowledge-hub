@@ -1,0 +1,85 @@
+# onboard flow — adding/creating hubs (env: empty; an unregistered `notes` folder is present).
+- description: Onboard - new hub - previews, then creates
+  vars:
+    env: empty
+    prompt: |
+      hub, create a new knowledge hub in a folder called "my-notes" and add a
+      knowledge module named "kb". Show me the plan and wait for my confirmation
+      before creating anything; when you ask, assume I say yes.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [add] }
+    - type: javascript
+      value: file://assertions/container-registered.ts
+      config: { name: my-notes, backend: local, module: kb }
+    - type: javascript
+      value: file://assertions/manifest-initialized.ts
+      config: { name: my-notes }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: previewed-before-apply
+            text: The agent showed/echoed a plan describing what it would create before creating anything.
+          - id: created-hub-and-kb
+            text: A container "my-notes" with a "kb" knowledge module was created.
+            check: { kind: container, name: my-notes, backend: local, module: kb }
+          - id: called-add
+            text: The agent used the add tool.
+            check: { kind: tool, name: add }
+- description: Onboard - existing folder - previews, then registers
+  vars:
+    env: empty
+    prompt: |
+      hub, add my existing folder "notes" (in the current working directory) as a
+      knowledge hub. Show the plan first and only initialize it after I confirm;
+      assume I say yes.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [add] }
+    - type: javascript
+      value: file://assertions/container-registered.ts
+      config: { name: notes, backend: local }
+    - type: javascript
+      value: file://assertions/manifest-initialized.ts
+      config: { name: notes }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: previewed-before-init
+            text: The agent previewed the change before initializing the folder as a hub.
+          - id: registered-notes
+            text: The existing "notes" folder was registered as a local container.
+            check: { kind: container, name: notes, backend: local }
+          - id: manifest-initialized
+            text: An OKH manifest was initialized for "notes".
+            check: { kind: manifest, name: notes }
+- description: Onboard - GitHub repo - clones, registers, summarizes
+  vars:
+    env: empty
+    prompt: |
+      hub, add the knowledge hub at https://github.com/dryotta/okh-eval-hub.git
+      (preview the clone first; assume I confirm), then inspect its kb module and
+      summarize the actual knowledge it contains.
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [add, inspect] }
+    - type: javascript
+      value: file://assertions/container-registered.ts
+      config: { name: okh-eval-hub, backend: git, module: kb }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        criteria:
+          - id: cloned-registered-git
+            text: The repo was cloned and registered as a git container with a "kb" knowledge module.
+            check: { kind: container, name: okh-eval-hub, backend: git, module: kb }
+          - id: used-inspect
+            text: The agent inspected the hub's contents.
+            check: { kind: tool, name: inspect }
+          - id: summarized-kb-content
+            text: The agent summarized the repo's actual knowledge content (from the kb module).

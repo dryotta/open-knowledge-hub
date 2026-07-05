@@ -1,0 +1,43 @@
+# remember flow — append-only, raw observations (env: local-and-git).
+- description: Remember - incident - appends raw timestamped entry
+  vars:
+    env: local-and-git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Remember this observation in container
+      "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [remember] }
+    - type: javascript
+      value: file://assertions/memory-append.ts
+      config: { module: mem, baselineFileCount: 2 }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        artifacts: { module: mem }
+        criteria:
+          - id: recorded-incident
+            text: A factual, timestamped memory entry capturing the 500s incident was recorded (see the ON-DISK ARTIFACTS).
+- description: Remember - test result - stores raw, no conclusions
+  vars:
+    env: local-and-git
+    prompt: |
+      Use the open-knowledge-hub MCP tools. Remember this in container "kb-hub":
+      "Test suite run #42 finished in 13s with 88 passing."
+  assert:
+    - type: javascript
+      value: file://assertions/tools-called.ts
+      config: { expect: [remember] }
+    - type: javascript
+      value: file://assertions/memory-append.ts
+      config: { module: mem, baselineFileCount: 2 }
+    - type: javascript
+      value: file://assertions/judge.ts
+      config:
+        artifacts: { module: mem }
+        criteria:
+          - id: raw-fact-only
+            text: The memory entry (see ON-DISK ARTIFACTS) records the raw fact/result only — a timestamped observation.
+          - id: no-conclusions
+            text: The entry does NOT synthesize conclusions, lessons, recommendations, or root-cause analysis.

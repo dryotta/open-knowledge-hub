@@ -8,5 +8,10 @@ providers:
       model: claude-sonnet-4.5
       timeoutMs: 300000
 prompts:
-  - "{{prompt}}"
-tests: file://scenarios/*/test.yaml
+  # Single pass-through prompt (promptfoo's documented default). Each scenario is a
+  # test case whose prompt text lives in scenarios/<verb>/<case>/prompt.md and is
+  # injected via the `prompt` var (file://). One prompt strategy × 16 test cases keeps
+  # the results grid dense (no sparse prompt×test matrix / "Error loading cell").
+  - raw: "{{prompt}}"
+    label: "OKH scenario prompt"
+tests: file://scenarios/*.yaml
