@@ -1,5 +1,5 @@
 # learn flow — integrating vs. rejecting facts.
-- description: Integrates a new fact as an OKF concept and persists it via sync
+- description: Learn - useful fact - integrates, syncs
   vars:
     env: git
     prompt: |
@@ -25,7 +25,7 @@
           - id: persisted-via-sync
             text: The change was persisted via the sync tool.
             check: { kind: tool, name: sync }
-- description: Rejects a trivial, goal-less fact instead of writing it to the module
+- description: Learn - trivial fact - rejects, no write
   vars:
     env: local-and-git
     prompt: |

@@ -1,5 +1,5 @@
 # onboard flow — getting started: explain, cold-start phrase, wake phrase (env: empty).
-- description: Explains what OKH is and how to set up a first hub
+- description: Onboard - explain request - explains OKH and setup
   vars:
     env: empty
     prompt: |
@@ -14,7 +14,7 @@
             text: The agent explains OKH as containers of typed modules.
           - id: offers-setup-help
             text: The agent offers to help the user set up or add a first hub.
-- description: Begins guided onboarding when asked via the cold-start phrase
+- description: Onboard - cold-start phrase - runs onboard flow
   vars:
     env: empty
     prompt: |
@@ -32,7 +32,7 @@
             check: { kind: tool, name: onboard }
           - id: begins-onboarding
             text: The agent begins onboarding — e.g. explains OKH and/or offers to set up a first container.
-- description: Sets a custom wake phrase during onboarding
+- description: Onboard - custom name - sets wake phrase
   vars:
     env: empty
     prompt: |

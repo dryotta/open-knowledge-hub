@@ -1,5 +1,5 @@
 # onboard flow — adding/creating hubs (env: empty; an unregistered `notes` folder is present).
-- description: Creates a new local hub with a knowledge module after previewing the plan
+- description: Onboard - new hub - previews, then creates
   vars:
     env: empty
     prompt: |
@@ -28,7 +28,7 @@
           - id: called-add
             text: The agent used the add tool.
             check: { kind: tool, name: add }
-- description: Registers an existing local folder as a hub after previewing
+- description: Onboard - existing folder - previews, then registers
   vars:
     env: empty
     prompt: |
@@ -57,7 +57,7 @@
           - id: manifest-initialized
             text: An OKH manifest was initialized for "notes".
             check: { kind: manifest, name: notes }
-- description: Clones and registers a GitHub repo as a git hub, then summarizes its content
+- description: Onboard - GitHub repo - clones, registers, summarizes
   vars:
     env: empty
     prompt: |

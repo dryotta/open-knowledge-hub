@@ -1,5 +1,5 @@
 # ask flow — answering from container knowledge (env: local-and-git).
-- description: Answers strictly from the container's knowledge module, citing the source
+- description: Ask - answerable question - grounded answer, cites source
   vars:
     env: local-and-git
     prompt: |
@@ -22,7 +22,7 @@
             text: The answer cites the Auth concept or its source path.
           - id: no-fabrication
             text: The answer invents nothing beyond the container's knowledge module.
-- description: Declines when the knowledge base lacks the information, without fabricating
+- description: Ask - missing info - declines, no fabrication
   vars:
     env: local-and-git
     prompt: |
@@ -40,7 +40,7 @@
             text: The answer states the vacation-policy information is NOT in the knowledge base (declines / says not found).
           - id: no-fabrication
             text: The answer does NOT fabricate a vacation policy.
-- description: Answers across all registered hubs, citing each fact's module path
+- description: Ask - across hubs - cites each module path
   vars:
     env: local-and-git
     prompt: |

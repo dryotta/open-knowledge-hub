@@ -1,5 +1,5 @@
 # remember flow — append-only, raw observations (env: local-and-git).
-- description: Records a raw, timestamped observation as an append-only memory entry
+- description: Remember - incident - appends raw timestamped entry
   vars:
     env: local-and-git
     prompt: |
@@ -19,7 +19,7 @@
         criteria:
           - id: recorded-incident
             text: A factual, timestamped memory entry capturing the 500s incident was recorded (see the ON-DISK ARTIFACTS).
-- description: Stores the raw result without synthesizing conclusions or recommendations
+- description: Remember - test result - stores raw, no conclusions
   vars:
     env: local-and-git
     prompt: |

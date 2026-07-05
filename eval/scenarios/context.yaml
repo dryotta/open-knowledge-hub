@@ -1,5 +1,5 @@
 # context flow — assembling a task-relevant working set (env: local-and-git).
-- description: Assembles a compact working set for a task, citing module paths and noting gaps
+- description: Context - login task - compact set, cites paths
   vars:
     env: local-and-git
     prompt: |
@@ -17,7 +17,7 @@
             text: The response assembles a compact working set that includes the Auth knowledge concept and cites module paths.
           - id: omits-irrelevant
             text: It omits clearly irrelevant items and notes any gaps (does not dump everything).
-- description: Includes relevant skills and tools in the working set, not just knowledge
+- description: Context - CSV debug task - includes skill and tool
   vars:
     env: local-and-git
     prompt: |

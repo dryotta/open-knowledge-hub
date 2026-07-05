@@ -1,5 +1,5 @@
 # reflect flow — cross-entry pattern-finding (env: local-and-git).
-- description: Reflects across memory entries to surface a recurring pattern and propose an update
+- description: Reflect - memory module - finds pattern, proposes update
   vars:
     env: local-and-git
     prompt: |
