@@ -1,0 +1,50 @@
+# onboard flow — a genuine multi-turn cold-start conversation: the harness plays
+# the user, answering each stage (wake phrase → new container → confirm → wrap-up).
+- config:
+    - vars:
+        env: empty
+        prompt: |
+          Use the Open Knowledge Hub MCP and run onboard to set me up.
+        turns:
+          - when: "wake phrase|name|call it|address|what.*call"
+            send: "Let's call it 'brain'."
+          - when: "existing|new folder|git|repository|which|container|set up"
+            send: |
+              Create a brand-new folder called "my-notes" with a knowledge module
+              named "kb".
+          - when: "plan|confirm|proceed|go ahead|create|shall i|ready|yes"
+            send: "Yes, go ahead and create it."
+          - send: "Thanks — how would I use it day to day?"
+  tests:
+    - description: Onboard - cold-start conversation - staged multi-turn setup
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [onboard, config, add] }
+        - type: javascript
+          value: file://assertions/wake-phrase-set.ts
+        - type: javascript
+          value: file://assertions/container-registered.ts
+          config: { name: my-notes, backend: local, module: kb }
+        - type: javascript
+          value: file://assertions/manifest-initialized.ts
+          config: { name: my-notes }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: ran-onboard
+                text: The agent ran the onboard flow to begin guided setup.
+                check: { kind: tool, name: onboard }
+              - id: asked-wake-phrase
+                text: Early on, the agent explained OKH briefly and asked the user to choose a wake phrase before doing setup.
+              - id: set-wake-phrase
+                text: The agent saved the user's chosen wake phrase via the config tool.
+                check: { kind: wake-phrase }
+              - id: previewed-before-create
+                text: The agent showed or echoed the add plan and waited for a yes before creating anything.
+              - id: created-hub-kb
+                text: A container "my-notes" with a "kb" knowledge module was created.
+                check: { kind: container, name: my-notes, backend: local, module: kb }
+              - id: showed-everyday-use
+                text: The agent closed by showing how to use the hub day to day (e.g. remember/learn/ask examples).
