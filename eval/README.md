@@ -22,8 +22,8 @@ Design notes: `docs/superpowers/specs/2026-07-02-okh-e2e-copilot-cli-design.md` 
 One eval run for a scenario is:
 
 ```
-promptfoo (promptfooconfig.yaml)
-  └─ custom provider (provider/copilotProvider.ts)
+promptfoo (eval/scenarios/<verb>/<case>.yaml — one complete config per prompt)
+  └─ shared provider (scenarios/shared/provider.ts → provider/copilotProvider.ts)
        ├─ provisionEnvironment(env)  ← environments.ts
        │    builds an isolated temp Root:
        │      okh-home/      (OKH_HOME: registry + copied fixture containers)
@@ -40,15 +40,16 @@ Everything is isolated per run: each scenario gets its own `OKH_HOME`, `COPILOT_
 and working directory in a throwaway temp dir, so runs never touch your real hub or
 each other.
 
-Key files (all `file://` paths in the config resolve relative to `eval/`):
+Key files (`file://` paths in each config resolve relative to that config's own
+folder, so scenarios use `../shared/…` and `../../assertions/…` to reach up to `eval/`):
 
 | File | Role |
 |------|------|
-| `promptfooconfig.yaml` | provider + a single `{{prompt}}` prompt + `tests: file://scenarios/*.yaml` |
+| `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout; injected by every scenario config |
+| `scenarios/<verb>/<case>.yaml` | one **complete** promptfoo config per prompt: injects the shared provider, an inline prompt, and a single env-bound test + asserts |
 | `environments.ts` | defines the 3 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, runs `copilot -p`, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI; `extractToolCalls` parses MCP tool calls from the transcript |
-| `scenarios/*.yaml` | grouped tests (per flow); each test = a descriptive `description` + inline `prompt` + `env` + asserts |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`) |
@@ -73,50 +74,57 @@ Key files (all `file://` paths in the config resolve relative to `eval/`):
 
 ## How test cases work
 
-Tests are grouped into per-flow files under `scenarios/` — each file is a YAML list of
-tests:
+Each prompt is its **own complete promptfoo config file**, one per line in a per-verb
+folder under `scenarios/`. There is no central `promptfooconfig.yaml` — every file
+stands alone and can be run on its own with `promptfoo eval -c <file>`.
 
-| file | tests |
-|------|-------|
-| `ask.yaml` (3) | answer from knowledge; decline when absent; answer across hubs |
-| `context.yaml` (2) | assemble a working set; include skills + tools |
-| `learn.yaml` (2) | integrate a fact (+ sync); reject a trivial fact |
-| `remember.yaml` (2) | record an observation; keep it raw |
-| `reflect.yaml` (1) | surface a recurring pattern across memory |
-| `onboard-getting-started.yaml` (3) | explain OKH; cold-start phrase; set a wake phrase |
-| `onboard-add-create.yaml` (3) | create a hub; add an existing folder; add from GitHub |
+| folder | configs |
+|--------|---------|
+| `ask/` (3) | `answerable`, `missing-info`, `across-hubs` |
+| `context/` (2) | `login-task`, `csv-debug` |
+| `learn/` (2) | `useful-fact`, `trivial-fact` |
+| `remember/` (2) | `incident`, `test-result` |
+| `reflect/` (1) | `memory-module` |
+| `onboard/` (6) | `explain`, `cold-start-phrase`, `custom-name`, `new-hub`, `existing-folder`, `github-repo` |
 
-Each test looks like:
+Each config looks like:
 
 ```yaml
-# scenarios/ask.yaml — a list of tests
-- description: Answers strictly from the container's knowledge module, citing the source
-  vars:
-    env: local-and-git            # which environment to provision (see below)
-    prompt: |                     # the exact prompt sent to the agent (embedded inline)
+# scenarios/ask/answerable.yaml — one complete config
+description: Ask - answerable question - grounded answer, cites source
+providers:
+  - file://../shared/provider.ts   # inject the shared provider (model/timeout live there)
+prompts:
+  - label: ask-answerable          # globally-unique label, used to bind the test below
+    raw: |                         # the exact prompt sent to the agent (inline, no var)
       Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
       from its knowledge module: How does auth work?
-  assert:
-    - { type: javascript, value: file://assertions/tools-called.ts, config: { expect: [ask] } }
-    - { type: javascript, value: file://assertions/transcript.ts, config: { mustContain: ["token"] } }
-    - type: javascript
-      value: file://assertions/judge.ts
-      config:
-        criteria:                 # binary pass/fail statements (see Judge)
-          - id: grounded-token-auth
-            text: The answer reflects token-based auth from the Auth concept.
-          - id: cites-auth
-            text: The answer cites the Auth concept or its source path.
+tests:
+  - vars:
+      env: local-and-git           # which environment to provision (see below)
+    prompts: [ask-answerable]      # run only against this file's own prompt
+    assert:
+      - { type: javascript, value: file://../../assertions/tools-called.ts, config: { expect: [ask] } }
+      - { type: javascript, value: file://../../assertions/transcript.ts, config: { mustContain: ["token"] } }
+      - type: javascript
+        value: file://../../assertions/judge.ts
+        config:
+          criteria:                # binary pass/fail statements (see Judge)
+            - id: grounded-token-auth
+              text: The answer reflects token-based auth from the Auth concept.
+            - id: cites-auth
+              text: The answer cites the Auth concept or its source path.
 ```
 
 - **`description`** is a readable sentence — it names the test case (row) in the viewer.
-- **`vars.prompt`** is the prompt, embedded inline (one source of truth per test).
+- **`providers`** injects `scenarios/shared/provider.ts` — the one place the model and
+  timeout are set, so all 16 configs share them (a `.ts` module because promptfoo inlines
+  a `file://…ts` referenced from inside a provider *yaml*).
+- **`prompts[0].raw`** is the prompt, inline (no `{{prompt}}` var); its **`label`** is unique.
 - **`vars.env`** names the environment to provision — no per-test backend/container/fixture.
-- **One prompt strategy, many test cases.** `promptfooconfig.yaml` defines a single
-  pass-through prompt (`{{prompt}}`), and each test supplies its own text via the `prompt`
-  var. This is promptfoo's idiomatic model — the **Prompts** tab shows one strategy, and the
-  results grid stays a dense 16×1 (one row per test, named by its description, no empty
-  cells).
+- **`tests[0].prompts: [label]`** binds the test to its own prompt. This matters for the
+  full run: `npm run eval` combines every config via a glob, and the filter keeps each test
+  on its own prompt (a diagonal grid) instead of the prompt×test cross-product.
 
 ### Environments
 
@@ -126,9 +134,9 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 
 | env | placement | hubs | used for |
 |-----|-----------|------|----------|
-| `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git) | the 8 kb-hub scenarios + `ask-multi-container` |
-| `git` | registered | `git-hub` (git-auto, with a seeded push origin) | `learn-integrates` (sync) |
-| `empty` | workspace | `notes` (unregistered folder in the cwd) | the 6 `onboard-*` scenarios |
+| `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git) | the 8 `kb-hub` scenarios + `ask/across-hubs` |
+| `git` | registered | `git-hub` (git-auto, with a seeded push origin) | `learn/useful-fact` (sync) |
+| `empty` | workspace | `notes` (unregistered folder in the cwd) | the 6 `onboard/*` scenarios |
 
 - **`registered`** copies each hub into `OKH_HOME/containers/<name>` and registers it;
   `git-auto` hubs also get a throwaway **bare origin** seeded and cloned so `sync` has
@@ -192,20 +200,23 @@ $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows mach
 npm run eval:validate    # structural promptfoo validation (via node --import tsx)
 npm run eval             # full live run (premium usage) — all 16 scenarios
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
+# a single scenario: promptfoo eval -c eval/scenarios/ask/answerable.yaml
 ```
 
 > **Validation:** `npm run eval:validate` launches promptfoo via `node --import tsx`,
 > matching `npm run eval`, so the TypeScript provider can keep NodeNext `.js` import
-> specifiers. Expect it to end with `Configuration is valid.`
+> specifiers. Both combine every config via the glob
+> `eval/scenarios/{ask,context,learn,remember,reflect,onboard}/*.yaml` (the `shared/`
+> folder is excluded). Expect validation to end with `Configuration is valid.`
 
 **Cost:** each scenario is **one agent call + `k` judge calls** (default `k=3`). Set
 `OKH_JUDGE_K=1` for cheap local iteration. Response caching is disabled for the agent
 (`--no-cache`).
 
-**Model matrix:** add more `providers` entries in `promptfooconfig.yaml`, each pointing at
-`file://provider/copilotProvider.ts` with a different `config.model`; compare them in
-`npm run eval:view`. **Comparing builds:** run the suite on two OKH git branches and
-compare in the viewer.
+**Model matrix:** change the default `model` in `scenarios/shared/provider.ts`, or add a
+second provider entry (`{ id: file://../shared/provider.ts, config: { model: … } }`) to the
+configs you want to compare; view them side-by-side in `npm run eval:view`. **Comparing
+builds:** run the suite on two OKH git branches and compare in the viewer.
 
 **Unit-testing the harness itself** (no premium usage, no Copilot CLI):
 
@@ -331,7 +342,7 @@ Automated e2e can't open real pull requests. To test `pr`-mode by hand:
 
 - **Don't gate required CI on this suite.** Copilot CLI temperature isn't directly
   controllable; rely on self-consistent judging (and promptfoo `repeat`).
-- `onboard-add-github` clones the private repo `dryotta/okh-eval-hub`, which relies on the
+- `onboard/github-repo` clones the private repo `dryotta/okh-eval-hub`, which relies on the
   machine's `gh` credential helper (macOS/Windows) or a token with `repo` read (Linux/CI).
   No push/sync is exercised.
 - Fixture workspaces are disposable temp dirs — mutate them freely, then `clean`. Each
