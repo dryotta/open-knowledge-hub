@@ -32,25 +32,54 @@ function spawnInteractive(inv: EnterInvocation): Promise<number> {
   });
 }
 
-/** One promptfoo test: a descriptive `description`, an inline prompt + env, and its asserts. */
+/** A single scenario, normalized from one complete promptfoo config file. */
 export interface ScenarioTest {
+  /** Path relative to scenarios/, e.g. "ask/answerable.yaml". */
+  file: string;
   description: string;
-  vars: {
-    env: EnvName;
-    prompt: string;
-  };
+  env: EnvName;
+  prompt: string;
   assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }>;
 }
 
-/** Load every scenarios/*.yaml and flatten the per-file test lists. */
+/** Recursively collect every *.yaml under scenarios/, skipping the shared/ folder. */
+async function scenarioConfigFiles(): Promise<string[]> {
+  const root = join(EVAL_ROOT, "scenarios");
+  const out: string[] = [];
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    for (const ent of await readdir(dir, { withFileTypes: true })) {
+      const relPath = rel ? `${rel}/${ent.name}` : ent.name;
+      if (ent.isDirectory()) {
+        if (ent.name === "shared") continue;
+        await walk(join(dir, ent.name), relPath);
+      } else if (ent.name.endsWith(".yaml")) {
+        out.push(relPath);
+      }
+    }
+  };
+  await walk(root, "");
+  return out.sort();
+}
+
+/** Load every scenario config file (one prompt per file) and normalize it. */
 export async function loadScenarios(): Promise<ScenarioTest[]> {
   const root = join(EVAL_ROOT, "scenarios");
-  const files = (await readdir(root)).filter((f) => f.endsWith(".yaml")).sort();
   const out: ScenarioTest[] = [];
-  for (const f of files) {
-    const list = parseYaml(await readFile(join(root, f), "utf8"));
-    if (!Array.isArray(list) || list.length === 0) throw new Error(`scenarios/${f}: expected a non-empty test list`);
-    for (const t of list) out.push(t as ScenarioTest);
+  for (const file of await scenarioConfigFiles()) {
+    const cfg = parseYaml(await readFile(join(root, file), "utf8"));
+    const rawPrompt = cfg?.prompts?.[0];
+    const prompt = typeof rawPrompt === "string" ? rawPrompt : rawPrompt?.raw;
+    const test = cfg?.tests?.[0];
+    if (typeof cfg?.description !== "string" || typeof prompt !== "string" || !test) {
+      throw new Error(`scenarios/${file}: expected description + prompts[0] + tests[0]`);
+    }
+    out.push({
+      file,
+      description: cfg.description,
+      env: test.vars?.env,
+      prompt,
+      assert: test.assert ?? [],
+    });
   }
   return out;
 }
@@ -60,9 +89,9 @@ export function listEnvironments(): EnvName[] {
   return Object.keys(environments) as EnvName[];
 }
 
-/** All tests whose `vars.env` matches the given environment. */
+/** All tests whose `env` matches the given environment. */
 export async function scenariosForEnv(env: EnvName): Promise<ScenarioTest[]> {
-  return (await loadScenarios()).filter((s) => s.vars.env === env);
+  return (await loadScenarios()).filter((s) => s.env === env);
 }
 
 export interface PromptEntry {
@@ -86,7 +115,7 @@ export async function setupEnvironment(env: EnvName): Promise<SetupResult> {
   const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label: env });
   const prompts: PromptEntry[] = (await scenariosForEnv(env)).map((s) => ({
     description: s.description,
-    prompt: s.vars.prompt.trim(),
+    prompt: s.prompt.trim(),
     checklist: s.assert.map((a) =>
       `${a.type} ${a.value ? a.value.replace("file://assertions/", "") : ""} ${a.config ? JSON.stringify(a.config) : ""}`.trim(),
     ),

@@ -1,0 +1,25 @@
+# remember flow — append a raw, timestamped observation.
+description: Remember - incident - appends raw timestamped entry
+providers:
+  - file://../shared/provider.ts
+prompts:
+  - |
+    Use the open-knowledge-hub MCP tools. Remember this observation in container
+    "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
+tests:
+  - vars:
+      env: local-and-git
+    assert:
+      - type: javascript
+        value: file://../../assertions/tools-called.ts
+        config: { expect: [remember] }
+      - type: javascript
+        value: file://../../assertions/memory-append.ts
+        config: { module: mem, baselineFileCount: 2 }
+      - type: javascript
+        value: file://../../assertions/judge.ts
+        config:
+          artifacts: { module: mem }
+          criteria:
+            - id: recorded-incident
+              text: A factual, timestamped memory entry capturing the 500s incident was recorded (see the ON-DISK ARTIFACTS).

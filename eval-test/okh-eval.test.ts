@@ -15,13 +15,14 @@ describe("okh-eval manual CLI (environment-centric)", () => {
     expect(listEnvironments().sort()).toEqual(["empty", "git", "local-and-git"]);
   });
 
-  it("loads 16 grouped tests with inline prompts + envs", async () => {
+  it("loads 16 scenario configs with inline prompts + envs, recursively", async () => {
     const all = await loadScenarios();
     expect(all.length).toBe(16);
     for (const s of all) {
-      expect(typeof s.vars.prompt).toBe("string");
-      expect(s.vars.prompt.length).toBeGreaterThan(0);
-      expect(["empty", "git", "local-and-git"]).toContain(s.vars.env);
+      expect(typeof s.prompt).toBe("string");
+      expect(s.prompt.length).toBeGreaterThan(0);
+      expect(["empty", "git", "local-and-git"]).toContain(s.env);
+      expect(s.file).toMatch(/^[a-z-]+\/[a-z-]+\.yaml$/);
     }
   });
 

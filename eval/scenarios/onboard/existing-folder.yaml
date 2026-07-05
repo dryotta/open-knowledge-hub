@@ -1,0 +1,34 @@
+# onboard flow — preview, then register an existing folder as a hub.
+description: Onboard - existing folder - previews, then registers
+providers:
+  - file://../shared/provider.ts
+prompts:
+  - |
+    hub, add my existing folder "notes" (in the current working directory) as a
+    knowledge hub. Show the plan first and only initialize it after I confirm;
+    assume I say yes.
+tests:
+  - vars:
+      env: empty
+    assert:
+      - type: javascript
+        value: file://../../assertions/tools-called.ts
+        config: { expect: [add] }
+      - type: javascript
+        value: file://../../assertions/container-registered.ts
+        config: { name: notes, backend: local }
+      - type: javascript
+        value: file://../../assertions/manifest-initialized.ts
+        config: { name: notes }
+      - type: javascript
+        value: file://../../assertions/judge.ts
+        config:
+          criteria:
+            - id: previewed-before-init
+              text: The agent previewed the change before initializing the folder as a hub.
+            - id: registered-notes
+              text: The existing "notes" folder was registered as a local container.
+              check: { kind: container, name: notes, backend: local }
+            - id: manifest-initialized
+              text: An OKH manifest was initialized for "notes".
+              check: { kind: manifest, name: notes }
