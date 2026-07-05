@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import { readFile, stat, readdir } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,8 +46,18 @@ describe("shared provider", () => {
   });
 });
 
+describe("promptfooconfig.yaml (single default)", () => {
+  it("has the {{prompt}} pass-through, the shared provider, and the scenarios glob", async () => {
+    const cfg = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
+    expect(cfg.prompts).toEqual(["{{prompt}}"]);
+    expect(cfg.providers).toEqual(["file://scenarios/shared/provider.ts"]);
+    expect(await exists(join(SCENARIOS, "shared", "provider.ts"))).toBe(true);
+    expect(cfg.scenarios).toEqual(["file://scenarios/**/*.yaml"]);
+  });
+});
+
 describe("scenario configs", () => {
-  it("provides 16 per-prompt configs across the expected verb folders", async () => {
+  it("provides 16 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
     expect(files.length).toBe(16);
     const counts: Record<string, number> = {};
@@ -58,37 +68,43 @@ describe("scenario configs", () => {
     expect(counts).toEqual(EXPECTED_COUNTS);
   });
 
-  it("every config is complete: shared provider, one inline prompt, one env-bound test, judge criteria, existing assertions", async () => {
+  it("every file is a one-element scenario list: config.vars(prompt+env), a test with asserts, judge criteria, eval-relative assertion paths", async () => {
     const seenDescriptions = new Set<string>();
     for (const file of await scenarioFiles()) {
-      const dir = dirname(join(SCENARIOS, file));
-      const cfg = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
+      const doc = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
+
+      // a YAML list with exactly one scenario
+      expect(Array.isArray(doc), `${file}: is a YAML list`).toBe(true);
+      expect(doc).toHaveLength(1);
+      const sc = doc[0];
+
+      // no per-file provider or prompt (they live in promptfooconfig.yaml)
+      expect(sc.providers, `${file}: no per-file providers`).toBeUndefined();
+      expect(sc.prompts, `${file}: no per-file prompts`).toBeUndefined();
 
       // a unique, descriptive sentence — not a one-word dashed id
-      expect(typeof cfg.description, `${file}: description is a string`).toBe("string");
-      expect(cfg.description.trim().length).toBeGreaterThan(10);
-      expect(cfg.description).toContain(" ");
-      expect(seenDescriptions.has(cfg.description)).toBe(false);
-      seenDescriptions.add(cfg.description);
+      expect(typeof sc.description, `${file}: description is a string`).toBe("string");
+      expect(sc.description.trim().length).toBeGreaterThan(10);
+      expect(sc.description).toContain(" ");
+      expect(seenDescriptions.has(sc.description)).toBe(false);
+      seenDescriptions.add(sc.description);
 
-      // injects the shared provider (and it exists)
-      expect(cfg.providers).toEqual(["file://../shared/provider.ts"]);
-      expect(await exists(resolve(dir, "../shared/provider.ts"))).toBe(true);
+      // exactly one config set with a bare-string prompt (no {{prompt}}) and a known env
+      expect(Array.isArray(sc.config)).toBe(true);
+      expect(sc.config).toHaveLength(1);
+      const vars = sc.config[0].vars;
+      expect(typeof vars.prompt, `${file}: prompt is a bare string`).toBe("string");
+      expect(vars.prompt.trim().length).toBeGreaterThan(0);
+      expect(vars.prompt).not.toContain("{{prompt}}");
+      expect(Object.keys(environments)).toContain(vars.env);
 
-      // exactly one inline prompt — a bare string (no {{prompt}} var, no label needed)
-      expect(Array.isArray(cfg.prompts)).toBe(true);
-      expect(cfg.prompts).toHaveLength(1);
-      const prompt = cfg.prompts[0];
-      expect(typeof prompt, `${file}: prompt is a bare string`).toBe("string");
-      expect(prompt.trim().length).toBeGreaterThan(0);
-      expect(prompt).not.toContain("{{prompt}}");
-
-      // exactly one test with a known env; no per-test prompt filter (configs run one-by-one)
-      expect(Array.isArray(cfg.tests)).toBe(true);
-      expect(cfg.tests).toHaveLength(1);
-      const test = cfg.tests[0];
-      expect(Object.keys(environments)).toContain(test.vars.env);
-      expect(test.prompts, `${file}: no prompt filter needed`).toBeUndefined();
+      // exactly one test: only asserts, no per-test vars/prompt filter
+      expect(Array.isArray(sc.tests)).toBe(true);
+      expect(sc.tests).toHaveLength(1);
+      const test = sc.tests[0];
+      expect(test.vars, `${file}: env lives in config, not the test`).toBeUndefined();
+      expect(test.prompts, `${file}: no prompt filter`).toBeUndefined();
+      expect(Array.isArray(test.assert)).toBe(true);
 
       // judge criteria present and well-formed
       const judges = test.assert.filter(
@@ -103,10 +119,13 @@ describe("scenario configs", () => {
         expect(typeof c.text).toBe("string");
       }
 
-      // every referenced assertion file exists (resolved relative to the config file)
+      // every javascript assertion path is eval-relative and exists
       for (const a of test.assert) {
         if (a.type === "javascript") {
-          expect(await exists(resolve(dir, String(a.value).replace("file://", "")))).toBe(true);
+          const v = String(a.value);
+          expect(v.startsWith("file://assertions/"), `${file}: ${v} is eval-relative`).toBe(true);
+          expect(v).not.toContain("../");
+          expect(await exists(resolve(EVAL, v.replace("file://", "")))).toBe(true);
         }
       }
     }
