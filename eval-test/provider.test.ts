@@ -18,6 +18,7 @@ const turn = (over: Partial<CopilotTurnResult> = {}): CopilotTurnResult => ({
   sessionId: "s",
   code: 0,
   raw: "",
+  render: "",
   ...over,
 });
 

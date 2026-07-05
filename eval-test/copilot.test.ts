@@ -43,6 +43,35 @@ describe("parseCopilotEvents", () => {
     expect(p.sessionId).toBeNull();
     expect(p.code).toBeNull();
   });
+
+  it("renders messages interleaved with tool calls and results (so the judge sees actions)", () => {
+    const jsonl = [
+      line({ type: "assistant.message", data: { content: "Let me set that up." } }),
+      line({
+        type: "tool.execution_start",
+        data: {
+          toolCallId: "c1",
+          mcpServerName: "open-knowledge-hub",
+          mcpToolName: "add",
+          arguments: { source: "my-notes", create: true },
+        },
+      }),
+      line({
+        type: "tool.execution_complete",
+        data: { toolCallId: "c1", success: true, result: { content: "Created container my-notes with module kb." } },
+      }),
+      line({ type: "assistant.message", data: { content: "Done — created my-notes." } }),
+    ].join("\n");
+    const p = parseCopilotEvents(jsonl);
+    expect(p.tools).toEqual(["add"]);
+    expect(p.messages).toEqual(["Let me set that up.", "Done — created my-notes."]);
+    expect(p.render).toContain("Let me set that up.");
+    expect(p.render).toContain("→ tool: open-knowledge-hub:add");
+    expect(p.render).toContain("create");
+    expect(p.render).toContain("← open-knowledge-hub:add");
+    expect(p.render).toContain("Created container my-notes");
+    expect(p.render).toContain("Done — created my-notes.");
+  });
 });
 
 /** Fake turn-runner: scripts each turn's agent reply + tools by prompt substring. */
@@ -62,6 +91,7 @@ function fakeRunner(
       sessionId: opts.sessionId,
       code: hit.code ?? 0,
       raw: "",
+      render: "",
     };
   };
 }

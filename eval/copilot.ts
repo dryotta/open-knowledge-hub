@@ -50,12 +50,15 @@ export const spawnCopilot: CopilotRunner = (opts) =>
 const OKH_SERVER = "open-knowledge-hub";
 
 export interface ParsedTurn {
+  /** Assistant spoken messages this turn (no tool lines) — used for guard matching. */
   messages: string[];
   lastMessage: string;
   tools: string[];
   cost: number;
   sessionId: string | null;
   code: number | null;
+  /** Human-readable turn transcript interleaving messages + tool calls/results (for the judge). */
+  render: string;
 }
 
 interface ToolRequest {
@@ -67,6 +70,11 @@ interface EventData {
   toolRequests?: ToolRequest[];
   mcpServerName?: string;
   mcpToolName?: string;
+  toolCallId?: string;
+  toolName?: string;
+  arguments?: unknown;
+  success?: boolean;
+  result?: { content?: string; detailedContent?: string };
   sessionId?: string;
   exitCode?: number;
   usage?: { premiumRequests?: number };
@@ -83,14 +91,20 @@ interface CopilotEvent {
  * Parse Copilot CLI `--output-format json` (JSONL) from one turn: assistant
  * message contents, OKH MCP tool names (from `toolRequests[]` and
  * `tool.execution_start`, keyed on `mcpServerName === "open-knowledge-hub"`),
- * and the final `result` event's sessionId / exitCode / cumulative cost.
+ * the final `result` event's sessionId / exitCode / cumulative cost, and a
+ * human-readable `render` interleaving messages with tool calls + results (in
+ * event order) so the judge sees what the agent *did*, not just what it said.
  */
 export function parseCopilotEvents(jsonl: string): ParsedTurn {
   const messages: string[] = [];
   const tools = new Set<string>();
+  const parts: string[] = [];
+  const toolLabel = new Map<string, string>();
   let cost = 0;
   let sessionId: string | null = null;
   let code: number | null = null;
+
+  const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
   for (const raw of jsonl.split(/\r?\n/)) {
     const t = raw.trim();
@@ -104,14 +118,27 @@ export function parseCopilotEvents(jsonl: string): ParsedTurn {
     const d = e.data ?? {};
     switch (e.type) {
       case "assistant.message": {
-        if (typeof d.content === "string" && d.content.trim()) messages.push(d.content);
+        if (typeof d.content === "string" && d.content.trim()) {
+          messages.push(d.content);
+          parts.push(d.content);
+        }
         for (const r of d.toolRequests ?? []) {
           if (r?.mcpServerName === OKH_SERVER && typeof r.mcpToolName === "string") tools.add(r.mcpToolName);
         }
         break;
       }
       case "tool.execution_start": {
+        const label = d.mcpServerName ? `${d.mcpServerName}:${d.mcpToolName}` : (d.toolName ?? "tool");
+        if (d.toolCallId) toolLabel.set(d.toolCallId, label);
         if (d.mcpServerName === OKH_SERVER && typeof d.mcpToolName === "string") tools.add(d.mcpToolName);
+        const args = d.arguments !== undefined ? truncate(JSON.stringify(d.arguments), 200) : "";
+        parts.push(`→ tool: ${label}${args && args !== "{}" ? ` ${args}` : ""}`);
+        break;
+      }
+      case "tool.execution_complete": {
+        const label = (d.toolCallId && toolLabel.get(d.toolCallId)) || "tool";
+        const res = typeof d.result?.content === "string" ? d.result.content : d.result?.detailedContent ?? "";
+        parts.push(`← ${label}${d.success === false ? " [error]" : ""}: ${truncate(res.replace(/\s+/g, " "), 300)}`);
         break;
       }
       case "result": {
@@ -124,7 +151,15 @@ export function parseCopilotEvents(jsonl: string): ParsedTurn {
       }
     }
   }
-  return { messages, lastMessage: messages.at(-1) ?? "", tools: [...tools].sort(), cost, sessionId, code };
+  return {
+    messages,
+    lastMessage: messages.at(-1) ?? "",
+    tools: [...tools].sort(),
+    cost,
+    sessionId,
+    code,
+    render: parts.join("\n"),
+  };
 }
 
 export interface CopilotTurnOptions {
@@ -270,7 +305,7 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       timeoutMs: ctx.timeoutMs,
       extraEnv: ctx.extraEnv,
     });
-    turns.push({ user, agent: r.messages.join("\n"), tools: r.tools });
+    turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools });
     for (const t of r.tools) toolSet.add(t);
     if (r.cost) cost = r.cost;
     code = r.code;
