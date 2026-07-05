@@ -85,7 +85,13 @@ async function registerHub(
     await runner("git", ["clone", originPath, seed]);
     await cp(fixtureDir, seed, { recursive: true });
     await runner("git", ["add", "-A"], { cwd: seed });
-    await runner("git", ["commit", "-m", "seed"], { cwd: seed });
+    // Pin an identity so the seed commit never depends on the machine's global
+    // git config (CI runners have none → "empty ident name").
+    await runner(
+      "git",
+      ["-c", "user.name=OKH Eval", "-c", "user.email=eval@okh.invalid", "commit", "-m", "seed"],
+      { cwd: seed },
+    );
     await runner("git", ["push", "origin", "main"], { cwd: seed });
     const clone = join(containersDir, hub.container);
     await git.clone(originPath, clone);
