@@ -1,27 +1,25 @@
 # remember flow — store the raw result only, no synthesized conclusions.
-description: Remember - test result - stores raw, no conclusions
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    Use the open-knowledge-hub MCP tools. Remember this in container "kb-hub":
-    "Test suite run #42 finished in 13s with 88 passing."
-tests:
-  - vars:
-      env: local-and-git
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [remember] }
-      - type: javascript
-        value: file://../../assertions/memory-append.ts
-        config: { module: mem, baselineFileCount: 2 }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          artifacts: { module: mem }
-          criteria:
-            - id: raw-fact-only
-              text: The memory entry (see ON-DISK ARTIFACTS) records the raw fact/result only — a timestamped observation.
-            - id: no-conclusions
-              text: The entry does NOT synthesize conclusions, lessons, recommendations, or root-cause analysis.
+- description: Remember - test result - stores raw, no conclusions
+  config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Remember this in container "kb-hub":
+          "Test suite run #42 finished in 13s with 88 passing."
+  tests:
+    - assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [remember] }
+        - type: javascript
+          value: file://assertions/memory-append.ts
+          config: { module: mem, baselineFileCount: 2 }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts: { module: mem }
+            criteria:
+              - id: raw-fact-only
+                text: The memory entry (see ON-DISK ARTIFACTS) records the raw fact/result only — a timestamped observation.
+              - id: no-conclusions
+                text: The entry does NOT synthesize conclusions, lessons, recommendations, or root-cause analysis.

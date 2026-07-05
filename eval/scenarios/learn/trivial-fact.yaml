@@ -1,24 +1,22 @@
 # learn flow — reject a trivial fact; nothing is written.
-description: Learn - trivial fact - rejects, no write
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
-    "The sky is blue on a clear day."
-tests:
-  - vars:
-      env: local-and-git
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [learn] }
-      - type: javascript
-        value: file://../../assertions/module-unchanged.ts
-        config: { module: kb }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: rejects-trivial
-              text: The okf-learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.
+- description: Learn - trivial fact - rejects, no write
+  config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
+          "The sky is blue on a clear day."
+  tests:
+    - assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [learn] }
+        - type: javascript
+          value: file://assertions/module-unchanged.ts
+          config: { module: kb }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: rejects-trivial
+                text: The okf-learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.

@@ -1,23 +1,21 @@
 # onboard flow — the cold-start phrase runs the onboard flow.
-description: Onboard - cold-start phrase - runs onboard flow
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    Use the Open Knowledge Hub MCP and run onboard to set me up.
-tests:
-  - vars:
-      env: empty
-    assert:
-      - type: javascript
-        value: file://../../assertions/tools-called.ts
-        config: { expect: [onboard] }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: called-onboard
-              text: The agent called the onboard tool/flow to begin guided setup.
-              check: { kind: tool, name: onboard }
-            - id: begins-onboarding
-              text: The agent begins onboarding — e.g. explains OKH and/or offers to set up a first container.
+- description: Onboard - cold-start phrase - runs onboard flow
+  config:
+    - vars:
+        env: empty
+        prompt: |
+          Use the Open Knowledge Hub MCP and run onboard to set me up.
+  tests:
+    - assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [onboard] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: called-onboard
+                text: The agent called the onboard tool/flow to begin guided setup.
+                check: { kind: tool, name: onboard }
+              - id: begins-onboarding
+                text: The agent begins onboarding — e.g. explains OKH and/or offers to set up a first container.

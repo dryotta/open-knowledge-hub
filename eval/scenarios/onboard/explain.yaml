@@ -1,20 +1,18 @@
 # onboard flow — explain OKH and offer to set up a first hub.
-description: Onboard - explain request - explains OKH and setup
-providers:
-  - file://../shared/provider.ts
-prompts:
-  - |
-    hub, explain what the Open Knowledge Hub is and how it organizes knowledge,
-    and tell me how I'd set up my first hub.
-tests:
-  - vars:
-      env: empty
-    assert:
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:
-            - id: explains-containers-modules
-              text: The agent explains OKH as containers of typed modules.
-            - id: offers-setup-help
-              text: The agent offers to help the user set up or add a first hub.
+- description: Onboard - explain request - explains OKH and setup
+  config:
+    - vars:
+        env: empty
+        prompt: |
+          hub, explain what the Open Knowledge Hub is and how it organizes knowledge,
+          and tell me how I'd set up my first hub.
+  tests:
+    - assert:
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: explains-containers-modules
+                text: The agent explains OKH as containers of typed modules.
+              - id: offers-setup-help
+                text: The agent offers to help the user set up or add a first hub.
