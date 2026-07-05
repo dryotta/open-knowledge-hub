@@ -1,5 +1,5 @@
 import { provisionEnvironment, isEnvName } from "../environments.js";
-import { spawnCopilot, extractToolCalls, type CopilotRunner } from "../copilot.js";
+import { spawnCopilotTurn, runConversation, type CopilotTurnRunner, type Turn } from "../copilot.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -8,7 +8,7 @@ const REPO_ROOT = resolve(EVAL_ROOT, "..");
 
 interface ProviderOptions {
   id?: string;
-  config?: { model?: string; timeoutMs?: number; runner?: CopilotRunner };
+  config?: { model?: string; timeoutMs?: number; maxTurns?: number; runner?: CopilotTurnRunner };
 }
 
 interface CallContext {
@@ -16,7 +16,26 @@ interface CallContext {
   test?: { description?: string };
 }
 
-/** promptfoo custom provider: provision a named environment, run `copilot -p`, return transcript + metadata. */
+/** Normalise `vars.turns` (strings or `{ send, when? }`) into guarded Turns. */
+function normalizeTurns(raw: unknown): Turn[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Turn[] = [];
+  for (const t of raw) {
+    if (typeof t === "string") {
+      out.push({ send: t });
+    } else if (t && typeof t === "object" && typeof (t as { send?: unknown }).send === "string") {
+      const o = t as { send: string; when?: unknown };
+      out.push(typeof o.when === "string" ? { send: o.send, when: o.when } : { send: o.send });
+    }
+  }
+  return out;
+}
+
+/**
+ * promptfoo custom provider: provision a named environment, drive a (possibly
+ * multi-turn) Copilot CLI conversation, and return the aggregated transcript +
+ * metadata. With no `vars.turns` it runs exactly one turn (single-turn scenarios).
+ */
 export default class CopilotProvider {
   private readonly providerId: string;
   private readonly config: NonNullable<ProviderOptions["config"]>;
@@ -38,25 +57,34 @@ export default class CopilotProvider {
     }
     const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label: env });
 
-    const runner: CopilotRunner = this.config.runner ?? spawnCopilot;
-    const res = await runner({
-      prompt,
-      model: this.config.model,
-      copilotHome: prov.copilotHome,
-      cwd: prov.workspace,
-      timeoutMs: this.config.timeoutMs ?? 300_000,
-    });
+    const runner: CopilotTurnRunner = this.config.runner ?? spawnCopilotTurn;
+    const result = await runConversation(
+      {
+        initial: prompt,
+        responses: normalizeTurns(vars.turns),
+        ...(this.config.maxTurns ? { maxTurns: this.config.maxTurns } : {}),
+      },
+      {
+        runner,
+        model: this.config.model,
+        copilotHome: prov.copilotHome,
+        cwd: prov.workspace,
+        timeoutMs: this.config.timeoutMs ?? 300_000,
+      },
+    );
 
     return {
-      output: res.transcript,
+      output: result.transcript,
       metadata: {
         workspace: prov.root,
         okhHome: prov.okhHome,
         containerPath: prov.containerPath,
         fixtureDir: prov.fixtureDir,
         originPath: prov.originPath,
-        toolCalls: extractToolCalls(res.transcript),
-        exitCode: res.code,
+        toolCalls: result.toolCalls,
+        turns: result.turns,
+        cost: result.cost,
+        exitCode: result.code,
       },
     };
   }
