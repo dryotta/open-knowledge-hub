@@ -52,39 +52,40 @@ scenarios:
 ### 2. Scenario files (`scenarios/<verb>/<case>.yaml`)
 
 Each becomes a **one-element list**: move the inline prompt into `config.vars.prompt`,
-move `env` alongside it, keep the asserts under `tests[0].assert`. Drop the per-file
-`providers` and top-level `prompts`.
+move `env` alongside it, and keep the asserts under `tests[0].assert`. Drop the per-file
+`providers` and top-level `prompts`. The human-readable `description` lives on
+**`tests[0].description`** (not the scenario), because promptfoo only uses a *test*-level
+description for viewer row labels and `--filter-pattern` (a scenario-level `description`
+propagates to neither — verified empirically).
 
 ```yaml
 # ask flow — answer strictly from a container's knowledge module.
-- description: Ask - answerable question - grounded answer, cites source
-  config:
+- config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
           from its knowledge module: How does auth work?
   tests:
-    - assert:
-        - { type: javascript, value: file://../../assertions/tools-called.ts, config: { expect: [ask] } }
-        - { type: javascript, value: file://../../assertions/transcript.ts, config: { mustContain: ["token"] } }
+    - description: Ask - answerable question - grounded answer, cites source
+      assert:
+        - { type: javascript, value: file://assertions/tools-called.ts, config: { expect: [ask] } }
+        - { type: javascript, value: file://assertions/transcript.ts, config: { mustContain: ["token"] } }
         - type: javascript
-          value: file://../../assertions/judge.ts
+          value: file://assertions/judge.ts
           config: { criteria: [ ... unchanged ... ] }
 ```
 
-`description` names the row in the viewer. All 16 files convert identically; assert bodies
-are unchanged.
+`tests[0].description` names/filters the case in the viewer. All 16 files convert
+identically; assert bodies are unchanged.
 
-### 3. `file://` path resolution (verify during impl)
+### 3. `file://` path resolution (resolved)
 
-Asserts inside scenario files use `../../assertions/…`. promptfoo may resolve these
-relative to (a) the scenario file, or (b) the base `promptfooconfig.yaml`. Confirm with a
-`validate`/offline run:
-- If (a): paths stay `../../assertions/…` and provider stays `file://scenarios/shared/provider.ts` at top level.
-- If (b): rewrite assert paths to `file://assertions/…` (relative to `eval/`).
-
-Pick whichever validates; document it.
+promptfoo resolves assertion `file://` paths relative to the **base config dir (`eval/`)**,
+NOT the scenario file (verified empirically: `../../assertions/…` from a scenario two
+levels deep escaped above `eval/`). So assert paths are **`file://assertions/<name>.ts`**,
+and the top-level provider is `file://scenarios/shared/provider.ts` — both relative to
+`eval/`.
 
 ### 4. `run-scenarios.ts` (simplified)
 
@@ -107,13 +108,13 @@ output) stay the same.
 ### 6. Unit tests
 
 - `eval-test/config.test.ts`: rewrite `scenarioFiles` assertions to validate the new
-  shape — each file parses to a **one-element array**; the element has `description`
-  (unique sentence), `config[0].vars.{prompt,env}` (env in `environments`, prompt a
-  non-empty bare string without `{{prompt}}`), and `tests[0].assert` with judge criteria
-  and existing assertions. Provider/prompt are no longer per-file, so drop those checks
-  (or assert their **absence**); add a check that top-level `promptfooconfig.yaml` has the
-  `{{prompt}}` prompt, the shared provider, and the scenarios glob. Keep the "16 cases
-  across the expected verb folders" count.
+  shape — each file parses to a **one-element array**; the element has **no** scenario-level
+  `description`, has `config[0].vars.{prompt,env}` (env in `environments`, prompt a
+  non-empty bare string without `{{prompt}}`), and `tests[0]` carries a unique
+  `description` sentence plus `assert` with judge criteria and existing assertions.
+  Provider/prompt are no longer per-file, so assert their **absence**; add a check that
+  top-level `promptfooconfig.yaml` has the `{{prompt}}` prompt, the shared provider, and
+  the scenarios glob. Keep the "16 cases across the expected verb folders" count.
 - `eval-test/okh-eval.test.ts`: unchanged expectations (16 scenarios, per-env counts
   9/1/6, prompt/env present) — verifies the updated `loadScenarios` still yields the same
   normalized data.
