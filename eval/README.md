@@ -22,7 +22,7 @@ Design notes: `docs/superpowers/specs/2026-07-02-okh-e2e-copilot-cli-design.md` 
 One eval run for a scenario is:
 
 ```
-promptfoo (eval/scenarios/<verb>/<case>.yaml — one complete config per prompt)
+promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios: [file://scenarios/**/*.yaml])
   └─ shared provider (scenarios/shared/provider.ts → provider/copilotProvider.ts)
        ├─ provisionEnvironment(env)  ← environments.ts
        │    builds an isolated temp Root:
@@ -40,18 +40,18 @@ Everything is isolated per run: each scenario gets its own `OKH_HOME`, `COPILOT_
 and working directory in a throwaway temp dir, so runs never touch your real hub or
 each other.
 
-Key files (`file://` paths in each config resolve relative to that config's own
-folder, so scenarios use `../shared/…` and `../../assertions/…` to reach up to `eval/`):
+Key files:
 
 | File | Role |
 |------|------|
-| `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout; injected by every scenario config |
-| `scenarios/<verb>/<case>.yaml` | one **complete** promptfoo config per prompt: injects the shared provider, an inline prompt, and a single env-bound test + asserts |
+| `promptfooconfig.yaml` | the single default config: `{{prompt}}` pass-through + shared provider + `scenarios:` glob |
+| `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout |
+| `scenarios/<verb>/<case>.yaml` | one scenario (a one-element list): `config.vars` (prompt+env) + `tests[0].assert` |
 | `environments.ts` | defines the 3 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, runs `copilot -p`, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI; `extractToolCalls` parses MCP tool calls from the transcript |
 | `assertions/*.ts` | deterministic checks + the judge |
-| `run-scenarios.ts` | runs `promptfoo eval`/`validate` once **per config file** (no cross-product) |
+| `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
 | `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`) |
 
@@ -75,55 +75,49 @@ folder, so scenarios use `../shared/…` and `../../assertions/…` to reach up 
 
 ## How test cases work
 
-Each prompt is its **own complete promptfoo config file**, one per line in a per-verb
-folder under `scenarios/`. There is no central `promptfooconfig.yaml` — every file
-stands alone and can be run on its own with `promptfoo eval -c <file>`.
-
-| folder | configs |
-|--------|---------|
-| `ask/` (3) | `answerable`, `missing-info`, `across-hubs` |
-| `context/` (2) | `login-task`, `csv-debug` |
-| `learn/` (2) | `useful-fact`, `trivial-fact` |
-| `remember/` (2) | `incident`, `test-result` |
-| `reflect/` (1) | `memory-module` |
-| `onboard/` (6) | `explain`, `cold-start-phrase`, `custom-name`, `new-hub`, `existing-folder`, `github-repo` |
-
-Each config looks like:
+`eval/promptfooconfig.yaml` is the single default config. It declares one pass-through
+prompt, the shared provider once, and a glob of every scenario file:
 
 ```yaml
-# scenarios/ask/answerable.yaml — one complete config
-description: Ask - answerable question - grounded answer, cites source
-providers:
-  - file://../shared/provider.ts   # inject the shared provider (model/timeout live there)
 prompts:
-  - |                              # the exact prompt sent to the agent (inline bare string)
-    Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
-    from its knowledge module: How does auth work?
-tests:
-  - vars:
-      env: local-and-git           # which environment to provision (see below)
-    assert:
-      - { type: javascript, value: file://../../assertions/tools-called.ts, config: { expect: [ask] } }
-      - { type: javascript, value: file://../../assertions/transcript.ts, config: { mustContain: ["token"] } }
-      - type: javascript
-        value: file://../../assertions/judge.ts
-        config:
-          criteria:                # binary pass/fail statements (see Judge)
-            - id: grounded-token-auth
-              text: The answer reflects token-based auth from the Auth concept.
-            - id: cites-auth
-              text: The answer cites the Auth concept or its source path.
+  - "{{prompt}}"
+providers:
+  - file://scenarios/shared/provider.ts
+scenarios:
+  - file://scenarios/**/*.yaml
 ```
 
-- **`description`** is a readable sentence — it names the test case (row) in the viewer.
-- **`providers`** injects `scenarios/shared/provider.ts` — the one place the model and
-  timeout are set, so all 16 configs share them (a `.ts` module because promptfoo inlines
-  a `file://…ts` referenced from inside a provider *yaml*).
-- **`prompts[0]`** is the prompt, an inline bare string (no `{{prompt}}` var, no label).
-- **`vars.env`** names the environment to provision — no per-test backend/container/fixture.
-- **One prompt + one test per file, run one-by-one.** `npm run eval` runs a **separate
-  `promptfoo` process per config** (see `run-scenarios.ts`), so configs are never combined —
-  there is no prompt×test cross-product and no need for per-test prompt filters.
+Each `scenarios/<verb>/<case>.yaml` is a **one-element scenario list**: its `config[0].vars`
+supplies the case's `prompt` (rendered into `{{prompt}}`) and `env`, and its `tests[0].assert`
+holds the case's assertions. One prompt template × N scenarios means no prompt×test
+cross-product — promptfoo runs the scenarios concurrently (default 4 workers) in a single run,
+so all cases land in **one** eval record you can browse in `npm run eval:view`.
+
+```yaml
+# scenarios/ask/answerable.yaml — one scenario
+- description: Ask - answerable question - grounded answer, cites source
+  config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
+          from its knowledge module: How does auth work?
+  tests:
+    - assert:
+        - { type: javascript, value: file://assertions/tools-called.ts, config: { expect: [ask] } }
+        - { type: javascript, value: file://assertions/transcript.ts, config: { mustContain: ["token"] } }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: grounded-token-auth
+                text: The answer reflects token-based auth from the Auth concept.
+```
+
+- **Assertion `file://` paths are relative to `eval/`** (the config dir) — `file://assertions/…`,
+  not `../../assertions/…`. promptfoo resolves nested `file://` refs against the base config.
+- **`description`** names the case (row) in the viewer.
+- **`config[0].vars.env`** names the environment to provision (see below).
 
 ### Environments
 
@@ -196,19 +190,18 @@ result is therefore reproducible within majority tolerance and self-auditing.
 ```powershell
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
-npm run eval:validate    # structural promptfoo validation, one config at a time
-npm run eval             # full live run (premium usage) — all 16 scenarios, one at a time
+npm run eval:validate    # structural promptfoo validation
+npm run eval             # full live run (premium usage) — all 16 scenarios, concurrently
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
-# a single scenario: promptfoo eval -c eval/scenarios/ask/answerable.yaml
+# a single scenario: filter by description, e.g. promptfoo eval -c eval/promptfooconfig.yaml --filter-pattern "Ask - answerable"
 ```
 
-> **One config at a time.** `npm run eval` / `eval:validate` run a **separate `promptfoo`
-> process per config** via `run-scenarios.ts` (recursing `scenarios/`, skipping `shared/`),
-> so configs are never merged into a prompt×test cross-product. Each scenario becomes its
-> own eval record — pick one in `npm run eval:view`. The runner exits non-zero if any
-> config fails. Both invoke promptfoo through `node --import tsx`, so the TypeScript
-> provider keeps NodeNext `.js` import specifiers; validation prints `Configuration is
-> valid.` per file.
+> **One config, concurrent scenarios.** `npm run eval` / `eval:validate` run a **single**
+> `promptfoo` process on `eval/promptfooconfig.yaml` (via `run-scenarios.ts`), which globs
+> every `scenarios/**/*.yaml` scenario and runs them with promptfoo's default concurrency.
+> All cases share one eval record — pick a row in `npm run eval:view`. Both invoke promptfoo
+> through `node --import tsx` so the TypeScript provider keeps NodeNext `.js` import specifiers;
+> validation prints `Configuration is valid.`
 
 **Cost:** each scenario is **one agent call + `k` judge calls** (default `k=3`). Set
 `OKH_JUDGE_K=1` for cheap local iteration. Response caching is disabled for the agent
