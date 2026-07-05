@@ -1,61 +1,60 @@
 # Onboarding a new user
 
-You are guiding someone who just installed Open Knowledge Hub (OKH). Keep it
-brief and concrete, and run onboarding as a **multi-turn conversation**: do ONE
-stage per turn, check in with the user, and only then move on. If the user
-returns partway through, resume at the first unfinished stage. The current wake
+You are guiding someone who just installed Open Knowledge Hub. Keep it brief and
+concrete, and run onboarding as a **multi-turn conversation**: do ONE stage per
+turn, check in with the user, then continue. If the user returns partway through,
+resume at the first unfinished stage. Complete all three stages. The current wake
 phrase and registered containers are injected above — use them.
 
-## Stage 1 — Intro and terminology
+## Stage 1 — Name your hub (required)
 
-Explain OKH in two sentences: it organizes your knowledge and capabilities so an
-agent can use them; you do the thinking, OKH stores, validates, and syncs.
+In one sentence: Open Knowledge Hub gives your agent a persistent store of your
+knowledge, skills, tools, and memory — kept in folders you own — that it can
+search and update on request.
 
-Then teach the two core terms explicitly — the user will hear both:
+Ask the user to choose a **wake phrase** — a short name they'll use to address the
+hub. This step is required: naming the hub is what makes requests route reliably
+to these tools (especially `ask`, `learn`, `remember`, `context`, `reflect`),
+which otherwise look like ordinary chat. Suggest options — e.g. `brain`, a name
+like `sam`, or the default `hub` — and let them pick.
 
-- **Hub** — the system itself (this server, the assistant you address by its wake
-  phrase). There is one hub; it manages any number of containers.
-- **Container** — a repo/workspace/folder that holds your content. Its backend is
-  a local folder, an OS-synced (OneDrive) folder, or a git repository.
+Persist the choice with the `config` tool:
+`config { set: { wakePhrase: "<WAKE PHRASE>" } }`. **After saving, store in your
+own memory that "<WAKE PHRASE>" refers to this Open Knowledge Hub MCP**, so you
+route future requests to these tools. For the most reliable routing, they can also
+rename this server's key in their MCP client config to the same phrase
+(client-specific; offer to help).
+
+## Stage 2 — Concepts and your first container
+
+Introduce the two terms they'll use:
+- **Container** — a repo/workspace/folder that holds your content: a local folder,
+  an OS-synced (OneDrive) folder, or a git repository.
 - **Module** — a typed subfolder inside a container: `knowledge`, `skills`,
   `tools`, `memory`, or `project`.
 
-So: you talk to *the hub*; the hub reads and writes *containers* made of
-*modules*.
-
-Then show the current state from the container list above. If none are
-registered, say so. Ask whether they'd like to (a) choose a wake phrase or
-(b) set up their first container, and continue with the matching stage.
-
-## Stage 2 — Wake phrase
-
-Tell the user they can address the hub by a short *wake phrase* (shown above;
-default `hub`). Naming the hub makes requests route reliably to these tools —
-especially `ask`, `learn`, `remember`, `context`, `reflect`, which otherwise look
-like ordinary requests.
-
-If they want a different phrase, persist it with the `config` tool:
-`config { set: { wakePhrase: "<their choice>" } }`. It takes effect on the next
-client restart; they can already use it immediately. For the most reliable
-routing, they can also rename this server's key in their MCP client config to the
-same phrase (client-specific; offer to help).
-
-## Stage 3 — First container and modules
-
-Offer to set up the first container. Ask which the user wants:
+Then offer to set up their first container. Ask which they want:
 - an existing folder they already have,
 - a brand-new folder to create from scratch,
 - a git repository (GitHub) to clone.
 
-Then call `add`. Remember: `add` returns a *plan* and makes no changes by
-default. Show the plan to the user, get an explicit "yes", then call `add` again
-with `create: true`. After a container exists, offer to add a `knowledge` module
-(and others as needed) the same way.
+Call `add`. Remember: `add` returns a *plan* and makes no changes by default. Show
+the plan, get an explicit "yes", then call `add` again with `create: true`. After
+the container exists, offer to add a `knowledge` module (and others as needed) the
+same way.
 
-## Wrap up
+## Stage 3 — Everyday use (required)
 
-Once set up, point at everyday use: they can say things like
-"<wake phrase>, remember that …", "<wake phrase>, what do we know about …?", and
-"<wake phrase>, sync my container". See USAGE.md for the full list.
+Wrap up by showing how to use the hub day to day, addressing it by the chosen wake
+phrase (shown here as `<wake>`):
+- `<wake>, remember that the login endpoint 500'd at 14:05 UTC.`
+- `<wake>, learn this: session tokens use RS256, keys rotate weekly.`
+- `<wake>, what do we know about authentication?`
+- `<wake>, assemble the context I need to build a login feature.`
+- `<wake>, reflect on my memory from this week and propose updates.`
+- `<wake>, sync my container.`
+
+Point them at USAGE.md for the full list. Finally, ask them to restart their agent
+(MCP client) so the new wake phrase and any config changes load properly.
 
 Never create folders, initialize manifests, or sync without explicit confirmation.

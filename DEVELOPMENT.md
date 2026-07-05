@@ -33,7 +33,7 @@ npm run eval:validate   # validate promptfoo config
 npm run eval            # full live run (Copilot CLI; premium usage)
 ```
 
-See **[eval/README.md](./eval/README.md)** and `eval/MANUAL-TESTING.md`.
+See **[eval/README.md](./eval/README.md)** for automated and manual eval runs.
 
 ## Run a dev build in your client
 

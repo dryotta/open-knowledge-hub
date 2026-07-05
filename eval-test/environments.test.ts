@@ -1,0 +1,55 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { rm, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { provisionEnvironment, environments, isEnvName } from "../eval/environments.js";
+import { makeTempDir, testRun } from "../test/helpers.js";
+
+const cleanups: string[] = [];
+afterEach(async () => {
+  await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+});
+const exists = async (p: string) => !!(await stat(p).catch(() => null));
+
+describe("environments", () => {
+  it("defines exactly empty, git, local-and-git", () => {
+    expect(Object.keys(environments).sort()).toEqual(["empty", "git", "local-and-git"]);
+    expect(isEnvName("git")).toBe(true);
+    expect(isEnvName("nope")).toBe(false);
+  });
+
+  it("local-and-git registers a local kb-hub + a git git-hub with isolated homes + mcp-config", async () => {
+    const prov = await provisionEnvironment("local-and-git", { repoRoot: "C:/repo", runner: testRun });
+    cleanups.push(prov.root);
+    const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    const byName = Object.fromEntries(reg.containers.map((c: { name: string }) => [c.name, c]));
+    expect(Object.keys(byName).sort()).toEqual(["git-hub", "kb-hub"]);
+    expect(byName["kb-hub"].backend).toBe("local");
+    expect(byName["git-hub"].backend).toBe("git");
+    expect(byName["kb-hub"].localPath).toBe(prov.containerPath);
+    expect(prov.originPath).toBeUndefined();
+    expect(prov.fixtureDir.replace(/\\/g, "/")).toContain("fixtures/kb-hub");
+    const mcp = JSON.parse(await readFile(join(prov.copilotHome, "mcp-config.json"), "utf8"));
+    expect(mcp.mcpServers["open-knowledge-hub"].env.OKH_HOME).toBe(prov.okhHome);
+  });
+
+  it("git seeds a bare origin for the single git hub", async () => {
+    const prov = await provisionEnvironment("git", { repoRoot: "C:/repo", runner: testRun });
+    cleanups.push(prov.root);
+    expect(prov.originPath).toBeTruthy();
+    const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers[0].backend).toBe("git");
+    expect(reg.containers[0].origin).toBe(prov.originPath);
+    const verify = await makeTempDir("okh-verify-"); cleanups.push(verify);
+    await testRun("git", ["clone", prov.originPath!, join(verify, "c")]);
+    expect(await exists(join(verify, "c", "kb"))).toBe(true);
+  });
+
+  it("empty leaves an empty registry with an unregistered notes folder in the workspace", async () => {
+    const prov = await provisionEnvironment("empty", { repoRoot: "C:/repo", runner: testRun });
+    cleanups.push(prov.root);
+    const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers).toHaveLength(0);
+    expect(prov.containerPath.startsWith(prov.workspace)).toBe(true);
+    expect(await exists(join(prov.workspace, "notes"))).toBe(true);
+  });
+});

@@ -1,0 +1,29 @@
+# onboard flow — getting started while setting a custom wake phrase.
+description: Onboard - custom name - sets wake phrase
+providers:
+  - file://../shared/provider.ts
+prompts:
+  - |
+    hub, help me get started. I'd like to call you "brain" from now on.
+tests:
+  - vars:
+      env: empty
+    assert:
+      - type: javascript
+        value: file://../../assertions/tools-called.ts
+        config: { expect: [config] }
+      - type: javascript
+        value: file://../../assertions/wake-phrase-set.ts
+        config: { default: hub }
+      - type: javascript
+        value: file://../../assertions/judge.ts
+        config:
+          criteria:
+            - id: explained-onboarding
+              text: The agent explained getting started / onboarding.
+            - id: set-wake-phrase
+              text: The agent set the wake phrase to "brain".
+              check: { kind: wake-phrase, default: hub }
+            - id: used-config
+              text: The agent used the config tool to set the wake phrase.
+              check: { kind: tool, name: config }

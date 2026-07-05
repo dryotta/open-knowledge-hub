@@ -1,0 +1,23 @@
+# context flow — assemble a compact, task-relevant working set.
+description: Context - login task - compact set, cites paths
+providers:
+  - file://../shared/provider.ts
+prompts:
+  - |
+    Use the open-knowledge-hub MCP tools. Assemble the context needed to
+    implement a secure login feature in container "kb-hub".
+tests:
+  - vars:
+      env: local-and-git
+    assert:
+      - type: javascript
+        value: file://../../assertions/tools-called.ts
+        config: { expect: [context] }
+      - type: javascript
+        value: file://../../assertions/judge.ts
+        config:
+          criteria:
+            - id: includes-auth
+              text: The response assembles a compact working set that includes the Auth knowledge concept and cites module paths.
+            - id: omits-irrelevant
+              text: It omits clearly irrelevant items and notes any gaps (does not dump everything).
