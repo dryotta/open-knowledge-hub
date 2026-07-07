@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../src/exec.js";
 import type { OkhPaths } from "../src/config.js";
+import { saveModuleManifest } from "../src/modules/manifest.js";
 
 /** Deterministic git identity + isolation for tests. */
 export const GIT_ENV: NodeJS.ProcessEnv = {
@@ -32,10 +33,26 @@ export function makePaths(home: string): OkhPaths {
   };
 }
 
-/** Write a `.okh/okh.yaml` manifest string into a container root. */
+/** Write a legacy `.okh/okh.yaml` manifest string into a container root (for migration tests). */
 export async function writeManifest(containerRoot: string, yaml: string): Promise<void> {
   await mkdir(join(containerRoot, ".okh"), { recursive: true });
   await writeFile(join(containerRoot, ".okh", "okh.yaml"), yaml, "utf8");
+}
+
+/** Write a per-module manifest into `<containerRoot>/<modulePath>/.okh/module.yaml`. */
+export async function writeModule(
+  containerRoot: string,
+  modulePath: string,
+  opts: { type: string; name?: string; description?: string; config?: Record<string, unknown> },
+): Promise<void> {
+  const moduleRoot = join(containerRoot, modulePath);
+  await mkdir(moduleRoot, { recursive: true });
+  await saveModuleManifest(moduleRoot, {
+    type: opts.type,
+    name: opts.name ?? modulePath,
+    description: opts.description ?? "",
+    config: opts.config ?? {},
+  });
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {

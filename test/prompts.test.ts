@@ -47,7 +47,7 @@ describe("resolveTargets", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
     const targets = await service.resolveTargets("hub");
     expect(targets).toHaveLength(1);
     expect(targets[0]!.modules[0]!.absPath).toContain("kb");
@@ -68,8 +68,8 @@ describe("resolveTargets", () => {
 describe("prompt builders", () => {
   const targets: ResolvedContainer[] = [
     { name: "hub", backend: "local", sync: "auto", root: "/c/hub", modules: [
-      { type: "knowledge", path: "kb", absPath: "/c/hub/kb" },
-      { type: "memory", path: "mem", absPath: "/c/hub/mem" },
+      { type: "knowledge", path: "kb", name: "kb", description: "", absPath: "/c/hub/kb" },
+      { type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" },
     ] },
   ];
   it("ask includes the question, the target path, and the okf-ask discipline", async () => {
