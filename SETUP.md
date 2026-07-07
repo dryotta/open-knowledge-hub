@@ -45,6 +45,6 @@ changing anything). `onboard` is the init step — there is no separate one.
 
 ## Next
 
-Address the hub by its wake phrase, e.g. `hub, remember that …`. See
+Address the hub by its wake phrase, e.g. `hub, ask …` or `hub, run …`. See
 **[USAGE.md](./USAGE.md)** for everyday prompts and **[README.md](./README.md)**
 for the full tool reference.

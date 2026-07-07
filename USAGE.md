@@ -9,12 +9,12 @@ Your agent does the thinking; OKH stores, validates, and syncs.
 
 Your agent decides which tools to call from their descriptions and the hub's
 announced **wake phrase**. Address the hub with the wake phrase — by default
-`hub` — for example: `hub, remember that …`.
+`hub` — for example: `hub, ask …` or `hub, run …`.
 
-- The *cognitive flows* (`ask`, `context`, `learn`, `remember`, `reflect`) return
-  instructions your agent then follows — they don't act on their own. Naming the
-  hub matters most for these; without it, "remember that X" often looks like an
-  ordinary request and won't reach OKH.
+- The *cognitive flows* (`ask`, `context`, `run`) return instructions your agent
+  then follows — they don't act on their own. Naming the hub matters most for
+  these; without it, a request often won't reach OKH. `learn`, `remember`, and
+  `reflect` are module skills, invoked via `run { container, module, skill }`.
 - The *operational tools* (`inspect`, `add`, `sync`, `config`) act directly and
   usually route reliably even without the prefix.
 - Most explicit option: clients with a prompt UI expose OKH's flows as pickable
@@ -45,14 +45,14 @@ same phrase (client-specific).
 
 ## Everyday use
 
-- **Remember:** `hub, remember that the login endpoint 500'd at 14:05 UTC.`
-- **Learn:** `hub, learn this: session tokens use RS256, keys rotate weekly.`
+- **Remember:** `hub, run remember on my memory module.`
+- **Learn:** `hub, run learn on my knowledge module with this: session tokens use RS256.`
 - **Ask:** `hub, what do we know about authentication?`
 - **Ask across everything:** `hub, across all my containers, what do we know about X?`
 - **Context:** `hub, assemble the context I need to build a login feature.`
-- **Reflect:** `hub, reflect on my memory from this week and propose updates.`
+- **Reflect:** `hub, run reflect on my memory module.`
 - **Sync:** `hub, sync my container.` (commit + push) or `hub, open a PR with my changes.`
 
-Writing flows (`learn`, `remember`, `reflect`) edit files locally; your agent
-summarizes the change and asks before syncing. `sync` commits + pushes (`auto`
-containers) or opens a pull request (`pr` containers).
+`run` flows (`learn`, `remember`, `reflect`) are module skills — your agent follows
+the returned instructions, edits files locally, and asks before syncing. `sync`
+commits + pushes (`auto` containers) or opens a pull request (`pr` containers).
