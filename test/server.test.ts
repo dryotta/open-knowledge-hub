@@ -153,12 +153,13 @@ describe("MCP server surface", () => {
     cleanups.push(dir);
 
     await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", create: true } });
+    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
     const res = await client.callTool({ name: "inspect", arguments: {} });
     expect(textOf(res)).toContain("hub");
 
     const mod = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(mod)).toContain("[knowledge]");
+    expect(textOf(mod)).toContain("KB");
   });
 
   it("add previews (no changes) without create, and applies with create", async () => {
@@ -182,7 +183,7 @@ describe("MCP server surface", () => {
     await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
     const preview = await client.callTool({
       name: "add",
-      arguments: { container: "hub", path: "kb", type: "knowledge" },
+      arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB" },
     });
 
     expect(textOf(preview)).toContain("Plan (no changes made)");
@@ -237,7 +238,7 @@ describe("MCP server surface", () => {
 
     const emptyPath = await client.callTool({
       name: "add",
-      arguments: { container: "hub", path: "", type: "knowledge" },
+      arguments: { container: "hub", path: "", type: "knowledge", name: "KB" },
     });
     expect(isErrorResult(emptyPath)).toBe(true);
     expect(textOf(emptyPath)).toContain("path cannot be empty");
@@ -256,7 +257,7 @@ describe("MCP server surface", () => {
     cleanups.push(dir);
 
     await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", create: true } });
+    await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
     const res = await client.getPrompt({
       name: "ask",
       arguments: { container: "hub", question: "What is X?" },

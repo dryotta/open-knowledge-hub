@@ -68,7 +68,7 @@ describe("validate", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
     // addModule scaffolds index.md; also need per-module manifest for discovery
     await saveModuleManifest(join(dir, "kb"), { type: "knowledge", name: "KB", description: "" });
     expect((await service.validate("hub")).ok).toBe(true);

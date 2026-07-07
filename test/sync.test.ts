@@ -70,7 +70,7 @@ class FailingCreatePrGh {
   async createPr(): Promise<string> { throw new OkhError("GH_ERROR", "create PR failed"); }
 }
 
-async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: string): Promise<void> {
+async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: string, sync: "auto" | "pr" = "pr"): Promise<void> {
   await writeFile(paths.registryFile, `${JSON.stringify({
     version: 1,
     containers: [{
@@ -78,6 +78,7 @@ async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: s
       backend: "git",
       origin: "https://example.com/team.git",
       localPath: root,
+      sync,
       addedAt: new Date().toISOString(),
     }],
   })}\n`, "utf8");
@@ -108,19 +109,24 @@ describe("sync (auto)", () => {
   it("commits and pushes local changes to the origin", async () => {
     const origin = await makeOrigin();
     const { service } = await setup();
-    await addAppliedContainer(service, { source: origin, name: "hub" }); // scaffolds .okh/okh.yaml (uncommitted)
+    await addAppliedContainer(service, { source: origin, name: "hub" });
+    // Write a file to make the working tree dirty
+    const list = await service.list();
+    await writeFile(join(list[0]!.localPath, "note.md"), "hello", "utf8");
     const [res] = await service.sync("hub");
     expect(res!.action).toBe("committed-pushed");
     expect(res!.pushed).toBe(true);
     const verify = await checkoutOrigin(origin);
-    expect((await stat(join(verify, ".okh", "okh.yaml"))).isFile()).toBe(true);
+    expect((await stat(join(verify, "note.md"))).isFile()).toBe(true);
   });
 
   it("fast-forwards remote changes on a subsequent sync", async () => {
     const origin = await makeOrigin();
     const { service } = await setup();
     const entry = await addAppliedContainer(service, { source: origin, name: "hub" });
-    await service.sync("hub"); // push the scaffolded manifest first
+    // Make a local change and sync it first
+    await writeFile(join(entry.localPath, "local.md"), "x", "utf8");
+    await service.sync("hub");
     await pushToOrigin(origin, "note.md", "hello");
     const [res] = await service.sync("hub");
     expect(res!.action).toBe("pulled");
@@ -130,7 +136,9 @@ describe("sync (auto)", () => {
   it("errors when local and remote have diverged", async () => {
     const origin = await makeOrigin();
     const { service } = await setup();
-    await addAppliedContainer(service, { source: origin, name: "hub" }); // local manifest uncommitted
+    const entry = await addAppliedContainer(service, { source: origin, name: "hub" });
+    // Create a local change to commit
+    await writeFile(join(entry.localPath, "local.md"), "x", "utf8");
     await pushToOrigin(origin, "remote.md", "x"); // remote advances
     await expect(service.sync("hub")).rejects.toMatchObject({ code: "GIT_ERROR" }); // commit local -> diverged -> ff-only fails
   });
@@ -139,9 +147,12 @@ describe("sync (auto)", () => {
     const divergedOrigin = await makeOrigin();
     const cleanOrigin = await makeOrigin();
     const { service } = await setup();
-    await addAppliedContainer(service, { source: divergedOrigin, name: "diverged" }); // local manifest uncommitted
-    await addAppliedContainer(service, { source: cleanOrigin, name: "clean" }); // local manifest uncommitted
-    await pushToOrigin(divergedOrigin, "remote.md", "x"); // remote advances before local manifest commit
+    const divergedEntry = await addAppliedContainer(service, { source: divergedOrigin, name: "diverged" });
+    const cleanEntry = await addAppliedContainer(service, { source: cleanOrigin, name: "clean" });
+    // Make local changes so there's something to commit
+    await writeFile(join(divergedEntry.localPath, "local.md"), "x", "utf8");
+    await writeFile(join(cleanEntry.localPath, "local.md"), "x", "utf8");
+    await pushToOrigin(divergedOrigin, "remote.md", "x"); // remote advances before local commit
 
     const results = await service.sync();
 
@@ -162,7 +173,8 @@ describe("sync (pr)", () => {
   it("opens a PR via gh and returns the URL", async () => {
     const origin = await makeOrigin();
     const { service, gh } = await setup();
-    await addAppliedContainer(service, { source: origin, name: "team", sync: "pr" });
+    const entry = await addAppliedContainer(service, { source: origin, name: "team", sync: "pr" });
+    await writeFile(join(entry.localPath, "note.md"), "x", "utf8");
     const [res] = await service.sync("team");
     expect(res!.action).toBe("pr-opened");
     expect(res!.prUrl).toContain("/pull/");
@@ -170,12 +182,9 @@ describe("sync (pr)", () => {
   });
 
   it("ignores unpushed commits on unrelated local branches", async () => {
-    const origin = await makeOrigin({
-      "README.md": "# origin\n",
-      ".okh/okh.yaml": "name: team\nsync: pr\nmodules: []\n",
-    });
+    const origin = await makeOrigin();
     const { service, gh } = await setup();
-    const entry = await addAppliedContainer(service, { source: origin, name: "team" });
+    const entry = await addAppliedContainer(service, { source: origin, name: "team", sync: "pr" });
 
     await testRun("git", ["checkout", "-b", "scratch"], { cwd: entry.localPath });
     await writeFile(join(entry.localPath, "scratch.md"), "x", "utf8");
@@ -189,10 +198,7 @@ describe("sync (pr)", () => {
   });
 
   it("opens PRs from fresh sync branches and returns to the base branch after each sync", async () => {
-    const origin = await makeOrigin({
-      "README.md": "# origin\n",
-      ".okh/okh.yaml": "name: team\nsync: pr\nmodules: []\n",
-    });
+    const origin = await makeOrigin();
     const { service, gh } = await setup();
     const entry = await addAppliedContainer(service, { source: origin, name: "team", sync: "pr" });
 
@@ -215,10 +221,7 @@ describe("sync (pr)", () => {
   });
 
   it("restores pending changes to the base branch so a failed PR create can be retried", async () => {
-    const origin = await makeOrigin({
-      "README.md": "# origin\n",
-      ".okh/okh.yaml": "name: team\nsync: pr\nmodules: []\n",
-    });
+    const origin = await makeOrigin();
     const { service, gh } = await setup();
     const entry = await addAppliedContainer(service, { source: origin, name: "team", sync: "pr" });
     gh.failNextCreatePr = new OkhError("GH_ERROR", "create PR failed");
@@ -318,7 +321,11 @@ describe("sync (local backend)", () => {
     expect(ok!.action).toBe("validated");
     expect(ok!.validation.ok).toBe(true);
 
-    await writeManifest(dir, "name: notes\nmodules:\n  - path: gone\n    type: skills\n");
+    // Create a knowledge module manifest without an index.md → validation fails
+    const { saveModuleManifest } = await import("../src/modules/manifest.js");
+    const { mkdir: mkdirFs } = await import("node:fs/promises");
+    await mkdirFs(join(dir, "kb"), { recursive: true });
+    await saveModuleManifest(join(dir, "kb"), { type: "knowledge", name: "KB", description: "" });
     const [bad] = await service.sync("notes");
     expect(bad!.validation.ok).toBe(false);
   });

@@ -5,7 +5,7 @@ import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { OkhError } from "../src/errors.js";
-import { loadContainerManifest } from "../src/container/manifest.js";
+import { loadModuleManifest, moduleManifestExists } from "../src/modules/manifest.js";
 import { makePaths, makeTempDir, makeOrigin, testRun } from "./helpers.js";
 
 class FakeGh {
@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 describe("addContainer", () => {
-  it("clones a git container into containersDir and scaffolds a manifest", async () => {
+  it("clones a git container into containersDir and registers it", async () => {
     const origin = await makeOrigin({ "README.md": "# origin\n" });
     const { service, paths } = await setup();
     const out = await service.addContainer({ source: origin, name: "my-hub", create: true });
@@ -42,8 +42,7 @@ describe("addContainer", () => {
     expect(entry.backend).toBe("git");
     expect(entry.origin).toBe(origin);
     expect(entry.localPath).toBe(join(paths.containersDir, "my-hub"));
-    const m = await loadContainerManifest(entry.localPath);
-    expect(m).toEqual({ name: "my-hub", sync: "auto", modules: [] });
+    expect(entry.sync).toBe("auto");
   });
 
   it("registers a local folder in place", async () => {
@@ -55,7 +54,7 @@ describe("addContainer", () => {
     expect(entry.backend).toBe("local");
     expect(entry.origin).toBeUndefined();
     expect(entry.localPath).toBe(dir);
-    expect((await loadContainerManifest(dir)).name).toBe("notes");
+    expect(entry.sync).toBe("auto");
   });
 
   it("labels an onedrive backend when requested", async () => {
@@ -76,13 +75,13 @@ describe("addContainer", () => {
     expect(entry.name).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it("honours an explicit sync mode in the scaffolded manifest", async () => {
+  it("honours an explicit sync mode in the registry entry", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     const out = await service.addContainer({ source: dir, name: "team", sync: "pr", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect((await loadContainerManifest(entry.localPath)).sync).toBe("pr");
+    expect(entry.sync).toBe("pr");
   });
 
   it("rejects a duplicate container name", async () => {
@@ -103,16 +102,18 @@ describe("addContainer", () => {
 });
 
 describe("addModule", () => {
-  it("creates the folder, appends the manifest, and scaffolds a knowledge index", async () => {
+  it("creates the folder, scaffolds a knowledge index, and writes a module manifest", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
     expect((await stat(join(moduleRoot, "index.md"))).isFile()).toBe(true);
-    const m = await loadContainerManifest(dir);
-    expect(m.modules).toEqual([{ path: "kb", type: "knowledge" }]);
+    expect(await moduleManifestExists(moduleRoot)).toBe(true);
+    const m = await loadModuleManifest(moduleRoot);
+    expect(m.type).toBe("knowledge");
+    expect(m.name).toBe("KB");
     expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("okf_version");
   });
 
@@ -120,7 +121,7 @@ describe("addModule", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "skills", type: "skills", create: true });
+    const out = await service.addModule({ container: "hub", path: "skills", type: "skills", name: "My Skills", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
     expect((await stat(moduleRoot)).isDirectory()).toBe(true);
@@ -131,13 +132,13 @@ describe("addModule", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
-    await expect(service.addModule({ container: "hub", path: "kb", type: "skills" })).rejects.toBeInstanceOf(OkhError);
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    await expect(service.addModule({ container: "hub", path: "kb", type: "skills", name: "X" })).rejects.toBeInstanceOf(OkhError);
   });
 
   it("rejects a module on an unknown container", async () => {
     const { service } = await setup();
-    await expect(service.addModule({ container: "ghost", path: "kb", type: "knowledge" })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.addModule({ container: "ghost", path: "kb", type: "knowledge", name: "KB" })).rejects.toBeInstanceOf(OkhError);
   });
 
   it("treats an existing knowledge index as already scaffolded", async () => {
@@ -147,14 +148,15 @@ describe("addModule", () => {
     await mkdir(join(dir, "kb"), { recursive: true });
     await writeFile(join(dir, "kb", "index.md"), "# Existing\n", "utf8");
 
-    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
 
     expect(moduleRoot).toBe(join(dir, "kb"));
     expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toBe("# Existing\n");
-    const m = await loadContainerManifest(dir);
-    expect(m.modules).toEqual([{ path: "kb", type: "knowledge" }]);
+    const m = await loadModuleManifest(moduleRoot);
+    expect(m.type).toBe("knowledge");
+    expect(m.name).toBe("KB");
   });
 });
 
