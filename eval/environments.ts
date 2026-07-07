@@ -46,6 +46,10 @@ export const environments = {
       { container: "git-hub", fixture: "fixtures/git-hub", backend: "git-auto" },
     ],
   },
+  custom: {
+    placement: "registered",
+    hubs: [{ container: "custom-hub", fixture: "fixtures/custom-hub", backend: "local" }],
+  },
 } satisfies Record<string, Environment>;
 
 export type EnvName = keyof typeof environments;
