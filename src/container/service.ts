@@ -627,6 +627,7 @@ export class ContainerService {
       backend: plan.backend,
       ...(origin ? { origin } : {}),
       localPath: plan.target,
+      sync: plan.sync ?? "auto",
       addedAt: new Date().toISOString(),
     };
     await saveRegistry(this.paths, withContainerAdded(reg, entry));

@@ -29,6 +29,9 @@ export const repoUrlSchema = z
 export const backendSchema = z.enum(["git", "local", "onedrive"]);
 export type Backend = z.infer<typeof backendSchema>;
 
+export const syncModeSchema = z.enum(["auto", "pr"]);
+export type SyncMode = z.infer<typeof syncModeSchema>;
+
 /**
  * A registered container. `origin` is required for git backends (the clone
  * source) and absent otherwise. `localPath` is the absolute path to the
@@ -41,6 +44,7 @@ export const containerEntrySchema = z
     backend: backendSchema,
     origin: repoUrlSchema.optional(),
     localPath: z.string().min(1),
+    sync: syncModeSchema.default("auto"),
     addedAt: z.string().datetime(),
   })
   .strict()
