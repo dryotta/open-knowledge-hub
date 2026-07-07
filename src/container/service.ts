@@ -14,6 +14,7 @@ import {
   findContainer,
   requireContainer,
   withContainerAdded,
+  withContainerUpdated,
 } from "../registry/registry.js";
 import {
   containerNameSchema,
@@ -40,7 +41,11 @@ const modulePathString = z
   .refine((s) => {
     const first = normalize(s).replace(/\\/g, "/").split("/")[0];
     return first !== ".okh";
-  }, "module path must not live inside .okh");
+  }, "module path must not live inside .okh")
+  .refine(
+    (s) => normalize(s).replace(/\\/g, "/") !== ".",
+    "module path must not be the container root",
+  );
 
 function validate<T>(schema: ZodType<T>, value: unknown, field: string): T {
   const result = schema.safeParse(value);
@@ -258,12 +263,29 @@ export class ContainerService {
     }
   }
 
-  async status(name: string): Promise<ContainerStatus> {
-    const reg = await loadRegistry(this.paths);
-    const entry = requireContainer(reg, name);
-    const root = entry.localPath;
+  /**
+   * Migrate a legacy `.okh/okh.yaml` (if present) and persist its `sync` mode onto
+   * the registry entry. The legacy manifest — deleted by migration — was the prior
+   * source of truth for `sync`, so its value must not be lost to the schema default
+   * ("auto"), which would silently drop a PR-only container to direct push. Idempotent:
+   * a no-op once migrated. The registry write is mutex-guarded; callers under the
+   * service mutex (sync's validate path) always pre-migrate first, so the guarded
+   * write is never reached re-entrantly.
+   */
+  private async migrateAndPersistSync(name: string, root: string): Promise<void> {
+    const migratedSync = await migrateLegacyContainerManifest(root).catch(() => undefined);
+    if (migratedSync === undefined) return;
+    await this.mutex.run(async () => {
+      const reg = await loadRegistry(this.paths);
+      if (!findContainer(reg, name)) return;
+      await saveRegistry(this.paths, withContainerUpdated(reg, name, (e) => ({ ...e, sync: migratedSync })));
+    });
+  }
 
-    await migrateLegacyContainerManifest(root).catch(() => undefined);
+  async status(name: string): Promise<ContainerStatus> {
+    const root = requireContainer(await loadRegistry(this.paths), name).localPath;
+    await this.migrateAndPersistSync(name, root);
+    const entry = requireContainer(await loadRegistry(this.paths), name);
     const discovered = await discoverModules(root);
     const invalid = discovered.filter((d) => d.error);
     const modules: ModuleStatus[] = await Promise.all(
@@ -300,7 +322,7 @@ export class ContainerService {
     const reg = await loadRegistry(this.paths);
     const entry = requireContainer(reg, name);
     const root = entry.localPath;
-    await migrateLegacyContainerManifest(root).catch(() => undefined);
+    await this.migrateAndPersistSync(name, root);
     const discovered = await discoverModules(root);
     const issues: string[] = [];
     for (const d of discovered) {
@@ -321,7 +343,7 @@ export class ContainerService {
         reg.containers.map(async (c) => {
           const st = await this.status(c.name).catch(() => undefined);
           return {
-            name: c.name, backend: c.backend, sync: c.sync,
+            name: c.name, backend: c.backend, sync: st?.sync ?? c.sync,
             moduleCount: st?.modules.length ?? 0,
             manifestValid: st?.manifestValid ?? false,
             localPath: c.localPath,
@@ -334,7 +356,7 @@ export class ContainerService {
     const entry = requireContainer(reg, container);
     if (!module) return { kind: "container", status: await this.status(container) };
 
-    await migrateLegacyContainerManifest(entry.localPath).catch(() => undefined);
+    await this.migrateAndPersistSync(container, entry.localPath);
     const moduleRoot = this.moduleRoot(entry.localPath, module);
     if (!(await moduleManifestExists(moduleRoot))) {
       throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
@@ -378,11 +400,13 @@ export class ContainerService {
   }
 
   async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {
+    const reg0 = await loadRegistry(this.paths);
+    const entries0 = container ? [requireContainer(reg0, container)] : reg0.containers;
+    for (const e of entries0) await this.migrateAndPersistSync(e.name, e.localPath);
     const reg = await loadRegistry(this.paths);
     const entries = container ? [requireContainer(reg, container)] : reg.containers;
     const out: ResolvedContainer[] = [];
     for (const entry of entries) {
-      await migrateLegacyContainerManifest(entry.localPath).catch(() => undefined);
       let discovered = (await discoverModules(entry.localPath)).filter((d) => d.manifest);
       if (module) discovered = discovered.filter((d) => d.path === module);
       if (container && module && discovered.length === 0) {
@@ -399,7 +423,10 @@ export class ContainerService {
     return out;
   }
 
-  sync(name?: string, message?: string): Promise<SyncResult[]> {
+  async sync(name?: string, message?: string): Promise<SyncResult[]> {
+    const reg = await loadRegistry(this.paths);
+    const entries = name ? reg.containers.filter((c) => c.name === name) : reg.containers;
+    for (const e of entries) await this.migrateAndPersistSync(e.name, e.localPath);
     return this.mutex.run(() => this.syncImpl(name, message));
   }
 

@@ -32,6 +32,21 @@ describe("module skills", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0]!.body).toBe("L");
   });
+
+  it("an earlier skill root wins on a name collision (.okh/skills over .claude/skills)", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(mod, join(".okh", "skills", "dup"), "dup", "native");
+      await skill(mod, join(".claude", "skills", "dup"), "dup", "external");
+      const skills = await discoverModuleSkills(mod);
+      const dup = skills.filter((s) => s.name === "dup");
+      expect(dup).toHaveLength(1);
+      expect(dup[0]!.description).toBe("native");
+      expect(dup[0]!.source).toBe(".okh/skills");
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("vendored skills", () => {

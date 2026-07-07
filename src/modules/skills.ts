@@ -10,7 +10,8 @@ export interface Skill {
   source: string;
 }
 
-/** Module-local skill roots scanned, in precedence order (later roots do not override earlier by design; merge handles override). */
+/** Module-local skill roots scanned, in precedence order: on a name collision an
+ * earlier root (native `.okh/skills`) wins over a later one (external `.claude/skills`). */
 export const MODULE_SKILL_ROOTS = [".okh/skills", ".claude/skills"] as const;
 
 async function subdirNames(dir: string): Promise<string[]> {
@@ -36,14 +37,20 @@ export async function readSkill(dir: string, source: string): Promise<Skill | un
   return { name, description: stringField(data, "description") ?? "", body: body.trim(), source };
 }
 
-/** Discover module-local skills across all known skill roots inside a module. */
+/** Discover module-local skills across all known skill roots inside a module.
+ * Earlier roots take precedence: a skill name found in `.okh/skills` shadows the
+ * same name in a later root such as `.claude/skills`. */
 export async function discoverModuleSkills(moduleRoot: string): Promise<Skill[]> {
   const out: Skill[] = [];
+  const seen = new Set<string>();
   for (const root of MODULE_SKILL_ROOTS) {
     const base = join(moduleRoot, root);
     for (const name of await subdirNames(base)) {
       const s = await readSkill(join(base, name), root);
-      if (s) out.push(s);
+      if (s && !seen.has(s.name)) {
+        seen.add(s.name);
+        out.push(s);
+      }
     }
   }
   return out;
