@@ -10,10 +10,12 @@ afterEach(async () => { await Promise.all(cleanups.splice(0).map((d) => rm(d, { 
 async function okhHomeWith(name: string, module?: string): Promise<string> {
   const home = await makeTempDir(); cleanups.push(home);
   const c = join(home, "containers", name);
-  await mkdir(join(c, ".okh"), { recursive: true });
-  const mods = module ? `modules:\n  - path: ${module}\n    type: knowledge\n` : "modules: []\n";
-  await writeFile(join(c, ".okh", "okh.yaml"), `name: ${name}\nsync: auto\n${mods}`, "utf8");
-  await writeFile(join(home, "registry.json"), JSON.stringify({ version: 1, containers: [{ name, backend: "local", localPath: c, addedAt: new Date().toISOString() }] }), "utf8");
+  await mkdir(c, { recursive: true });
+  if (module) {
+    await mkdir(join(c, module, ".okh"), { recursive: true });
+    await writeFile(join(c, module, ".okh", "module.yaml"), `type: knowledge\nname: ${module}\ndescription: Test module\n`, "utf8");
+  }
+  await writeFile(join(home, "registry.json"), JSON.stringify({ version: 1, containers: [{ name, backend: "local", localPath: c, sync: "auto", addedAt: new Date().toISOString() }] }), "utf8");
   return home;
 }
 
@@ -27,8 +29,8 @@ describe("evaluateCheck", () => {
     expect((await evaluateCheck({ kind: "container", name: "my-notes", backend: "local", module: "kb" }, { okhHome, transcript: "" })).pass).toBe(true);
     expect((await evaluateCheck({ kind: "container", name: "ghost" }, { okhHome, transcript: "" })).pass).toBe(false);
   });
-  it("manifest: passes when the container manifest parses", async () => {
-    const okhHome = await okhHomeWith("h");
+  it("manifest: passes when the container has discoverable modules", async () => {
+    const okhHome = await okhHomeWith("h", "kb");
     expect((await evaluateCheck({ kind: "manifest", name: "h" }, { okhHome, transcript: "" })).pass).toBe(true);
   });
   it("wake-phrase: passes when a non-default phrase is persisted", async () => {

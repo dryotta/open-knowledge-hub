@@ -41,7 +41,7 @@ describe("CopilotProvider", () => {
 
     expect(res.output).toContain("done");
     expect(res.metadata.toolCalls).toContain("ask");
-    expect(await exists(join(res.metadata.containerPath, ".okh", "okh.yaml"))).toBe(true);
+    expect(await exists(join(res.metadata.containerPath, "kb", ".okh", "module.yaml"))).toBe(true);
   });
 
   it("drives guarded follow-up turns and aggregates tool calls across turns", async () => {

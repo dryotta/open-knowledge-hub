@@ -1,7 +1,0 @@
-name: git-hub
-sync: auto
-modules:
-  - path: kb
-    type: knowledge
-  - path: mem
-    type: memory

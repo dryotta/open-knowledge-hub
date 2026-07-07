@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadRegistry, findContainer } from "../../src/registry/registry.js";
-import { loadContainerManifest } from "../../src/container/manifest.js";
+import { discoverModules } from "../../src/modules/discovery.js";
 
 export type Check =
   | { kind: "tool"; name: string }
@@ -41,13 +41,9 @@ export async function checkContainer(
   if (opts.backend && entry.backend !== opts.backend) {
     return { pass: false, reason: `backend ${entry.backend} != expected ${opts.backend}` };
   }
-  try {
-    const manifest = await loadContainerManifest(entry.localPath);
-    if (opts.module && !manifest.modules.some((m) => m.path === opts.module)) {
-      return { pass: false, reason: `module "${opts.module}" not present` };
-    }
-  } catch (err) {
-    return { pass: false, reason: `invalid manifest: ${(err as Error).message}` };
+  const modules = await discoverModules(entry.localPath);
+  if (opts.module && !modules.some((m) => m.path === opts.module)) {
+    return { pass: false, reason: `module "${opts.module}" not present` };
   }
   return { pass: true, reason: `container "${opts.name}" registered [${entry.backend}]` };
 }
@@ -56,12 +52,9 @@ export async function checkManifest(okhHome: string | undefined, name?: string):
   if (!name || !okhHome) return { pass: false, reason: "missing container name or okhHome" };
   const entry = findContainer(await loadRegistry(pathsFor(okhHome)), name);
   if (!entry) return { pass: false, reason: `no container "${name}"` };
-  try {
-    await loadContainerManifest(entry.localPath);
-    return { pass: true, reason: "manifest initialized" };
-  } catch (err) {
-    return { pass: false, reason: `manifest missing/invalid: ${(err as Error).message}` };
-  }
+  const modules = await discoverModules(entry.localPath);
+  if (modules.length === 0) return { pass: false, reason: "no modules discovered" };
+  return { pass: true, reason: `discovered ${modules.length} module(s)` };
 }
 
 export async function checkWakePhrase(okhHome: string | undefined, def = "hub"): Promise<CheckResult> {
