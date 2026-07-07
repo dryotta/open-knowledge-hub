@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverModuleSkills, mergeSkills, MODULE_SKILL_ROOTS, type Skill } from "../src/modules/skills.js";
+import { vendoredSkills } from "../src/modules/vendored.js";
 
 async function skill(root: string, rel: string, name: string, description: string, body = "do it"): Promise<void> {
   await mkdir(join(root, rel), { recursive: true });
@@ -30,5 +31,13 @@ describe("module skills", () => {
     const merged = mergeSkills(vendored, local);
     expect(merged).toHaveLength(1);
     expect(merged[0]!.body).toBe("L");
+  });
+});
+
+describe("vendored skills", () => {
+  it("lists knowledge and memory vendored skills", async () => {
+    expect((await vendoredSkills("knowledge")).map((s) => s.name)).toContain("learn");
+    expect((await vendoredSkills("memory")).map((s) => s.name).sort()).toEqual(["reflect", "remember"]);
+    expect(await vendoredSkills("recipes")).toEqual([]);
   });
 });
