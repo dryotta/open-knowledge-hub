@@ -1,9 +1,14 @@
 import { z } from "zod";
 
-/** The five module types. Order is not significant. */
-export const MODULE_TYPES = ["knowledge", "skills", "tools", "memory", "project"] as const;
-export const moduleTypeSchema = z.enum(MODULE_TYPES);
-export type ModuleType = (typeof MODULE_TYPES)[number];
+/** The five built-in module types. Order is not significant. */
+export const BUILTIN_MODULE_TYPES = ["knowledge", "skills", "tools", "memory", "project"] as const;
+export const moduleTypeSchema = z.enum(BUILTIN_MODULE_TYPES);
+export type ModuleType = (typeof BUILTIN_MODULE_TYPES)[number];
+
+/** A module's on-disk `type` is any non-empty string; unknown => custom. */
+export function isBuiltinType(type: string): type is ModuleType {
+  return (BUILTIN_MODULE_TYPES as readonly string[]).includes(type);
+}
 
 /** A single discoverable unit within a module. `path` is relative to the module root. */
 export interface Item {

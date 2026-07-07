@@ -171,3 +171,19 @@ describe("getLoader dispatch", () => {
     }
   });
 });
+
+import { isBuiltinType, BUILTIN_MODULE_TYPES } from "../src/modules/types.js";
+
+describe("type registry", () => {
+  it("recognises built-in types", () => {
+    expect(isBuiltinType("knowledge")).toBe(true);
+    expect(isBuiltinType("recipes")).toBe(false);
+    expect(BUILTIN_MODULE_TYPES).toContain("memory");
+  });
+
+  it("falls back to a file-listing loader for a custom type", async () => {
+    const loader = getLoader("recipes");
+    const overview = await loader.overview("/does/not/exist");
+    expect(typeof overview).toBe("string");
+  });
+});

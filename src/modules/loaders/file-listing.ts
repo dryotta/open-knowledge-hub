@@ -13,7 +13,7 @@ function isNotFound(err: unknown): boolean {
 }
 
 /** A minimal loader for TBD-format modules: lists shallow files, README as overview header. */
-export function fileListingLoader(kind: "memory" | "project", heading: string): Loader {
+export function fileListingLoader(kind: string, heading: string): Loader {
   async function enumerate(moduleRoot: string): Promise<Item[]> {
     const files = await shallowFiles(moduleRoot);
     return files
