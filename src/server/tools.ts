@@ -78,7 +78,10 @@ function formatInspect(r: InspectResult): string {
   const items = r.items.length
     ? r.items.map((i) => `  - ${i.title}${i.description ? ` — ${i.description}` : ""} (${i.path})`)
     : ["  (empty)"];
-  return [head, ...items].join("\n");
+  const skillLines = r.skills.length
+    ? r.skills.map((s) => `  - ${s.name} — ${s.description}`)
+    : ["  (none)"];
+  return [head, ...items, "Skills:", ...skillLines].join("\n");
 }
 
 function formatContainerPlan(plan: AddContainerPlan): string {

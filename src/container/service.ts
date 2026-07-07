@@ -27,6 +27,8 @@ import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type Modu
 import { type Item } from "../modules/types.js";
 import { type SyncMode } from "../registry/schema.js";
 import { getLoader } from "../modules/registry.js";
+import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
+import { vendoredSkills } from "../modules/vendored.js";
 
 const modulePathString = z
   .string().min(1)
@@ -199,6 +201,7 @@ export type InspectResult =
       kind: "module";
       module: { path: string; type: string; name: string; description: string; config?: Record<string, unknown> };
       items: Item[];
+      skills: Array<{ name: string; description: string }>;
     };
 
 export interface SyncResult {
@@ -338,11 +341,40 @@ export class ContainerService {
     }
     const manifest = await loadModuleManifest(moduleRoot);
     const items = await this.safeEnumerate(manifest.type, moduleRoot);
+    const skills = await this.effectiveSkills(container, module);
     return {
       kind: "module",
       module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
       items,
+      skills: skills.map(s => ({ name: s.name, description: s.description })),
     };
+  }
+
+  /** The module's effective skill set: vendored (built-in type) ∪ module-local, local overriding by name. */
+  async effectiveSkills(container: string, module: string): Promise<Skill[]> {
+    const reg = await loadRegistry(this.paths);
+    const entry = requireContainer(reg, container);
+    const moduleRoot = this.moduleRoot(entry.localPath, module);
+    if (!(await moduleManifestExists(moduleRoot))) {
+      throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+    }
+    const manifest = await loadModuleManifest(moduleRoot);
+    const [vendored, local] = await Promise.all([
+      vendoredSkills(manifest.type),
+      discoverModuleSkills(moduleRoot),
+    ]);
+    return mergeSkills(vendored, local);
+  }
+
+  /** Resolve one named skill for a module; throws NOT_FOUND listing available skills. */
+  async resolveSkill(container: string, module: string, skill: string): Promise<Skill> {
+    const skills = await this.effectiveSkills(container, module);
+    const found = skills.find((s) => s.name === skill);
+    if (!found) {
+      const names = skills.map((s) => s.name).join(", ") || "(none)";
+      throw new OkhError("NOT_FOUND", `Module "${module}" has no skill "${skill}". Available: ${names}.`);
+    }
+    return found;
   }
 
   async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {
