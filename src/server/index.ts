@@ -15,7 +15,7 @@ function buildInstructions(wakePhrase: string): string {
     "Open Knowledge Hub: the hub is this system; it manages containers (a folder, OS-synced folder, or git repo) " +
     "made of typed modules (knowledge, skills, tools, memory, project). Operational tools act directly: use " +
     "inspect/add/sync to manage containers and config to view or change settings. The flows " +
-    "ask/context/learn/remember/reflect (and onboard), available as prompts or tools, return discipline text " +
+    "ask/context/run (and onboard), available as prompts or tools, return discipline text " +
     "(instructions) for you to follow — they do not read or write on their own; you do the reasoning and edits, " +
     "then persist with sync. Start with the onboard flow for first-run setup. `add` previews changes and needs " +
     "create:true to apply after user confirmation. " +

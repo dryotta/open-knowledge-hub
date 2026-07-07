@@ -67,13 +67,13 @@ function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 10 tools and 6 prompts", async () => {
+  it("exposes exactly the 8 tools and 4 prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["add", "ask", "config", "context", "inspect", "learn", "onboard", "reflect", "remember", "sync"]);
+    expect(tools).toEqual(["add", "ask", "config", "context", "inspect", "onboard", "run", "sync"]);
 
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
-    expect(prompts).toEqual(["ask", "context", "learn", "onboard", "reflect", "remember"]);
+    expect(prompts).toEqual(["ask", "context", "onboard", "run"]);
   });
 
   it("onboard returns multi-turn guidance without args and does not mutate config", async () => {
@@ -271,5 +271,32 @@ describe("MCP server surface", () => {
     const { client } = await connect();
     const res = await client.getPrompt({ name: "onboard", arguments: {} });
     expect(promptText(res)).toContain("OKH: onboard");
+  });
+
+  it("does not register learn, remember, or reflect tools", async () => {
+    const { client } = await connect();
+    const tools = (await client.listTools()).tools.map((t) => t.name);
+    expect(tools).not.toContain("learn");
+    expect(tools).not.toContain("remember");
+    expect(tools).not.toContain("reflect");
+  });
+
+  it("run tool returns discipline for a memory module skill", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+
+    await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+
+    const res = await client.callTool({
+      name: "run",
+      arguments: { container: "hub", module: "mem", skill: "remember", input: "User prefers dark mode" },
+    });
+    const text = textOf(res);
+    expect(text).toContain("remember");
+    expect(text).toContain("User prefers dark mode");
+    expect(text).toContain("mem");
+    expect(text).toMatch(/append|timestamp/i);
   });
 });

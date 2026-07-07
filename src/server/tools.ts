@@ -18,7 +18,7 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
 import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
@@ -132,7 +132,7 @@ function describeConfigError(err: z.ZodError): string {
   return `Invalid value for "${key}": ${first?.message ?? "invalid value"}.`;
 }
 
-/** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the six flows. */
+/** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the flows. */
 export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
@@ -315,9 +315,9 @@ export function registerTools(server: McpServer, service: ContainerService, path
 }
 
 /**
- * The five cognitive flows, exposed as tools for clients without prompt support.
+ * The cognitive flows, exposed as tools for clients without prompt support.
  * Like all flows they return discipline text (instructions) for the agent to
- * follow — they do not read or write on their own. `onboard` is the sixth flow,
+ * follow — they do not read or write on their own. `onboard` is another flow,
  * registered above alongside the operational tools.
  */
 function registerFlowTools(server: McpServer, service: ContainerService): void {
@@ -350,44 +350,20 @@ function registerFlowTools(server: McpServer, service: ContainerService): void {
   );
 
   server.registerTool(
-    "learn",
+    "run",
     {
-      title: flowMeta.learn.title,
-      description: flowMeta.learn.description,
+      title: flowMeta.run.title,
+      description: flowMeta.run.description,
       annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.learn,
+      inputSchema: flowArgShapes.run,
     },
-    handler(async (args: { container?: string; module?: string; knowledge?: string }) => {
+    handler(async (args: { container: string; module: string; skill: string; input?: string }) => {
+      const skill = await service.resolveSkill(args.container, args.module, args.skill);
       const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildLearn(targets, args.knowledge));
-    }),
-  );
-
-  server.registerTool(
-    "remember",
-    {
-      title: flowMeta.remember.title,
-      description: flowMeta.remember.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.remember,
-    },
-    handler(async (args: { container?: string; module?: string; observation?: string }) => {
-      const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildRemember(targets, args.observation));
-    }),
-  );
-
-  server.registerTool(
-    "reflect",
-    {
-      title: flowMeta.reflect.title,
-      description: flowMeta.reflect.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.reflect,
-    },
-    handler(async (args: { container?: string; module?: string; focus?: string }) => {
-      const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildReflect(targets, args.focus));
+      const target = targets[0];
+      const mod = target?.modules.find((m) => m.path === args.module);
+      if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
+      return ok(buildRun(target, mod, skill, args.input));
     }),
   );
 }

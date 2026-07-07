@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 /**
- * Single source of truth for the six flows (`ask`, `context`, `learn`,
- * `remember`, `reflect`, `onboard`). Each flow is exposed BOTH as a prompt-tool
- * (for clients without prompt support) and as an MCP prompt; both must present
- * identical content, so the titles, descriptions, and argument schemas all come
- * from here. Flows never act on their own — they return discipline/instructions
- * for the client agent to follow.
+ * Single source of truth for the flows (`ask`, `context`, `onboard`, `run`).
+ * Each flow is exposed BOTH as a prompt-tool (for clients without prompt
+ * support) and as an MCP prompt; both must present identical content, so the
+ * titles, descriptions, and argument schemas all come from here. Flows never
+ * act on their own — they return discipline/instructions for the client agent
+ * to follow.
  */
 
-export type FlowName = "ask" | "context" | "learn" | "remember" | "reflect" | "onboard";
+export type FlowName = "ask" | "context" | "onboard" | "run";
 
 /** Argument descriptions, shared so the prompt-tools and prompts stay in lockstep. */
 export const argDescriptions = {
@@ -17,9 +17,6 @@ export const argDescriptions = {
   module: "Module path within the container.",
   question: "The question to answer.",
   task: "The task to prepare for.",
-  knowledge: "The candidate knowledge to integrate.",
-  observation: "The observation to record.",
-  focus: "Optional area to focus on.",
 } as const;
 
 const container = z.string().optional().describe(argDescriptions.container);
@@ -29,10 +26,13 @@ const moduleArg = z.string().optional().describe(argDescriptions.module);
 export const flowArgShapes = {
   ask: { container, module: moduleArg, question: z.string().optional().describe(argDescriptions.question) },
   context: { container, task: z.string().optional().describe(argDescriptions.task) },
-  learn: { container, module: moduleArg, knowledge: z.string().optional().describe(argDescriptions.knowledge) },
-  remember: { container, module: moduleArg, observation: z.string().optional().describe(argDescriptions.observation) },
-  reflect: { container, module: moduleArg, focus: z.string().optional().describe(argDescriptions.focus) },
   onboard: {},
+  run: {
+    container: z.string().describe("Container name."),
+    module: z.string().describe("Module path within the container."),
+    skill: z.string().describe("Skill name to run (see inspect for the module's skills)."),
+    input: z.string().optional().describe("Freeform payload passed to the skill (e.g. the knowledge to learn, the observation to remember)."),
+  },
 } as const;
 
 export interface FlowMeta {
@@ -60,24 +60,6 @@ export const flowMeta: Record<FlowName, FlowMeta> = {
       "Return discipline that guides the agent to assemble a task-relevant working set across your containers. " +
       "Guidance only: this returns instructions, it does not assemble the working set itself.",
   },
-  learn: {
-    title: "Learn (flow)",
-    description:
-      "Return discipline that guides the agent to integrate new knowledge into a knowledge module (OKF). " +
-      "Guidance only: this returns instructions, it does not write to the module itself.",
-  },
-  remember: {
-    title: "Remember (flow)",
-    description:
-      "Return discipline that guides the agent to record an observation into a memory module. " +
-      "Guidance only: this returns instructions, it does not write to the module itself.",
-  },
-  reflect: {
-    title: "Reflect (flow)",
-    description:
-      "Return discipline that guides the agent to turn memory/experience into insight and updates. " +
-      "Guidance only: this returns instructions, it does not perform the reflection itself.",
-  },
   onboard: {
     title: "Onboard (guided setup)",
     description:
@@ -85,5 +67,11 @@ export const flowMeta: Record<FlowName, FlowMeta> = {
       "container = a repo/workspace/folder of modules), choosing a wake phrase, and setting up a first container " +
       "with modules. Guidance only: this returns instructions, it does not perform setup itself. Set the wake " +
       "phrase via the config tool.",
+  },
+  run: {
+    title: "Run (module skill)",
+    description:
+      "Return the discipline for a module's skill (resolved from the module's type + its own skills), with the target paths and your input injected. " +
+      "Guidance only: this returns instructions, it does not perform the work itself.",
   },
 };

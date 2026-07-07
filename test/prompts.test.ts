@@ -1,10 +1,11 @@
 import { rm } from "node:fs/promises";
 import { afterEach, describe, it, expect } from "vitest";
-import { ContainerService, type ResolvedContainer } from "../src/container/service.js";
+import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { loadOkf, loadDiscipline, combineOkf } from "../src/prompts/discipline.js";
-import { buildAsk, buildContext, buildLearn, buildRemember, buildReflect } from "../src/prompts/index.js";
+import { buildAsk, buildContext, buildRun } from "../src/prompts/index.js";
+import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
 class FakeGh { async createRepo(){return "x";} async createPr(){return "x";} }
@@ -20,9 +21,7 @@ describe("discipline loader", () => {
   });
 
   it("loads a new v2 discipline doc", async () => {
-    expect(await loadDiscipline("remember")).toMatch(/append/i);
     expect(await loadDiscipline("context")).toMatch(/working set/i);
-    expect(await loadDiscipline("reflect")).toMatch(/insight/i);
   });
 
   it("combineOkf wraps each doc in a named discipline block", async () => {
@@ -81,13 +80,15 @@ describe("prompt builders", () => {
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
   });
-  it("learn embeds the OKF write discipline + the write policy", async () => {
-    const text = await buildLearn(targets, "New fact");
-    expect(text).toContain('<discipline name="okf-learn">');
-    expect(text).toMatch(/sync/i);
-  });
-  it("remember + reflect embed their disciplines", async () => {
-    expect(await buildRemember(targets, "Observed X")).toMatch(/append/i);
-    expect(await buildReflect(targets, undefined)).toMatch(/insight/i);
+  it("buildRun embeds skill name, body, module path, and write policy", () => {
+    const target: ResolvedContainer = targets[0]!;
+    const mod: ResolvedModule = target.modules[1]!;
+    const skill: Skill = { name: "remember", description: "Record an observation", body: "Append-only timestamped entries.", source: "vendored" };
+    const text = buildRun(target, mod, skill, "Observed X");
+    expect(text).toContain("remember");
+    expect(text).toContain("Append-only timestamped entries.");
+    expect(text).toContain("mem");
+    expect(text).toContain("Write policy");
+    expect(text).toContain("Observed X");
   });
 });

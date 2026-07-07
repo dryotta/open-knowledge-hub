@@ -7,7 +7,7 @@ const OKF_ROOT = new URL("../../resources/okf/", import.meta.url);
 const DISCIPLINE_ROOT = new URL("../../resources/discipline/", import.meta.url);
 
 export type OkfDoc = "OKF-FORMAT" | "okf-writer" | "okf-ask" | "okf-learn" | "okf-new-from-repo";
-export type DisciplineDoc = "context" | "remember" | "reflect" | "onboard";
+export type DisciplineDoc = "context" | "onboard";
 
 const cache = new Map<string, string>();
 

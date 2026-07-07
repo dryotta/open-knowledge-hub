@@ -4,7 +4,7 @@ import type { ContainerService, ResolvedContainer } from "../container/service.j
 import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
 import { loadPreferences } from "../preferences.js";
-import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
 import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function message(text: string): GetPromptResult {
@@ -29,7 +29,7 @@ async function build(
   }
 }
 
-/** Register the six flows as prompts. Content mirrors the prompt-tools in tools.ts exactly (see prompts/meta.ts). */
+/** Register the flows as prompts. Content mirrors the prompt-tools in tools.ts exactly (see prompts/meta.ts). */
 export function registerPrompts(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerPrompt(
     "ask",
@@ -52,33 +52,29 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
   );
 
   server.registerPrompt(
-    "learn",
+    "run",
     {
-      title: flowMeta.learn.title,
-      description: flowMeta.learn.description,
-      argsSchema: flowArgShapes.learn,
+      title: flowMeta.run.title,
+      description: flowMeta.run.description,
+      argsSchema: flowArgShapes.run,
     },
-    (args) => build(service, args.container, args.module, (t) => buildLearn(t, args.knowledge)),
-  );
-
-  server.registerPrompt(
-    "remember",
-    {
-      title: flowMeta.remember.title,
-      description: flowMeta.remember.description,
-      argsSchema: flowArgShapes.remember,
+    async (args) => {
+      try {
+        const skill = await service.resolveSkill(args.container, args.module, args.skill);
+        const targets = await service.resolveTargets(args.container, args.module);
+        const target = targets[0];
+        const mod = target?.modules.find((m) => m.path === args.module);
+        if (!target || !mod) {
+          return message(`Cannot start this flow: Container "${args.container}" has no module "${args.module}".`);
+        }
+        return message(buildRun(target, mod, skill, args.input));
+      } catch (err) {
+        if (isOkhError(err)) {
+          return message(`Cannot start this flow: [${err.code}] ${err.message}${err.hint ? `\n\nHint: ${err.hint}` : ""}`);
+        }
+        throw err;
+      }
     },
-    (args) => build(service, args.container, args.module, (t) => buildRemember(t, args.observation)),
-  );
-
-  server.registerPrompt(
-    "reflect",
-    {
-      title: flowMeta.reflect.title,
-      description: flowMeta.reflect.description,
-      argsSchema: flowArgShapes.reflect,
-    },
-    (args) => build(service, args.container, args.module, (t) => buildReflect(t, args.focus)),
   );
 
   server.registerPrompt(
