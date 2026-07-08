@@ -5,11 +5,11 @@ agent-accessible knowledge and capabilities into **containers** made of typed
 **modules**. The **hub** is the system itself; it manages your containers.
 
 It exposes two kinds of surface. **Operational tools** (`inspect`, `add`, `sync`,
-`config`) *act* — they read state or change containers. Six **flows** (`ask`,
-`context`, `learn`, `remember`, `reflect`, `onboard`) *return instructions*: each
-hands your agent discipline text to follow. A flow never acts on its own — your
-agent does the reasoning and any edits. The server runs **no LLM** — it exposes
-deterministic tools and injects discipline text; your agent does all the reasoning.
+`config`) *act* — they read state or change containers. Four **flows** (`ask`,
+`context`, `onboard`, `run`) *return instructions*: each hands your agent discipline
+text to follow. A flow never acts on its own — your agent does the reasoning and
+any edits. The server runs **no LLM** — it exposes deterministic tools and injects
+discipline text; your agent does all the reasoning.
 
 ## Concepts
 
@@ -21,23 +21,28 @@ deterministic tools and injects discipline text; your agent does all the reasoni
   (cloned + synced). Registered in a per-machine `registry.json` under `$OKH_HOME`
   (default `~/.open-knowledge-hub`); git containers are cloned into
   `$OKH_HOME/containers/`, local/OneDrive folders are registered in place.
-- **Module** — a typed subfolder declared in the container's `.okh/okh.yaml`
-  manifest. Types: `knowledge` (OKF markdown), `skills` (Claude-Code `SKILL.md`
-  folders), `tools` (folders each with a `README.md` + script), `memory` and
-  `project` (format TBD).
+- **Module** — a self-contained typed subfolder. Each module carries its own
+  `.okh/module.yaml` manifest (`type`, `name`, `description`, optional `config`).
+  The hub auto-discovers modules by scanning the container for these manifests.
+  Built-in types: `knowledge` (OKF markdown), `memory`. Custom types (any other
+  string) use a generic file-listing loader; skills come entirely from the module.
 
-### `.okh/okh.yaml`
+### Module manifest (`<module>/.okh/module.yaml`)
 ```yaml
-name: my-notes
-sync: auto        # auto (commit+push) | pr (branch + pull request)
-modules:
-  - path: kb
-    type: knowledge
-  - path: skills
-    type: skills
-  - path: tools
-    type: tools
+type: knowledge   # built-in (knowledge, memory) or any custom string
+name: my-kb
+description: Project notes   # optional
+# config: {}                 # optional, type-specific
 ```
+
+The container's `name` and `sync` mode (`auto` | `pr`) are set in the **registry
+entry** at `add`-time, not in a per-container file.
+
+### Type skills
+Built-in types ship vendored skills: `knowledge` → `learn`; `memory` →
+`remember`, `reflect`. A module's effective skill set = vendored (for its type)
+∪ module-local skills (discovered from `.okh/skills/` and common roots like
+`.claude/skills/`). Skills use the standard `SKILL.md` format.
 
 ## MCP surface
 
@@ -50,7 +55,7 @@ These read state or change containers directly.
 | Tool | Args | Purpose |
 | --- | --- | --- |
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
-| `add` | `source,name?,sync?,backend?,create?` or `container,path,type,config?,create?` | Register a container, or add a module. Returns a plan unless `create:true`. |
+| `add` | `source,name?,sync?,backend?,create?` or `container,path,type,name,description?,config?,create?` | Register a container, or add a module (`name` required for modules). Returns a plan unless `create:true`. |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 
@@ -66,13 +71,11 @@ prompt UI), with identical content.
 | --- | --- | --- |
 | `ask` | `container?`, `module?`, `question?` | …answer a question from your containers' modules. |
 | `context` | `container?`, `task?` | …assemble a task's working set across your containers. |
-| `learn` | `container?`, `module?`, `knowledge?` | …integrate knowledge into a knowledge module (OKF). |
-| `remember` | `container?`, `module?`, `observation?` | …record an observation into a memory module. |
-| `reflect` | `container?`, `module?`, `focus?` | …turn memory into insight and updates. |
+| `run` | `container`, `module`, `skill`, `input?` | …invoke a named skill on a module (`learn`, `remember`, `reflect` are skills, not standalone tools). |
 | `onboard` | _(none)_ | …guide first-run setup (terminology, wake phrase, first container + modules). |
 
-**Prompts (6):** `ask`, `context`, `learn`, `remember`, `reflect`, `onboard` — the
-same six flows, for clients with a prompt UI. Content matches the prompt-tools
+**Prompts (4):** `ask`, `context`, `onboard`, `run` — the
+same four flows, for clients with a prompt UI. Content matches the prompt-tools
 exactly. `container`/`module` are optional filters: omit them to span every
 registered container (the whole hub).
 
@@ -106,14 +109,15 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 ## Typical usage
 
 - `add { source: "https://github.com/me/my-notes.git", name: "my-notes" }` → clone + register a container.
-- `add { container: "my-notes", path: "kb", type: "knowledge" }` → add a module.
-- `learn { container: "my-notes", knowledge: "..." }` → your agent folds it in, then
-  `sync { container: "my-notes" }` commits+pushes (or opens a PR).
+- `add { container: "my-notes", path: "kb", type: "knowledge", name: "kb" }` → add a module.
+- `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
+  folds knowledge in, then `sync { container: "my-notes" }` commits+pushes (or opens a PR).
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
 
 ## Wake phrase
 
-Address the hub by its wake phrase (default `hub`), e.g. `hub, remember that …`.
+Address the hub by its wake phrase (default `hub`), e.g. `hub, ask …` or
+`hub, run …`.
 Change it with the `config` tool (`config { set: { wakePhrase: "brain" } }`); OKH
 stores it in `$OKH_HOME/preferences.json` and announces it in the server
 instructions. See **[USAGE.md](./USAGE.md)** for recommended prompts.

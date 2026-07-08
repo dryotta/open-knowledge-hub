@@ -10,7 +10,6 @@ import type {
 } from "../container/service.js";
 import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
-import { moduleTypeSchema } from "../modules/types.js";
 import {
   configFieldMeta,
   configKeys,
@@ -19,7 +18,7 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAsk, buildContext, buildLearn, buildOnboard, buildReflect, buildRemember } from "../prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
 import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
@@ -65,7 +64,7 @@ function formatInspect(r: InspectResult): string {
       `Manifest valid: ${s.manifestValid}${s.manifestError ? ` (${s.manifestError})` : ""}`,
       "Modules:",
       ...(s.modules.length
-        ? s.modules.map((m) => `  - ${m.type}: ${m.path} (${m.items} items)`)
+        ? s.modules.map((m) => `  - ${m.type} · ${m.name}${m.description ? ` — ${m.description}` : ""}: ${m.path} (${m.items} items)`)
         : ["  (none)"]),
     ];
     if (s.git) {
@@ -75,29 +74,30 @@ function formatInspect(r: InspectResult): string {
     }
     return lines.join("\n");
   }
-  const head = `Module ${r.module.path} [${r.module.type}] — ${r.items.length} items`;
+  const head = `Module ${r.module.path} [${r.module.type}] ${r.module.name}${r.module.description ? ` — ${r.module.description}` : ""} — ${r.items.length} items`;
   const items = r.items.length
     ? r.items.map((i) => `  - ${i.title}${i.description ? ` — ${i.description}` : ""} (${i.path})`)
     : ["  (empty)"];
-  return [head, ...items].join("\n");
+  const skillLines = r.skills.length
+    ? r.skills.map((s) => `  - ${s.name} — ${s.description}`)
+    : ["  (none)"];
+  return [head, ...items, "Skills:", ...skillLines].join("\n");
 }
 
 function formatContainerPlan(plan: AddContainerPlan): string {
   const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
   if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.target}`);
   if (plan.actions.includes("clone"))
-    lines.push(`- Clone ${plan.source} → ${plan.target} (initialize a manifest if the repo has none)`);
-  if (plan.actions.includes("init-manifest")) lines.push(`- Initialize manifest: name=${plan.name} sync=${plan.sync}`);
+    lines.push(`- Clone ${plan.source} → ${plan.target}`);
   lines.push(`- Register container "${plan.name}" [${plan.backend}]`);
   return lines.join("\n");
 }
 
 function formatModulePlan(plan: AddModulePlan): string {
   const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
-  if (plan.actions.includes("init-manifest")) lines.push(`- Initialize manifest for "${plan.container}"`);
   if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.moduleRoot}`);
   if (plan.actions.includes("scaffold")) lines.push(`- Scaffold ${plan.type} module content`);
-  lines.push(`- Add ${plan.type} module "${plan.path}" to "${plan.container}"`);
+  lines.push(`- Add ${plan.type} module "${plan.name}" at "${plan.path}" to "${plan.container}"`);
   return lines.join("\n");
 }
 
@@ -132,7 +132,7 @@ function describeConfigError(err: z.ZodError): string {
   return `Invalid value for "${key}": ${first?.message ?? "invalid value"}.`;
 }
 
-/** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the six flows. */
+/** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the flows. */
 export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
   server.registerTool(
     "inspect",
@@ -168,12 +168,13 @@ export function registerTools(server: McpServer, service: ContainerService, path
       annotations: { openWorldHint: true },
       inputSchema: {
         source: z.string().optional().describe("Git URL or local/OneDrive path (new container)."),
-        name: z.string().optional().describe("Container name (defaults to the source basename)."),
+        name: z.string().optional().describe("Container name (defaults to the source basename) or module display name."),
         sync: z.enum(["auto", "pr"]).optional().describe("Git write mode for a new container."),
         backend: z.enum(["local", "onedrive"]).optional().describe("Label a path source as local or onedrive."),
         container: z.string().optional().describe("Target container (new module)."),
         path: z.string().optional().describe("Module folder path within the container (new module)."),
-        type: moduleTypeSchema.optional().describe("Module type (new module)."),
+        type: z.string().min(1).optional().describe("Module type: a built-in (knowledge, skills, tools, memory, project) or a custom type name (new module)."),
+        description: z.string().optional().describe("One-line module description (new module)."),
         config: z.record(z.string(), z.unknown()).optional().describe("Optional module config."),
         create: z.boolean().optional().describe("Apply the change. Omit to preview a plan (no changes)."),
       },
@@ -186,13 +187,14 @@ export function registerTools(server: McpServer, service: ContainerService, path
         backend?: "local" | "onedrive";
         container?: string;
         path?: string;
-        type?: "knowledge" | "skills" | "tools" | "memory" | "project";
+        type?: string;
+        description?: string;
         config?: Record<string, unknown>;
         create?: boolean;
       }) => {
         const hasSource = args.source !== undefined;
         const hasModuleFields =
-          args.container !== undefined || args.path !== undefined || args.type !== undefined || args.config !== undefined;
+          args.container !== undefined || args.path !== undefined || args.type !== undefined || args.description !== undefined || args.config !== undefined;
         if (hasSource && hasModuleFields) {
           return fail("add requires either { source } or { container, path, type }, not both.");
         }
@@ -211,24 +213,27 @@ export function registerTools(server: McpServer, service: ContainerService, path
           return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
         }
         if (hasModuleFields) {
-          if (args.container === undefined || args.path === undefined || args.type === undefined) {
-            return fail("Adding a module requires { container, path, type }.");
+          if (args.container === undefined || args.path === undefined || args.type === undefined || args.name === undefined) {
+            return fail("Adding a module requires { container, path, type, name }.");
           }
           if (isBlank(args.container)) return fail("container cannot be empty.");
           if (isBlank(args.path)) return fail("path cannot be empty.");
+          if (isBlank(args.name)) return fail("name cannot be empty.");
           const outcome = await service.addModule({
             container: args.container,
             path: args.path,
             type: args.type,
+            name: args.name,
+            ...(args.description !== undefined ? { description: args.description } : {}),
             ...(args.config ? { config: args.config } : {}),
             ...(args.create ? { create: true } : {}),
           });
           if (outcome.kind === "plan") {
             return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
           }
-          return ok(`Added ${outcome.entry.type} module "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`, { entry: outcome.entry });
+          return ok(`Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`, { entry: outcome.entry });
         }
-        return fail("add requires either { source } (new container) or { container, path, type } (new module).");
+        return fail("add requires either { source } (new container) or { container, path, type, name } (new module).");
       },
     ),
   );
@@ -310,9 +315,9 @@ export function registerTools(server: McpServer, service: ContainerService, path
 }
 
 /**
- * The five cognitive flows, exposed as tools for clients without prompt support.
+ * The cognitive flows, exposed as tools for clients without prompt support.
  * Like all flows they return discipline text (instructions) for the agent to
- * follow — they do not read or write on their own. `onboard` is the sixth flow,
+ * follow — they do not read or write on their own. `onboard` is another flow,
  * registered above alongside the operational tools.
  */
 function registerFlowTools(server: McpServer, service: ContainerService): void {
@@ -345,44 +350,20 @@ function registerFlowTools(server: McpServer, service: ContainerService): void {
   );
 
   server.registerTool(
-    "learn",
+    "run",
     {
-      title: flowMeta.learn.title,
-      description: flowMeta.learn.description,
+      title: flowMeta.run.title,
+      description: flowMeta.run.description,
       annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.learn,
+      inputSchema: flowArgShapes.run,
     },
-    handler(async (args: { container?: string; module?: string; knowledge?: string }) => {
+    handler(async (args: { container: string; module: string; skill: string; input?: string }) => {
+      const skill = await service.resolveSkill(args.container, args.module, args.skill);
       const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildLearn(targets, args.knowledge));
-    }),
-  );
-
-  server.registerTool(
-    "remember",
-    {
-      title: flowMeta.remember.title,
-      description: flowMeta.remember.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.remember,
-    },
-    handler(async (args: { container?: string; module?: string; observation?: string }) => {
-      const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildRemember(targets, args.observation));
-    }),
-  );
-
-  server.registerTool(
-    "reflect",
-    {
-      title: flowMeta.reflect.title,
-      description: flowMeta.reflect.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.reflect,
-    },
-    handler(async (args: { container?: string; module?: string; focus?: string }) => {
-      const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildReflect(targets, args.focus));
+      const target = targets[0];
+      const mod = target?.modules.find((m) => m.path === args.module);
+      if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
+      return ok(buildRun(target, mod, skill, args.input));
     }),
   );
 }

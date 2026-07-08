@@ -11,17 +11,17 @@ afterEach(async () => {
 const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 describe("okh-eval manual CLI (environment-centric)", () => {
-  it("lists the three environments", () => {
-    expect(listEnvironments().sort()).toEqual(["empty", "git", "local-and-git"]);
+  it("lists the four environments", () => {
+    expect(listEnvironments().sort()).toEqual(["custom", "empty", "git", "local-and-git"]);
   });
 
-  it("loads 17 scenario configs with inline prompts + envs, recursively", async () => {
+  it("loads 19 scenario configs with inline prompts + envs, recursively", async () => {
     const all = await loadScenarios();
-    expect(all.length).toBe(17);
+    expect(all.length).toBe(19);
     for (const s of all) {
       expect(typeof s.prompt).toBe("string");
       expect(s.prompt.length).toBeGreaterThan(0);
-      expect(["empty", "git", "local-and-git"]).toContain(s.env);
+      expect(["empty", "git", "local-and-git", "custom"]).toContain(s.env);
       expect(s.file).toMatch(/^[a-z-]+\/[a-z-]+\.yaml$/);
     }
   });
@@ -30,6 +30,7 @@ describe("okh-eval manual CLI (environment-centric)", () => {
     expect((await scenariosForEnv("local-and-git")).length).toBe(9);
     expect((await scenariosForEnv("git")).length).toBe(1);
     expect((await scenariosForEnv("empty")).length).toBe(7);
+    expect((await scenariosForEnv("custom")).length).toBe(2);
   });
 
   it("setup provisions local-and-git and lists its prompts + checklists", async () => {

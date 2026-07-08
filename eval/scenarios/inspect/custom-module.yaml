@@ -1,0 +1,22 @@
+# inspect — surface a custom-type module's identity and its discovered (.claude/skills) skills.
+- config:
+    - vars:
+        env: custom
+        prompt: |
+          Use the open-knowledge-hub MCP tools. In container "custom-hub", inspect the
+          "recipes" module: what is it, and what skills can I run on it?
+  tests:
+    - description: Inspect - custom module - reports identity and discovered skills
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [inspect] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: reported-identity
+                text: The agent conveyed the "recipes" module's name and description (a cooking/recipes collection).
+              - id: surfaced-cook-skill
+                text: The inspect result surfaced the module's runnable "cook" skill (discovered from the module itself).
+                check: { kind: transcript-contains, pattern: cook }

@@ -11,7 +11,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [learn, sync] }
+          config: { expect: [run, sync] }
         - type: javascript
           value: file://assertions/okf-valid.ts
           config: { module: kb, requireCitations: false, requireChanged: true }

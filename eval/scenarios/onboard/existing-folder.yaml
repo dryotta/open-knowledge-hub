@@ -16,9 +16,6 @@
           value: file://assertions/container-registered.ts
           config: { name: notes, backend: local }
         - type: javascript
-          value: file://assertions/manifest-initialized.ts
-          config: { name: notes }
-        - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
@@ -27,6 +24,3 @@
               - id: registered-notes
                 text: The existing "notes" folder was registered as a local container.
                 check: { kind: container, name: notes, backend: local }
-              - id: manifest-initialized
-                text: An OKH manifest was initialized for "notes".
-                check: { kind: manifest, name: notes }

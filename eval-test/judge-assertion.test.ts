@@ -26,10 +26,12 @@ function fakeJudge(results: Array<Partial<CriterionResult> & { id: string; verdi
 async function okhHomeWith(name: string, module?: string): Promise<string> {
   const home = await makeTempDir(); cleanups.push(home);
   const c = join(home, "containers", name);
-  await mkdir(join(c, ".okh"), { recursive: true });
-  const mods = module ? `modules:\n  - path: ${module}\n    type: knowledge\n` : "modules: []\n";
-  await writeFile(join(c, ".okh", "okh.yaml"), `name: ${name}\nsync: auto\n${mods}`, "utf8");
-  await writeFile(join(home, "registry.json"), JSON.stringify({ version: 1, containers: [{ name, backend: "local", localPath: c, addedAt: new Date().toISOString() }] }), "utf8");
+  await mkdir(c, { recursive: true });
+  if (module) {
+    await mkdir(join(c, module, ".okh"), { recursive: true });
+    await writeFile(join(c, module, ".okh", "module.yaml"), `type: knowledge\nname: ${module}\ndescription: Test\n`, "utf8");
+  }
+  await writeFile(join(home, "registry.json"), JSON.stringify({ version: 1, containers: [{ name, backend: "local", localPath: c, sync: "auto", addedAt: new Date().toISOString() }] }), "utf8");
   return home;
 }
 

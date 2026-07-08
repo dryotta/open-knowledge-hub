@@ -121,11 +121,11 @@ describe("git-committed", () => {
 async function okhHomeWith(name: string): Promise<string> {
   const home = await makeTempDir(); cleanups.push(home);
   const containers = join(home, "containers", name);
-  await mkdir(join(containers, ".okh"), { recursive: true });
-  await writeFile(join(containers, ".okh", "okh.yaml"), `name: ${name}\nsync: auto\nmodules: []\n`, "utf8");
+  await mkdir(join(containers, "kb", ".okh"), { recursive: true });
+  await writeFile(join(containers, "kb", ".okh", "module.yaml"), `type: knowledge\nname: kb\ndescription: Test\n`, "utf8");
   await writeFile(join(home, "registry.json"), JSON.stringify({
     version: 1,
-    containers: [{ name, backend: "local", localPath: containers, addedAt: new Date().toISOString() }],
+    containers: [{ name, backend: "local", localPath: containers, sync: "auto", addedAt: new Date().toISOString() }],
   }), "utf8");
   return home;
 }
@@ -150,17 +150,17 @@ describe("onboarding assertions", () => {
     expect(r.pass).toBe(true);
   });
 
-  it("manifest-initialized fails when a registered container has no manifest", async () => {
+  it("manifest-initialized fails when a registered container has no modules", async () => {
     const home = await makeTempDir(); cleanups.push(home);
     const containers = join(home, "containers", "my-notes");
     await mkdir(containers, { recursive: true });
     await writeFile(join(home, "registry.json"), JSON.stringify({
       version: 1,
-      containers: [{ name: "my-notes", backend: "local", localPath: containers, addedAt: new Date().toISOString() }],
+      containers: [{ name: "my-notes", backend: "local", localPath: containers, sync: "auto", addedAt: new Date().toISOString() }],
     }), "utf8");
     const r = await manifestInitialized("", { providerResponse: { metadata: { okhHome: home } }, config: { name: "my-notes" } });
     expect(r.pass).toBe(false);
-    expect(r.reason).toMatch(/manifest missing\/invalid/);
+    expect(r.reason).toMatch(/no modules discovered/);
   });
 
   it("wake-phrase-set passes when a non-default phrase is persisted", async () => {

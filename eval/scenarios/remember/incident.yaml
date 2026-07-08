@@ -10,7 +10,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [remember] }
+          config: { expect: [run] }
         - type: javascript
           value: file://assertions/memory-append.ts
           config: { module: mem, baselineFileCount: 2 }

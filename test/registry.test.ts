@@ -10,7 +10,7 @@ import {
   withContainerRemoved,
   withContainerUpdated,
 } from "../src/registry/registry.js";
-import { emptyRegistry, type ContainerEntry } from "../src/registry/schema.js";
+import { emptyRegistry, type ContainerEntry, containerEntrySchema } from "../src/registry/schema.js";
 import { OkhError } from "../src/errors.js";
 
 const cleanups: string[] = [];
@@ -70,5 +70,25 @@ describe("registry store", () => {
     const bad = { version: 1, containers: [{ ...entry({ backend: "git" }) }] };
     // origin missing -> schema refinement fails on save
     await expect(saveRegistry(makePaths(home), bad as never)).rejects.toBeTruthy();
+  });
+});
+
+describe("container entry sync", () => {
+  it("defaults sync to auto", () => {
+    const e = containerEntrySchema.parse({
+      name: "h", backend: "local", localPath: "/x", addedAt: new Date().toISOString(),
+    });
+    expect(e.sync).toBe("auto");
+  });
+  it("accepts pr", () => {
+    const e = containerEntrySchema.parse({
+      name: "h", backend: "local", localPath: "/x", addedAt: new Date().toISOString(), sync: "pr",
+    });
+    expect(e.sync).toBe("pr");
+  });
+  it("rejects an unknown sync value", () => {
+    expect(() => containerEntrySchema.parse({
+      name: "h", backend: "local", localPath: "/x", addedAt: new Date().toISOString(), sync: "nope",
+    })).toThrow();
   });
 });

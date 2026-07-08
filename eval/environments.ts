@@ -46,6 +46,10 @@ export const environments = {
       { container: "git-hub", fixture: "fixtures/git-hub", backend: "git-auto" },
     ],
   },
+  custom: {
+    placement: "registered",
+    hubs: [{ container: "custom-hub", fixture: "fixtures/custom-hub", backend: "local" }],
+  },
 } satisfies Record<string, Environment>;
 
 export type EnvName = keyof typeof environments;
@@ -96,13 +100,13 @@ async function registerHub(
     const clone = join(containersDir, hub.container);
     await git.clone(originPath, clone);
     return {
-      entry: { name: hub.container, backend: "git", origin: originPath, localPath: clone, addedAt: new Date().toISOString() },
+      entry: { name: hub.container, backend: "git", origin: originPath, localPath: clone, sync: "auto", addedAt: new Date().toISOString() },
       originPath,
     };
   }
   const dir = join(containersDir, hub.container);
   await cp(fixtureDir, dir, { recursive: true });
-  return { entry: { name: hub.container, backend: "local", localPath: dir, addedAt: new Date().toISOString() } };
+  return { entry: { name: hub.container, backend: "local", localPath: dir, sync: "auto", addedAt: new Date().toISOString() } };
 }
 
 /**

@@ -10,7 +10,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [learn] }
+          config: { expect: [run] }
         - type: javascript
           value: file://assertions/module-unchanged.ts
           config: { module: kb }

@@ -1,5 +1,6 @@
 import { mkdir, rm, stat, readdir } from "node:fs/promises";
-import { resolve, relative, basename, join, isAbsolute } from "node:path";
+import { resolve, relative, basename, join, isAbsolute, normalize } from "node:path";
+import { z } from "zod";
 import type { ZodType } from "zod";
 import type { OkhPaths } from "../config.js";
 import { containerCloneDir } from "../config.js";
@@ -13,6 +14,7 @@ import {
   findContainer,
   requireContainer,
   withContainerAdded,
+  withContainerUpdated,
 } from "../registry/registry.js";
 import {
   containerNameSchema,
@@ -20,18 +22,30 @@ import {
   type Backend,
   type ContainerEntry,
 } from "../registry/schema.js";
-import {
-  loadContainerManifest,
-  saveContainerManifest,
-  scaffoldManifest,
-  manifestExists,
-  modulePathSchema,
-  type ContainerManifest,
-  type ModuleEntry,
-  type SyncMode,
-} from "./manifest.js";
-import { moduleTypeSchema, type ModuleType, type Item } from "../modules/types.js";
+import { discoverModules, type DiscoveredModule } from "../modules/discovery.js";
+import { migrateLegacyContainerManifest } from "./migrate.js";
+import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
+import { type Item } from "../modules/types.js";
+import { type SyncMode } from "../registry/schema.js";
 import { getLoader } from "../modules/registry.js";
+import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
+import { vendoredSkills } from "../modules/vendored.js";
+
+const modulePathString = z
+  .string().min(1)
+  .refine((s) => !isAbsolute(s), "module path must be relative")
+  .refine((s) => {
+    const n = normalize(s).replace(/\\/g, "/");
+    return n !== ".." && !n.startsWith("../") && !n.split("/").includes("..");
+  }, "module path must not contain '..' segments")
+  .refine((s) => {
+    const first = normalize(s).replace(/\\/g, "/").split("/")[0];
+    return first !== ".okh";
+  }, "module path must not live inside .okh")
+  .refine(
+    (s) => normalize(s).replace(/\\/g, "/") !== ".",
+    "module path must not be the container root",
+  );
 
 function validate<T>(schema: ZodType<T>, value: unknown, field: string): T {
   const result = schema.safeParse(value);
@@ -100,7 +114,7 @@ export interface AddContainerInput {
   create?: boolean;
 }
 
-export type ContainerAction = "create-folder" | "clone" | "init-manifest";
+export type ContainerAction = "create-folder" | "clone";
 
 export interface AddContainerPlan {
   kind: "container";
@@ -120,26 +134,30 @@ export type AddContainerOutcome =
   | { kind: "plan"; plan: AddContainerPlan }
   | { kind: "applied"; entry: ContainerEntry };
 
-export type ModuleAction = "init-manifest" | "create-folder" | "scaffold";
+export type ModuleAction = "create-folder" | "scaffold";
 
 export interface AddModulePlan {
   kind: "module";
   actions: ModuleAction[];
   container: string;
   path: string;
-  type: ModuleType;
+  type: string;
+  name: string;
+  description: string;
   moduleRoot: string;
   config?: Record<string, unknown>;
 }
 
 export type AddModuleOutcome =
   | { kind: "plan"; plan: AddModulePlan }
-  | { kind: "applied"; entry: ModuleEntry; moduleRoot: string };
+  | { kind: "applied"; entry: { path: string; type: string; name: string }; moduleRoot: string };
 
 export interface AddModuleInput {
   container: string;
   path: string;
-  type: ModuleType;
+  type: string;
+  name: string;
+  description?: string;
   config?: Record<string, unknown>;
   create?: boolean;
 }
@@ -154,7 +172,9 @@ export interface GitStatus {
 
 export interface ModuleStatus {
   path: string;
-  type: ModuleType;
+  type: string;
+  name: string;
+  description: string;
   items: number;
 }
 
@@ -184,8 +204,9 @@ export type InspectResult =
   | { kind: "container"; status: ContainerStatus }
   | {
       kind: "module";
-      module: { path: string; type: ModuleType; config?: Record<string, unknown> };
+      module: { path: string; type: string; name: string; description: string; config?: Record<string, unknown> };
       items: Item[];
+      skills: Array<{ name: string; description: string }>;
     };
 
 export interface SyncResult {
@@ -200,8 +221,10 @@ export interface SyncResult {
 }
 
 export interface ResolvedModule {
-  type: ModuleType;
+  type: string;
   path: string;
+  name: string;
+  description: string;
   absPath: string;
 }
 
@@ -232,7 +255,7 @@ export class ContainerService {
   }
 
   /** Enumerate a module's items, swallowing loader errors to an empty list. */
-  private async safeEnumerate(type: ModuleType, moduleRoot: string): Promise<Item[]> {
+  private async safeEnumerate(type: string, moduleRoot: string): Promise<Item[]> {
     try {
       return await getLoader(type).enumerate(moduleRoot);
     } catch {
@@ -240,75 +263,74 @@ export class ContainerService {
     }
   }
 
+  /**
+   * Migrate a legacy `.okh/okh.yaml` (if present) and persist its `sync` mode onto
+   * the registry entry. The legacy manifest — deleted by migration — was the prior
+   * source of truth for `sync`, so its value must not be lost to the schema default
+   * ("auto"), which would silently drop a PR-only container to direct push. Idempotent:
+   * a no-op once migrated. The registry write is mutex-guarded; callers under the
+   * service mutex (sync's validate path) always pre-migrate first, so the guarded
+   * write is never reached re-entrantly.
+   */
+  private async migrateAndPersistSync(name: string, root: string): Promise<void> {
+    const migratedSync = await migrateLegacyContainerManifest(root).catch(() => undefined);
+    if (migratedSync === undefined) return;
+    await this.mutex.run(async () => {
+      const reg = await loadRegistry(this.paths);
+      if (!findContainer(reg, name)) return;
+      await saveRegistry(this.paths, withContainerUpdated(reg, name, (e) => ({ ...e, sync: migratedSync })));
+    });
+  }
+
   async status(name: string): Promise<ContainerStatus> {
-    const reg = await loadRegistry(this.paths);
-    const entry = requireContainer(reg, name);
-    const root = entry.localPath;
-
-    let manifest: ContainerManifest | undefined;
-    let manifestValid = true;
-    let manifestError: string | undefined;
-    try {
-      manifest = await loadContainerManifest(root);
-    } catch (err) {
-      manifestValid = false;
-      manifestError = err instanceof OkhError ? err.message : String(err);
-    }
-
-    const modules: ModuleStatus[] = manifest
-      ? await Promise.all(
-          manifest.modules.map(async (m) => ({
-            path: m.path,
-            type: m.type,
-            items: (await this.safeEnumerate(m.type, this.moduleRoot(root, m.path))).length,
-          })),
-        )
-      : [];
+    const root = requireContainer(await loadRegistry(this.paths), name).localPath;
+    await this.migrateAndPersistSync(name, root);
+    const entry = requireContainer(await loadRegistry(this.paths), name);
+    const discovered = await discoverModules(root);
+    const invalid = discovered.filter((d) => d.error);
+    const modules: ModuleStatus[] = await Promise.all(
+      discovered
+        .filter((d): d is DiscoveredModule & { manifest: ModuleManifest } => !!d.manifest)
+        .map(async (d) => ({
+          path: d.path,
+          type: d.manifest.type,
+          name: d.manifest.name,
+          description: d.manifest.description,
+          items: (await this.safeEnumerate(d.manifest.type, this.moduleRoot(root, d.path))).length,
+        })),
+    );
 
     let git: GitStatus | undefined;
     if (entry.backend === "git") {
       const [branch, dirty, ab, unpushed] = await Promise.all([
-        this.git.currentBranch(root),
-        this.git.isDirty(root),
-        this.git.aheadBehind(root),
-        this.git.hasUnpushedCommits(root),
+        this.git.currentBranch(root), this.git.isDirty(root),
+        this.git.aheadBehind(root), this.git.hasUnpushedCommits(root),
       ]);
       git = { branch, dirty, ahead: ab?.ahead ?? 0, behind: ab?.behind ?? 0, hasUnpushedCommits: unpushed };
     }
 
     return {
-      name,
-      backend: entry.backend,
-      sync: manifest?.sync,
-      localPath: root,
-      manifestValid,
-      manifestError,
-      modules,
-      git,
+      name, backend: entry.backend, sync: entry.sync, localPath: root,
+      manifestValid: invalid.length === 0,
+      ...(invalid.length ? { manifestError: invalid.map((d) => `${d.path}: ${d.error}`).join("; ") } : {}),
+      modules, git,
     };
   }
 
-  /** Structural validation: manifest parses, module folders exist, knowledge has index.md. */
+  /** Structural validation: module manifests parse, knowledge has index.md. */
   async validate(name: string): Promise<{ ok: boolean; issues: string[] }> {
     const reg = await loadRegistry(this.paths);
     const entry = requireContainer(reg, name);
     const root = entry.localPath;
-    let manifest: ContainerManifest;
-    try {
-      manifest = await loadContainerManifest(root);
-    } catch (err) {
-      return { ok: false, issues: [err instanceof OkhError ? err.message : String(err)] };
-    }
+    await this.migrateAndPersistSync(name, root);
+    const discovered = await discoverModules(root);
     const issues: string[] = [];
-    for (const m of manifest.modules) {
-      const moduleRoot = this.moduleRoot(root, m.path);
-      const s = await stat(moduleRoot).catch(() => null);
-      if (!s || !s.isDirectory()) {
-        issues.push(`module "${m.path}" (${m.type}): folder is missing`);
-      }
+    for (const d of discovered) {
+      if (d.error) { issues.push(`module "${d.path}": ${d.error}`); continue; }
+      const m = d.manifest!;
       if (m.type === "knowledge") {
-        const idx = await stat(join(moduleRoot, "index.md")).catch(() => null);
-        if (!idx) issues.push(`knowledge module "${m.path}": missing index.md`);
+        const idx = await stat(join(this.moduleRoot(root, d.path), "index.md")).catch(() => null);
+        if (!idx) issues.push(`knowledge module "${d.path}": missing index.md`);
       }
     }
     return { ok: issues.length === 0, issues };
@@ -321,9 +343,7 @@ export class ContainerService {
         reg.containers.map(async (c) => {
           const st = await this.status(c.name).catch(() => undefined);
           return {
-            name: c.name,
-            backend: c.backend,
-            sync: st?.sync,
+            name: c.name, backend: c.backend, sync: st?.sync ?? c.sync,
             moduleCount: st?.modules.length ?? 0,
             manifestValid: st?.manifestValid ?? false,
             localPath: c.localPath,
@@ -334,65 +354,79 @@ export class ContainerService {
     }
 
     const entry = requireContainer(reg, container);
-    if (!module) {
-      return { kind: "container", status: await this.status(container) };
-    }
+    if (!module) return { kind: "container", status: await this.status(container) };
 
-    const manifest = await loadContainerManifest(entry.localPath);
-    const mod = manifest.modules.find((m) => m.path === module);
-    if (!mod) {
+    await this.migrateAndPersistSync(container, entry.localPath);
+    const moduleRoot = this.moduleRoot(entry.localPath, module);
+    if (!(await moduleManifestExists(moduleRoot))) {
       throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
     }
-    const items = await this.safeEnumerate(mod.type, this.moduleRoot(entry.localPath, mod.path));
+    const manifest = await loadModuleManifest(moduleRoot);
+    const items = await this.safeEnumerate(manifest.type, moduleRoot);
+    const skills = await this.effectiveSkills(container, module);
     return {
       kind: "module",
-      module: { path: mod.path, type: mod.type, ...(mod.config ? { config: mod.config } : {}) },
+      module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
       items,
+      skills: skills.map(s => ({ name: s.name, description: s.description })),
     };
   }
 
-  /**
-   * Resolve container/module filters to concrete paths for prompt context.
-   * No filter => all containers. Skips containers whose manifest can't be read,
-   * unless a specific container was requested (then it errors).
-   */
+  /** The module's effective skill set: vendored (built-in type) ∪ module-local, local overriding by name. */
+  async effectiveSkills(container: string, module: string): Promise<Skill[]> {
+    const reg = await loadRegistry(this.paths);
+    const entry = requireContainer(reg, container);
+    const moduleRoot = this.moduleRoot(entry.localPath, module);
+    if (!(await moduleManifestExists(moduleRoot))) {
+      throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+    }
+    const manifest = await loadModuleManifest(moduleRoot);
+    const [vendored, local] = await Promise.all([
+      vendoredSkills(manifest.type),
+      discoverModuleSkills(moduleRoot),
+    ]);
+    return mergeSkills(vendored, local);
+  }
+
+  /** Resolve one named skill for a module; throws NOT_FOUND listing available skills. */
+  async resolveSkill(container: string, module: string, skill: string): Promise<Skill> {
+    const skills = await this.effectiveSkills(container, module);
+    const found = skills.find((s) => s.name === skill);
+    if (!found) {
+      const names = skills.map((s) => s.name).join(", ") || "(none)";
+      throw new OkhError("NOT_FOUND", `Module "${module}" has no skill "${skill}". Available: ${names}.`);
+    }
+    return found;
+  }
+
   async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {
+    const reg0 = await loadRegistry(this.paths);
+    const entries0 = container ? [requireContainer(reg0, container)] : reg0.containers;
+    for (const e of entries0) await this.migrateAndPersistSync(e.name, e.localPath);
     const reg = await loadRegistry(this.paths);
     const entries = container ? [requireContainer(reg, container)] : reg.containers;
     const out: ResolvedContainer[] = [];
     for (const entry of entries) {
-      let manifest: ContainerManifest;
-      try {
-        manifest = await loadContainerManifest(entry.localPath);
-      } catch (err) {
-        if (container) {
-          throw err instanceof OkhError
-            ? err
-            : new OkhError("INVALID_MANIFEST", `Container "${entry.name}" has an invalid manifest.`);
-        }
-        continue;
-      }
-      let modules = manifest.modules;
-      if (module) modules = modules.filter((m) => m.path === module);
-      if (container && module && modules.length === 0) {
+      let discovered = (await discoverModules(entry.localPath)).filter((d) => d.manifest);
+      if (module) discovered = discovered.filter((d) => d.path === module);
+      if (container && module && discovered.length === 0) {
         throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
       }
       out.push({
-        name: entry.name,
-        backend: entry.backend,
-        sync: manifest.sync,
-        root: entry.localPath,
-        modules: modules.map((m) => ({
-          type: m.type,
-          path: m.path,
-          absPath: this.moduleRoot(entry.localPath, m.path),
+        name: entry.name, backend: entry.backend, sync: entry.sync, root: entry.localPath,
+        modules: discovered.map((d) => ({
+          type: d.manifest!.type, path: d.path, name: d.manifest!.name,
+          description: d.manifest!.description, absPath: this.moduleRoot(entry.localPath, d.path),
         })),
       });
     }
     return out;
   }
 
-  sync(name?: string, message?: string): Promise<SyncResult[]> {
+  async sync(name?: string, message?: string): Promise<SyncResult[]> {
+    const reg = await loadRegistry(this.paths);
+    const entries = name ? reg.containers.filter((c) => c.name === name) : reg.containers;
+    for (const e of entries) await this.migrateAndPersistSync(e.name, e.localPath);
     return this.mutex.run(() => this.syncImpl(name, message));
   }
 
@@ -429,13 +463,7 @@ export class ContainerService {
     if (entry.backend !== "git") {
       return { name: entry.name, backend: entry.backend, validation, action: "validated" };
     }
-    let manifest: ContainerManifest;
-    try {
-      manifest = await loadContainerManifest(entry.localPath);
-    } catch {
-      return { name: entry.name, backend: entry.backend, validation, action: "skipped" };
-    }
-    return manifest.sync === "pr"
+    return entry.sync === "pr"
       ? this.syncPr(entry, validation, message)
       : this.syncAuto(entry, validation, message);
   }
@@ -575,22 +603,13 @@ export class ContainerService {
     if (s && !s.isDirectory()) {
       throw new OkhError("INVALID_ARGUMENT", `Path "${input.source}" exists but is not a directory.`);
     }
-    const exists = !!s;
-    const actions: ContainerAction[] = [];
-    if (!exists) actions.push("create-folder");
-    const hasManifest = exists && await manifestExists(target);
-    if (!hasManifest) {
-      actions.push("init-manifest");
-    } else if (syncExplicit) {
-      const manifest = await loadContainerManifest(target);
-      if (manifest.sync !== sync) actions.push("init-manifest");
-    }
+    const actions: ContainerAction[] = s ? [] : ["create-folder"];
     return { kind: "container", actions, name, backend, source: input.source, target, sync, syncExplicit };
   }
 
   private async addContainerImpl(input: AddContainerInput): Promise<AddContainerOutcome> {
     const plan = await this.planAddContainer(input);
-    if (plan.actions.length > 0 && !input.create) return { kind: "plan", plan };
+    if (!input.create) return { kind: "plan", plan };
     return { kind: "applied", entry: await this.applyAddContainer(plan) };
   }
 
@@ -613,20 +632,14 @@ export class ContainerService {
     } else {
       await mkdir(plan.target, { recursive: true });
     }
-    if (!(await manifestExists(plan.target))) {
-      await saveContainerManifest(plan.target, { ...scaffoldManifest(plan.name), sync: plan.sync });
-    } else if (plan.syncExplicit) {
-      const m = await loadContainerManifest(plan.target);
-      if (m.sync !== plan.sync) {
-        await saveContainerManifest(plan.target, { ...m, sync: plan.sync });
-      }
-    }
-
+    const migratedSync = await migrateLegacyContainerManifest(plan.target).catch(() => undefined);
+    const sync: SyncMode = plan.syncExplicit ? plan.sync : (migratedSync ?? plan.sync);
     const entry: ContainerEntry = {
       name: plan.name,
       backend: plan.backend,
       ...(origin ? { origin } : {}),
       localPath: plan.target,
+      sync,
       addedAt: new Date().toISOString(),
     };
     await saveRegistry(this.paths, withContainerAdded(reg, entry));
@@ -638,22 +651,19 @@ export class ContainerService {
   }
 
   async planAddModule(input: AddModuleInput): Promise<AddModulePlan> {
-    validate(modulePathSchema, input.path, "module path");
-    validate(moduleTypeSchema, input.type, "module type");
+    validate(modulePathString, input.path, "module path");
     const reg = await loadRegistry(this.paths);
     const container = requireContainer(reg, input.container);
     const root = container.localPath;
-    const manifest = await this.loadManifestOrEmpty(root, container.name);
-    if (manifest.modules.some((m) => m.path === input.path)) {
+    const moduleRoot = this.moduleRoot(root, input.path);
+    if (await moduleManifestExists(moduleRoot)) {
       throw new OkhError(
         "ALREADY_EXISTS",
         `Module path "${input.path}" already exists in container "${input.container}".`,
       );
     }
-    const moduleRoot = this.moduleRoot(root, input.path);
     const actions: ModuleAction[] = [];
-    if (!(await manifestExists(root))) actions.push("init-manifest");
-    const modDir = await stat(moduleRoot).then((s) => s.isDirectory()).catch(() => false);
+    const modDir = await stat(moduleRoot).then((x) => x.isDirectory()).catch(() => false);
     if (!modDir) actions.push("create-folder");
     if (getLoader(input.type).scaffold) actions.push("scaffold");
     return {
@@ -662,6 +672,8 @@ export class ContainerService {
       container: input.container,
       path: input.path,
       type: input.type,
+      name: input.name,
+      description: input.description ?? "",
       moduleRoot,
       ...(input.config ? { config: input.config } : {}),
     };
@@ -673,17 +685,7 @@ export class ContainerService {
     return { kind: "applied", ...(await this.applyAddModule(plan)) };
   }
 
-  private async applyAddModule(plan: AddModulePlan): Promise<{ entry: ModuleEntry; moduleRoot: string }> {
-    const reg = await loadRegistry(this.paths);
-    const container = requireContainer(reg, plan.container);
-    const root = container.localPath;
-    const manifest = await this.loadOrScaffold(root, container.name);
-    if (manifest.modules.some((m) => m.path === plan.path)) {
-      throw new OkhError(
-        "ALREADY_EXISTS",
-        `Module path "${plan.path}" already exists in container "${plan.container}".`,
-      );
-    }
+  private async applyAddModule(plan: AddModulePlan): Promise<{ entry: { path: string; type: string; name: string }; moduleRoot: string }> {
     await mkdir(plan.moduleRoot, { recursive: true });
     const loader = getLoader(plan.type);
     if (loader.scaffold) {
@@ -693,13 +695,11 @@ export class ContainerService {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
     }
-    const entry: ModuleEntry = {
-      path: plan.path,
-      type: plan.type,
+    await saveModuleManifest(plan.moduleRoot, {
+      type: plan.type, name: plan.name, description: plan.description,
       ...(plan.config ? { config: plan.config } : {}),
-    };
-    await saveContainerManifest(root, { ...manifest, modules: [...manifest.modules, entry] });
-    return { entry, moduleRoot: plan.moduleRoot };
+    });
+    return { entry: { path: plan.path, type: plan.type, name: plan.name }, moduleRoot: plan.moduleRoot };
   }
 
   /** Absolute path to a container's root on disk. */
@@ -717,18 +717,6 @@ export class ContainerService {
     return root;
   }
 
-  protected async loadOrScaffold(root: string, name: string): Promise<ContainerManifest> {
-    if (await manifestExists(root)) return loadContainerManifest(root);
-    const m = scaffoldManifest(name);
-    await saveContainerManifest(root, m);
-    return m;
-  }
-
-  /** In-memory manifest for planning: never writes. Missing file => empty scaffold. */
-  protected async loadManifestOrEmpty(root: string, name: string): Promise<ContainerManifest> {
-    if (await manifestExists(root)) return loadContainerManifest(root);
-    return scaffoldManifest(name);
-  }
 
   private async assertDirAvailable(dir: string): Promise<void> {
     try {

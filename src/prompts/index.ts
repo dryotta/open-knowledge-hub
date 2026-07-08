@@ -1,4 +1,5 @@
-import type { ResolvedContainer } from "../container/service.js";
+import type { ResolvedContainer, ResolvedModule } from "../container/service.js";
+import type { Skill } from "../modules/skills.js";
 import { combineOkf, loadDiscipline } from "./discipline.js";
 
 const WRITE_POLICY = `## Write policy
@@ -57,53 +58,17 @@ ${discipline}
 </discipline>`;
 }
 
-export async function buildLearn(targets: ResolvedContainer[], knowledge?: string): Promise<string> {
-  const discipline = await combineOkf(["okf-learn", "okf-writer", "OKF-FORMAT"]);
-  return `# OKH: learn
+export function buildRun(target: ResolvedContainer, module: ResolvedModule, skill: Skill, input?: string): string {
+  return `# OKH: run — ${skill.name}
 
-**Candidate knowledge:** ${knowledge ?? "(none provided — clarify with the user)"}
+**Skill:** ${skill.name} — ${skill.description}
+**Module:** ${module.type} · ${module.name} (\`${module.path}\`) → \`${module.absPath}\`
+**Container:** ${target.name} (${target.backend}, sync: ${target.sync}) — \`${target.root}\`
+**Input:** ${input ?? "(none provided — clarify with the user)"}
 
-**Write into a knowledge module of:**
-${renderTargets(targets)}
+<discipline name="${skill.name}">
 
-Fold the candidate knowledge into a \`knowledge\` module following the \`okf-learn\`
-gate (default answer "no" unless it serves a goal) and the \`okf-writer\` discipline.
-
-${WRITE_POLICY}
-
-${discipline}`;
-}
-
-export async function buildRemember(targets: ResolvedContainer[], observation?: string): Promise<string> {
-  const discipline = await loadDiscipline("remember");
-  return `# OKH: remember
-
-**Observation:** ${observation ?? "(none provided — clarify with the user)"}
-
-**Record into a memory module of:**
-${renderTargets(targets)}
-
-<discipline name="remember">
-
-${discipline}
-
-</discipline>
-
-${WRITE_POLICY}`;
-}
-
-export async function buildReflect(targets: ResolvedContainer[], focus?: string): Promise<string> {
-  const discipline = await loadDiscipline("reflect");
-  return `# OKH: reflect
-
-**Focus:** ${focus ?? "(none — reflect broadly)"}
-
-**Process memory/experience in:**
-${renderTargets(targets)}
-
-<discipline name="reflect">
-
-${discipline}
+${skill.body}
 
 </discipline>
 

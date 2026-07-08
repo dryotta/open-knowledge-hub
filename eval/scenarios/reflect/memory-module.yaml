@@ -10,7 +10,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [reflect] }
+          config: { expect: [run] }
         - type: javascript
           value: file://assertions/judge.ts
           config:
