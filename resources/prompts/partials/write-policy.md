@@ -1,8 +1,8 @@
 ## Write policy
 
-After editing files:
+If this skill edits files:
 1. Summarise the diff for the user and get explicit confirmation before persisting.
-2. Call the `sync` tool ({ container }). It commits + pushes directly (sync: auto)
-   or opens a pull request (sync: pr), per the container's configuration.
-Never persist changes without the user's go-ahead. If several candidate
-containers/modules are listed below, choose or confirm ONE target before writing.
+2. Call the `sync` tool ({ container }) for the affected container. It commits + pushes
+   directly (sync: auto) or opens a pull request (sync: pr), per the container's configuration.
+Never persist changes without the user's go-ahead. Choose or confirm ONE target
+container/module before writing.

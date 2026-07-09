@@ -5,7 +5,7 @@ import { normalize, sep } from "node:path";
 // resources/ sits at the package root; ../../ from src/prompts (tsx) and dist/prompts (built) both resolve there.
 const PROMPTS_ROOT = new URL("../../resources/prompts/", import.meta.url);
 
-export type TemplateName = "ask" | "context" | "onboard" | "run" | "shared-run" | "instructions";
+export type TemplateName = "ask" | "context" | "onboard" | "run" | "instructions";
 
 export interface RenderContext {
   /** Caller-provided runtime values; `var:` resolves a slash-path into this. */

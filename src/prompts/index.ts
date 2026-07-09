@@ -41,27 +41,23 @@ export function buildOnboard(targets: ResolvedContainer[], config: Record<string
   return renderTemplate("onboard", { config, vars: { targets: renderTargets(targets) } });
 }
 
-export function buildRun(
-  target: ResolvedContainer,
-  module: ResolvedModule,
+/** Render a skill run. With target+module it's a module skill; with neither, a module-less shared skill. */
+export async function buildRun(
   skill: Skill,
   input?: string,
+  target?: ResolvedContainer,
+  module?: ResolvedModule,
 ): Promise<string> {
+  const targetBlock =
+    target && module
+      ? `**Module:** ${module.type} · ${module.name} (\`${module.path}\`) → \`${module.absPath}\`\n` +
+        `**Container:** ${target.name} (${target.backend}, sync: ${String(target.sync)}) — \`${target.root}\`\n`
+      : "";
   return renderTemplate("run", {
     vars: {
       skill: { name: skill.name, description: skill.description, body: skill.body },
-      module: { type: module.type, name: module.name, path: module.path, absPath: module.absPath },
-      container: { name: target.name, backend: target.backend, sync: String(target.sync), root: target.root },
       input: input ?? NONE,
-    },
-  });
-}
-
-export async function buildSharedRun(skill: Skill, input?: string): Promise<string> {
-  return renderTemplate("shared-run", {
-    vars: {
-      skill: { name: skill.name, description: skill.description, body: skill.body },
-      input: input ?? NONE,
+      target: targetBlock,
       resources: renderResources(await skillResourcePaths(skill)),
     },
   });

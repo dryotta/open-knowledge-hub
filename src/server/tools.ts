@@ -18,7 +18,7 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAsk, buildContext, buildOnboard, buildRun, buildSharedRun } from "../prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
 import { loadToolMeta, describeShape } from "./toolMeta.js";
 import { toolShapes, type ToolName } from "./toolSchemas.js";
 import type { RenderContext } from "../prompts/templates.js";
@@ -306,14 +306,14 @@ async function registerFlowTools(server: McpServer, service: ContainerService): 
       }
       if (!hasContainer) {
         const skill = await service.resolveSharedSkill(args.skill);
-        return ok(await buildSharedRun(skill, args.input));
+        return ok(await buildRun(skill, args.input));
       }
       const skill = await service.resolveSkill(args.container!, args.module!, args.skill);
       const targets = await service.resolveTargets(args.container!, args.module!);
       const target = targets[0];
       const mod = target?.modules.find((m) => m.path === args.module);
       if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
-      return ok(await buildRun(target, mod, skill, args.input));
+      return ok(await buildRun(skill, args.input, target, mod));
     }),
   );
 }

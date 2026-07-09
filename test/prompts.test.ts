@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { buildAsk, buildContext, buildOnboard, buildRun, buildSharedRun } from "../src/prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -64,19 +64,19 @@ describe("prompt builders", () => {
     const target: ResolvedContainer = targets[0]!;
     const mod: ResolvedModule = target.modules[1]!;
     const skill: Skill = { name: "remember", description: "Record an observation", body: "Append-only timestamped entries.", source: "vendored" };
-    const text = await buildRun(target, mod, skill, "Observed X");
+    const text = await buildRun(skill, "Observed X", target, mod);
     expect(text).toContain("remember");
     expect(text).toContain("Append-only timestamped entries.");
     expect(text).toContain("mem");
     expect(text).toContain("Write policy");
     expect(text).toContain("Observed X");
   });
-  it("buildSharedRun embeds a module-less shared skill and its resource paths", async () => {
+  it("buildRun without a target renders a module-less shared skill", async () => {
     const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
-    const text = await buildSharedRun(skill, "Draft the auth pack");
+    const text = await buildRun(skill, "Draft the auth pack");
     expect(text).toContain("okf-writer");
     expect(text).toContain("Write cited concepts.");
     expect(text).toContain("Draft the auth pack");
-    expect(text).not.toContain("Write policy");
+    expect(text).not.toContain("**Module:**");
   });
 });
