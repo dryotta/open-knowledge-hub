@@ -11,7 +11,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [add, inspect] }
+          config: { expect: [add_container, inspect] }
         - type: javascript
           value: file://assertions/container-registered.ts
           config: { name: okh-eval-hub, backend: git, module: kb }

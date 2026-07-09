@@ -20,7 +20,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [onboard, config, add] }
+          config: { expect: [onboard, config, add_container] }
         - type: javascript
           value: file://assertions/wake-phrase-set.ts
         - type: javascript
