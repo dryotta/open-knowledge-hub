@@ -2,7 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolvePaths, type OkhPaths } from "../config.js";
 import { ContainerService } from "../container/service.js";
 import { loadPreferencesSync } from "../preferences.js";
-import { registerPrompts } from "./prompts.js";
 import { registerTools } from "./tools.js";
 
 export interface BuildServerOptions {
@@ -34,6 +33,5 @@ export function buildServer(options: BuildServerOptions = {}): McpServer {
     { instructions: buildInstructions(wakePhrase) },
   );
   registerTools(server, service, paths);
-  registerPrompts(server, service, paths);
   return server;
 }

@@ -54,10 +54,6 @@ function textOf(res: Awaited<ReturnType<Client["callTool"]>>): string {
     .join("\n");
 }
 
-function promptText(res: Awaited<ReturnType<Client["getPrompt"]>>): string {
-  return res.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("\n");
-}
-
 function structuredOf(res: Awaited<ReturnType<Client["callTool"]>>): Record<string, unknown> {
   return ("structuredContent" in res ? (res as { structuredContent?: Record<string, unknown> }).structuredContent : undefined) ?? {};
 }
@@ -67,13 +63,11 @@ function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 8 tools and 4 prompts", async () => {
+  it("exposes exactly the 8 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual(["add", "ask", "config", "context", "inspect", "onboard", "run", "sync"]);
-
-    const prompts = (await client.listPrompts()).prompts.map((p) => p.name).sort();
-    expect(prompts).toEqual(["ask", "context", "onboard", "run"]);
+    expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
 
   it("adding a knowledge module points at the initialize skill", async () => {
@@ -263,26 +257,16 @@ describe("MCP server surface", () => {
     expect(textOf(res)).toContain("container cannot be empty");
   });
 
-  it("the ask prompt returns discipline text pointing at resolved paths", async () => {
+  it("the ask tool returns discipline text pointing at resolved paths", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();
     cleanups.push(dir);
-
     await client.callTool({ name: "add", arguments: { source: dir, name: "hub", create: true } });
     await client.callTool({ name: "add", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
-    const res = await client.getPrompt({
-      name: "ask",
-      arguments: { container: "hub", question: "What is X?" },
-    });
-    const text = promptText(res);
+    const res = await client.callTool({ name: "ask", arguments: { container: "hub", question: "What is X?" } });
+    const text = textOf(res);
     expect(text).toContain("What is X?");
     expect(text).toContain(join(dir, "kb"));
-  });
-
-  it("exposes the onboard prompt", async () => {
-    const { client } = await connect();
-    const res = await client.getPrompt({ name: "onboard", arguments: {} });
-    expect(promptText(res)).toContain("OKH: onboard");
   });
 
   it("does not register learn, remember, or reflect tools", async () => {

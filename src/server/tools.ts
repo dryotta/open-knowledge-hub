@@ -320,10 +320,9 @@ export function registerTools(server: McpServer, service: ContainerService, path
 }
 
 /**
- * The cognitive flows, exposed as tools for clients without prompt support.
- * Like all flows they return discipline text (instructions) for the agent to
- * follow — they do not read or write on their own. `onboard` is another flow,
- * registered above alongside the operational tools.
+ * The cognitive flows, exposed as tools. Like all flows they return discipline
+ * text (instructions) for the agent to follow — they do not read or write on
+ * their own. `onboard` is another flow, registered above with the operational tools.
  */
 function registerFlowTools(server: McpServer, service: ContainerService): void {
   server.registerTool(

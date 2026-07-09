@@ -2,12 +2,9 @@ import { z } from "zod";
 
 /**
  * Single source of truth for the flows (`ask`, `context`, `onboard`, `run`).
- * Each flow is exposed BOTH as a prompt-tool (for clients without prompt
- * support) and as an MCP prompt; both must present identical content, so the
- * titles, descriptions, and argument schemas all come from here. Flows never
- * act on their own — they return discipline/instructions for the client agent
- * to follow. `run` resolves a module skill (container+module) or, with neither,
- * a module-less shared skill.
+ * Each flow is exposed as a tool. Flows never act on their own — they return
+ * discipline/instructions for the client agent to follow. `run` resolves a
+ * module skill (container+module) or, with neither, a module-less shared skill.
  */
 
 export type FlowName = "ask" | "context" | "onboard" | "run";
