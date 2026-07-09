@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { parseToolMeta, describeShape } from "../src/server/toolMeta.js";
+import { parseToolMeta, describeShape, loadToolMeta } from "../src/server/toolMeta.js";
+import { toolShapes, type ToolName } from "../src/server/toolSchemas.js";
+import type { RenderContext } from "../src/prompts/templates.js";
 
 describe("parseToolMeta", () => {
   it("parses title + args and renders the body as description", async () => {
@@ -42,4 +44,18 @@ describe("describeShape", () => {
   it("throws on an orphan description", () => {
     expect(() => describeShape({}, { a: "da" })).toThrow(/mismatch/);
   });
+});
+
+describe("every tool has complete, consistent metadata", () => {
+  const ctxFor = (name: ToolName): RenderContext | undefined =>
+    name === "config" ? { vars: { configKeys: "wakePhrase" } } : undefined;
+
+  for (const name of Object.keys(toolShapes) as ToolName[]) {
+    it(`"${name}" resource loads and its args match its schema`, async () => {
+      const m = await loadToolMeta(name, ctxFor(name));
+      expect(m.title.length).toBeGreaterThan(0);
+      expect(m.description.length).toBeGreaterThan(0);
+      expect(() => describeShape(toolShapes[name], m.args)).not.toThrow();
+    });
+  }
 });
