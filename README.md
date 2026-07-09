@@ -4,7 +4,7 @@ A minimalist [MCP](https://modelcontextprotocol.io) server that organizes all
 agent-accessible knowledge and capabilities into **containers** made of typed
 **modules**. The **hub** is the system itself; it manages your containers.
 
-It exposes two kinds of surface. **Operational tools** (`inspect`, `add`, `sync`,
+It exposes two kinds of surface. **Operational tools** (`inspect`, `add_container`, `add_module`, `sync`,
 `config`) *act* — they read state or change containers. Four **flows** (`ask`,
 `context`, `onboard`, `run`) *return instructions*: each hands your agent discipline
 text to follow. A flow never acts on its own — your agent does the reasoning and
@@ -36,7 +36,7 @@ description: Project notes   # optional
 ```
 
 The container's `name` and `sync` mode (`auto` | `pr`) are set in the **registry
-entry** at `add`-time, not in a per-container file.
+entry** at `add_container`-time, not in a per-container file.
 
 ### Type skills
 Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `memory`
@@ -57,7 +57,8 @@ These read state or change containers directly.
 | Tool | Args | Purpose |
 | --- | --- | --- |
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
-| `add` | `source,name?,sync?,backend?,create?` or `container,path,type,name,description?,config?,create?` | Register a container, or add a module (`name` required for modules). Returns a plan unless `create:true`. |
+| `add_container` | `source`, `name?`, `sync?`, `backend?`, `create?` | Register a container. Returns a plan unless `create:true`. |
+| `add_module` | `container`, `path`, `type`, `name`, `description?`, `config?`, `create?` | Add a typed module to a container. Returns a plan unless `create:true`. |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 
@@ -110,8 +111,8 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 
 ## Typical usage
 
-- `add { source: "https://github.com/me/my-notes.git", name: "my-notes" }` → clone + register a container.
-- `add { container: "my-notes", path: "kb", type: "knowledge", name: "kb" }` → add a module.
+- `add_container { source: "https://github.com/me/my-notes.git", name: "my-notes" }` → clone + register a container.
+- `add_module { container: "my-notes", path: "kb", type: "knowledge", name: "kb" }` → add a module.
 - `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
   folds knowledge in, then `sync { container: "my-notes" }` commits+pushes (or opens a PR).
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.

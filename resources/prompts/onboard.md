@@ -47,10 +47,10 @@ Then offer to set up their first container. Ask which they want:
 - a brand-new folder to create from scratch,
 - a git repository (GitHub) to clone.
 
-Call `add`. Remember: `add` returns a *plan* and makes no changes by default. Show
-the plan, get an explicit "yes", then call `add` again with `create: true`. After
-the container exists, offer to add a `knowledge` module (and others as needed) the
-same way.
+Call `add_container`. Remember: it returns a *plan* and makes no changes by default.
+Show the plan, get an explicit "yes", then call `add_container` again with
+`create: true`. After the container exists, offer to add a `knowledge` module (and
+others as needed) with `add_module` the same way (plan first, then `create: true`).
 
 When a `knowledge` module is created, run its `initialize` skill
 (`run { container, module, skill: "initialize" }`) to survey the target repo into a

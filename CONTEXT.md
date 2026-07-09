@@ -23,7 +23,7 @@ local/onedrive folders are registered in place by path.
 The per-machine set of registered containers: `$OKH_HOME/registry.json` (default
 `~/.open-knowledge-hub/registry.json`). Each entry has a `name`, `backend`, `sync`
 mode (`auto` | `pr`), optional `origin` (git), and `localPath`. Container `name`
-and `sync` are set at `add`-time, not in a per-container file.
+and `sync` are set at `add_container`-time, not in a per-container file.
 
 ### Module manifest (`<module>/.okh/module.yaml`)
 Each module folder carries a manifest with `type`, `name`, `description` (optional),
@@ -58,7 +58,7 @@ prompt-tools (identical content).
 ## Runtime & surface
 - TypeScript on `@modelcontextprotocol/sdk`, `zod`, `yaml`; run via `npx`. Requires
   `git`; `gh` only for `pr`-mode containers. See ADR-0001, 0002, 0004.
-- Operational tools (act on state): `inspect`, `add`, `sync`, `config`.
+- Operational tools (act on state): `inspect`, `add_container`, `add_module`, `sync`, `config`.
 - Flows (return discipline/instructions, never act): `ask`, `context`, `onboard`,
   `run`. Each is exposed as a prompt-tool and as an MCP prompt with identical
   content.
