@@ -1,3 +1,12 @@
+# OKH: context
+
+**Task:** {{var:task}}
+
+**Available targets:**
+{{var:targets}}
+
+<discipline name="context">
+
 # Discipline: context
 
 Assemble a compact, task-relevant working set from your containers before acting.
@@ -22,3 +31,5 @@ Do NOT dump whole modules into context.
 
 Output a concise brief the agent can act on — not a transcript of file contents.
 Include the applicable skills and tools by path, not just knowledge concepts.
+
+</discipline>

@@ -1,3 +1,12 @@
+# OKH: onboard
+
+**Wake phrase:** `{{config:wakePhrase}}`
+
+**Current containers:**
+{{var:targets}}
+
+<discipline name="onboard">
+
 # Onboarding a new user
 
 You are guiding someone who just installed Open Knowledge Hub. Keep it brief and
@@ -62,3 +71,5 @@ Point them at USAGE.md for the full list. Finally, ask them to restart their age
 (MCP client) so the new wake phrase and any config changes load properly.
 
 Never create folders, initialize manifests, or sync without explicit confirmation.
+
+</discipline>

@@ -1,3 +1,17 @@
+# OKH: ask
+
+**Question:** {{var:question}}
+
+**Scan these targets:**
+{{var:targets}}
+
+Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
+relevant module(s), starting from each module's overview (knowledge: index.md;
+skills/tools: the listing; memory/project: recent files). Return a distilled,
+**cited** answer. Do not load whole modules into this context.
+
+<discipline name="ask">
+
 # OKF Ask
 
 **Answer questions from a *knowledge pack*** (an
@@ -64,3 +78,5 @@ context — each ask is a fresh, cheap fork.
   `⚠️ UNVERIFIED` flags preserved.
 - Coverage is stated honestly: answered, partial (gap named), or out of scope — no invented facts.
 - The answer ends with concrete next steps when further questions remain.
+
+</discipline>
