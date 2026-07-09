@@ -19,6 +19,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Mcp
     { name: "open-knowledge-hub", version: "0.2.0" },
     { instructions: await buildInstructions(prefs as unknown as Record<string, unknown>) },
   );
-  registerTools(server, service, paths);
+  await registerTools(server, service, paths);
   return server;
 }

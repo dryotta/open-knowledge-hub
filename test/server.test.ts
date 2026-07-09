@@ -70,6 +70,16 @@ describe("MCP server surface", () => {
     expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
 
+  it("tool titles/descriptions load from resources", async () => {
+    const { client } = await connect();
+    const tools = (await client.listTools()).tools;
+    const add = tools.find((t) => t.name === "add")!;
+    expect(add.description).toContain("returns a plan and makes no changes");
+    const config = tools.find((t) => t.name === "config")!;
+    expect(config.description).toContain("Known keys:");
+    expect(config.description).not.toContain("{{");
+  });
+
   it("adding a knowledge module points at the initialize skill", async () => {
     const { client } = await connect();
     const source = await makeTempDir();

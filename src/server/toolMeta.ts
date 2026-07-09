@@ -51,7 +51,7 @@ export async function loadToolMeta(name: string, ctx?: RenderContext): Promise<T
 }
 
 /** Apply arg descriptions to a Zod shape; throw if the shape keys and arg keys differ. */
-export function describeShape(shape: ZodRawShape, args: Record<string, string>): ZodRawShape {
+export function describeShape<S extends ZodRawShape>(shape: S, args: Record<string, string>): S {
   const shapeKeys = Object.keys(shape).sort();
   const argKeys = Object.keys(args).sort();
   if (shapeKeys.length !== argKeys.length || shapeKeys.some((k, i) => k !== argKeys[i])) {
@@ -61,5 +61,5 @@ export function describeShape(shape: ZodRawShape, args: Record<string, string>):
   for (const [k, schema] of Object.entries(shape)) {
     out[k] = (schema as import("zod").ZodTypeAny).describe(args[k]!);
   }
-  return out;
+  return out as unknown as S;
 }

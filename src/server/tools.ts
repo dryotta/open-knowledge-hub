@@ -19,7 +19,14 @@ import {
   type Preferences,
 } from "../preferences.js";
 import { buildAsk, buildContext, buildOnboard, buildRun, buildSharedRun } from "../prompts/index.js";
-import { flowArgShapes, flowMeta } from "../prompts/meta.js";
+import { loadToolMeta, describeShape } from "./toolMeta.js";
+import { toolShapes, type ToolName } from "./toolSchemas.js";
+import type { RenderContext } from "../prompts/templates.js";
+
+async function toolReg<N extends ToolName>(name: N, ctx?: RenderContext) {
+  const m = await loadToolMeta(name, ctx);
+  return { title: m.title, description: m.description, inputSchema: describeShape(toolShapes[name], m.args) };
+}
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
   return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
@@ -133,19 +140,10 @@ function describeConfigError(err: z.ZodError): string {
 }
 
 /** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the flows. */
-export function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): void {
+export async function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): Promise<void> {
   server.registerTool(
     "inspect",
-    {
-      title: "Inspect containers/modules",
-      description:
-        "List registered containers (no args), a container's modules + status (container), or a module's items (container + module).",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        container: z.string().optional().describe("Container name to inspect."),
-        module: z.string().optional().describe("Module path within the container."),
-      },
-    },
+    { ...(await toolReg("inspect")), annotations: { readOnlyHint: true } },
     handler(async (args: { container?: string; module?: string }) => {
       if (args.module !== undefined && args.container === undefined) {
         return fail("Inspecting a module requires { container, module }.");
@@ -159,26 +157,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
 
   server.registerTool(
     "add",
-    {
-      title: "Add a container or module",
-      description:
-        "Add a container with { source, name?, sync?, backend? } (source is a git URL or a local/OneDrive path), " +
-        "or add a module with { container, path, type, config? }. " +
-        "By default add returns a plan and makes no changes; show it to the user, get confirmation, then re-call with create:true.",
-      annotations: { openWorldHint: true },
-      inputSchema: {
-        source: z.string().optional().describe("Git URL or local/OneDrive path (new container)."),
-        name: z.string().optional().describe("Container name (defaults to the source basename) or module display name."),
-        sync: z.enum(["auto", "pr"]).optional().describe("Git write mode for a new container."),
-        backend: z.enum(["local", "onedrive"]).optional().describe("Label a path source as local or onedrive."),
-        container: z.string().optional().describe("Target container (new module)."),
-        path: z.string().optional().describe("Module folder path within the container (new module)."),
-        type: z.string().min(1).optional().describe("Module type: a built-in (knowledge, skills, tools, memory, project) or a custom type name (new module)."),
-        description: z.string().optional().describe("One-line module description (new module)."),
-        config: z.record(z.string(), z.unknown()).optional().describe("Optional module config."),
-        create: z.boolean().optional().describe("Apply the change. Omit to preview a plan (no changes)."),
-      },
-    },
+    { ...(await toolReg("add")), annotations: { openWorldHint: true } },
     handler(
       async (args: {
         source?: string;
@@ -245,16 +224,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
 
   server.registerTool(
     "sync",
-    {
-      title: "Sync containers",
-      description:
-        "Validate and synchronize a container (or all containers). Git containers commit+push (auto) or open a PR (pr).",
-      annotations: { openWorldHint: true },
-      inputSchema: {
-        container: z.string().optional().describe("Container to sync (default: all)."),
-        message: z.string().optional().describe("Commit/PR message."),
-      },
-    },
+    { ...(await toolReg("sync")), annotations: { openWorldHint: true } },
     handler(async (args: { container?: string; message?: string }) => {
       if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
       const results = await service.sync(args.container, args.message);
@@ -264,20 +234,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
 
   server.registerTool(
     "config",
-    {
-      title: "Config (view or change settings)",
-      description:
-        "View or change OKH configuration (stored in preferences.json). Call with no args to list current " +
-        "settings; pass { set: { <key>: <value> } } to change one or more. Known keys: " +
-        `${configKeys.join(", ")}.`,
-      annotations: { readOnlyHint: false, openWorldHint: false },
-      inputSchema: {
-        set: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe('Config keys to set, e.g. { wakePhrase: "brain" }. Omit to list current config.'),
-      },
-    },
+    { ...(await toolReg("config", { vars: { configKeys: configKeys.join(", ") } })), annotations: { readOnlyHint: false, openWorldHint: false } },
     handler(async (args: { set?: Record<string, unknown> }) => {
       if (args.set === undefined) {
         const prefs = await loadPreferences(paths);
@@ -303,12 +260,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
 
   server.registerTool(
     "onboard",
-    {
-      title: flowMeta.onboard.title,
-      description: flowMeta.onboard.description,
-      annotations: { readOnlyHint: true, openWorldHint: false },
-      inputSchema: flowArgShapes.onboard,
-    },
+    { ...(await toolReg("onboard")), annotations: { readOnlyHint: true, openWorldHint: false } },
     handler(async () => {
       const { wakePhrase } = await loadPreferences(paths);
       const targets = await service.resolveTargets();
@@ -316,7 +268,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
     }),
   );
 
-  registerFlowTools(server, service);
+  await registerFlowTools(server, service);
 }
 
 /**
@@ -324,15 +276,10 @@ export function registerTools(server: McpServer, service: ContainerService, path
  * text (instructions) for the agent to follow — they do not read or write on
  * their own. `onboard` is another flow, registered above with the operational tools.
  */
-function registerFlowTools(server: McpServer, service: ContainerService): void {
+async function registerFlowTools(server: McpServer, service: ContainerService): Promise<void> {
   server.registerTool(
     "ask",
-    {
-      title: flowMeta.ask.title,
-      description: flowMeta.ask.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.ask,
-    },
+    { ...(await toolReg("ask")), annotations: { readOnlyHint: true } },
     handler(async (args: { container?: string; module?: string; question?: string }) => {
       const targets = await service.resolveTargets(args.container, args.module);
       return ok(await buildAsk(targets, args.question));
@@ -341,12 +288,7 @@ function registerFlowTools(server: McpServer, service: ContainerService): void {
 
   server.registerTool(
     "context",
-    {
-      title: flowMeta.context.title,
-      description: flowMeta.context.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.context,
-    },
+    { ...(await toolReg("context")), annotations: { readOnlyHint: true } },
     handler(async (args: { container?: string; task?: string }) => {
       const targets = await service.resolveTargets(args.container);
       return ok(await buildContext(targets, args.task));
@@ -355,12 +297,7 @@ function registerFlowTools(server: McpServer, service: ContainerService): void {
 
   server.registerTool(
     "run",
-    {
-      title: flowMeta.run.title,
-      description: flowMeta.run.description,
-      annotations: { readOnlyHint: true },
-      inputSchema: flowArgShapes.run,
-    },
+    { ...(await toolReg("run")), annotations: { readOnlyHint: true } },
     handler(async (args: { container?: string; module?: string; skill: string; input?: string }) => {
       const hasContainer = args.container !== undefined && !isBlank(args.container);
       const hasModule = args.module !== undefined && !isBlank(args.module);
