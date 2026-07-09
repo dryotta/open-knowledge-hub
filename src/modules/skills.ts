@@ -59,10 +59,10 @@ export async function discoverModuleSkills(moduleRoot: string): Promise<Skill[]>
 }
 
 /** Discover vendored skills for a built-in type from an absolute vendored dir. */
-export async function discoverVendoredSkills(vendoredDir: string): Promise<Skill[]> {
+export async function discoverVendoredSkills(vendoredDir: string, source = "vendored"): Promise<Skill[]> {
   const out: Skill[] = [];
   for (const name of await subdirNames(vendoredDir)) {
-    const s = await readSkill(join(vendoredDir, name), "vendored");
+    const s = await readSkill(join(vendoredDir, name), source);
     if (s) out.push(s);
   }
   return out;
