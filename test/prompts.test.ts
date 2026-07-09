@@ -3,8 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { loadPrompt } from "../src/prompts/prompts.js";
-import { buildAsk, buildContext, buildRun, buildSharedRun } from "../src/prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun, buildSharedRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -12,26 +11,6 @@ class FakeGh { async createRepo(){return "x";} async createPr(){return "x";} }
 const cleanups: string[] = [];
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
-});
-
-describe("prompt loader", () => {
-  it("loads the ask prompt", async () => {
-    const text = await loadPrompt("ask");
-    expect(text.length).toBeGreaterThan(0);
-  });
-
-  it("loads the context prompt", async () => {
-    expect(await loadPrompt("context")).toMatch(/working set/i);
-  });
-
-  it("onboard prompt is staged and routes wake-phrase changes to config", async () => {
-    const text = await loadPrompt("onboard");
-    expect(text).toMatch(/Stage 1/);
-    expect(text).toMatch(/Stage 2/);
-    expect(text).toMatch(/Stage 3/);
-    expect(text).toContain("config { set: { wakePhrase");
-    expect(text).not.toContain("onboard { wakePhrase");
-  });
 });
 
 describe("resolveTargets", () => {
@@ -74,11 +53,18 @@ describe("prompt builders", () => {
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
   });
-  it("buildRun embeds skill name, body, module path, and write policy", () => {
+  it("onboard includes staged guidance, the wake phrase, and config routing", async () => {
+    const text = await buildOnboard(targets, { wakePhrase: "sam" });
+    expect(text).toContain("sam");
+    expect(text).toMatch(/Stage 1/);
+    expect(text).toContain("config { set: { wakePhrase");
+    expect(text).not.toContain("onboard { wakePhrase");
+  });
+  it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;
     const mod: ResolvedModule = target.modules[1]!;
     const skill: Skill = { name: "remember", description: "Record an observation", body: "Append-only timestamped entries.", source: "vendored" };
-    const text = buildRun(target, mod, skill, "Observed X");
+    const text = await buildRun(target, mod, skill, "Observed X");
     expect(text).toContain("remember");
     expect(text).toContain("Append-only timestamped entries.");
     expect(text).toContain("mem");

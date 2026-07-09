@@ -312,7 +312,7 @@ export function registerTools(server: McpServer, service: ContainerService, path
     handler(async () => {
       const { wakePhrase } = await loadPreferences(paths);
       const targets = await service.resolveTargets();
-      return ok(await buildOnboard(targets, wakePhrase));
+      return ok(await buildOnboard(targets, { wakePhrase }));
     }),
   );
 
@@ -376,7 +376,7 @@ function registerFlowTools(server: McpServer, service: ContainerService): void {
       const target = targets[0];
       const mod = target?.modules.find((m) => m.path === args.module);
       if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
-      return ok(buildRun(target, mod, skill, args.input));
+      return ok(await buildRun(target, mod, skill, args.input));
     }),
   );
 }
