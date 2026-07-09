@@ -4,7 +4,7 @@ import type { ContainerService, ResolvedContainer } from "../container/service.j
 import type { OkhPaths } from "../config.js";
 import { isOkhError } from "../errors.js";
 import { loadPreferences } from "../preferences.js";
-import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun, buildSharedRun } from "../prompts/index.js";
 import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function message(text: string): GetPromptResult {
@@ -60,8 +60,17 @@ export function registerPrompts(server: McpServer, service: ContainerService, pa
     },
     async (args) => {
       try {
-        const skill = await service.resolveSkill(args.container, args.module, args.skill);
-        const targets = await service.resolveTargets(args.container, args.module);
+        const hasContainer = args.container !== undefined && args.container.trim().length > 0;
+        const hasModule = args.module !== undefined && args.module.trim().length > 0;
+        if (hasContainer !== hasModule) {
+          return message("Cannot start this flow: run needs both container and module, or neither (shared skill).");
+        }
+        if (!hasContainer) {
+          const skill = await service.resolveSharedSkill(args.skill);
+          return message(await buildSharedRun(skill, args.input));
+        }
+        const skill = await service.resolveSkill(args.container!, args.module!, args.skill);
+        const targets = await service.resolveTargets(args.container!, args.module!);
         const target = targets[0];
         const mod = target?.modules.find((m) => m.path === args.module);
         if (!target || !mod) {

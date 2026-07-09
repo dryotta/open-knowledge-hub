@@ -42,3 +42,12 @@ describe("effective skills + resolveSkill", () => {
     expect(skills.map((s) => s.name)).toEqual(["cook"]);
   });
 });
+
+describe("shared skills", () => {
+  it("resolveSharedSkill returns the grilling body; unknown throws with a list", async () => {
+    const { svc } = await setup();
+    const s = await svc.resolveSharedSkill("grilling");
+    expect(s.body.length).toBeGreaterThan(0);
+    await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
+  });
+});

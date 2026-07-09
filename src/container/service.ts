@@ -29,6 +29,7 @@ import { type Item } from "../modules/types.js";
 import { type SyncMode } from "../registry/schema.js";
 import { getLoader } from "../modules/registry.js";
 import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
+import { resolveSharedSkill as resolveShared } from "../modules/shared.js";
 import { vendoredSkills } from "../modules/vendored.js";
 
 const modulePathString = z
@@ -397,6 +398,11 @@ export class ContainerService {
       throw new OkhError("NOT_FOUND", `Module "${module}" has no skill "${skill}". Available: ${names}.`);
     }
     return found;
+  }
+
+  /** Resolve a module-less shared skill by name (runnable via run with no container/module). */
+  resolveSharedSkill(name: string): Promise<Skill> {
+    return resolveShared(name);
   }
 
   async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {

@@ -18,7 +18,7 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun, buildSharedRun } from "../prompts/index.js";
 import { flowArgShapes, flowMeta } from "../prompts/meta.js";
 
 function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
@@ -357,9 +357,18 @@ function registerFlowTools(server: McpServer, service: ContainerService): void {
       annotations: { readOnlyHint: true },
       inputSchema: flowArgShapes.run,
     },
-    handler(async (args: { container: string; module: string; skill: string; input?: string }) => {
-      const skill = await service.resolveSkill(args.container, args.module, args.skill);
-      const targets = await service.resolveTargets(args.container, args.module);
+    handler(async (args: { container?: string; module?: string; skill: string; input?: string }) => {
+      const hasContainer = args.container !== undefined && !isBlank(args.container);
+      const hasModule = args.module !== undefined && !isBlank(args.module);
+      if (hasContainer !== hasModule) {
+        return fail("run needs both container and module (module skill), or neither (shared skill).");
+      }
+      if (!hasContainer) {
+        const skill = await service.resolveSharedSkill(args.skill);
+        return ok(await buildSharedRun(skill, args.input));
+      }
+      const skill = await service.resolveSkill(args.container!, args.module!, args.skill);
+      const targets = await service.resolveTargets(args.container!, args.module!);
       const target = targets[0];
       const mod = target?.modules.find((m) => m.path === args.module);
       if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);

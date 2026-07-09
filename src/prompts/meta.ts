@@ -6,7 +6,8 @@ import { z } from "zod";
  * support) and as an MCP prompt; both must present identical content, so the
  * titles, descriptions, and argument schemas all come from here. Flows never
  * act on their own — they return discipline/instructions for the client agent
- * to follow.
+ * to follow. `run` resolves a module skill (container+module) or, with neither,
+ * a module-less shared skill.
  */
 
 export type FlowName = "ask" | "context" | "onboard" | "run";
@@ -28,9 +29,9 @@ export const flowArgShapes = {
   context: { container, task: z.string().optional().describe(argDescriptions.task) },
   onboard: {},
   run: {
-    container: z.string().describe("Container name."),
-    module: z.string().describe("Module path within the container."),
-    skill: z.string().describe("Skill name to run (see inspect for the module's skills)."),
+    container: z.string().optional().describe("Container name. Provide with module to run a module skill; omit both to run a shared skill."),
+    module: z.string().optional().describe("Module path within the container. Provide with container; omit both to run a shared skill."),
+    skill: z.string().describe("Skill name to run: a module skill (with container+module) or a shared skill (see the referencing skill, e.g. grilling, okf-writer)."),
     input: z.string().optional().describe("Freeform payload passed to the skill (e.g. the knowledge to learn, the observation to remember)."),
   },
 } as const;

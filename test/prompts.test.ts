@@ -4,7 +4,7 @@ import { ContainerService, type ResolvedContainer, type ResolvedModule } from ".
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { loadPrompt } from "../src/prompts/prompts.js";
-import { buildAsk, buildContext, buildRun } from "../src/prompts/index.js";
+import { buildAsk, buildContext, buildRun, buildSharedRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -84,5 +84,13 @@ describe("prompt builders", () => {
     expect(text).toContain("mem");
     expect(text).toContain("Write policy");
     expect(text).toContain("Observed X");
+  });
+  it("buildSharedRun embeds a module-less shared skill and its resource paths", async () => {
+    const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
+    const text = await buildSharedRun(skill, "Draft the auth pack");
+    expect(text).toContain("okf-writer");
+    expect(text).toContain("Write cited concepts.");
+    expect(text).toContain("Draft the auth pack");
+    expect(text).not.toContain("Write policy");
   });
 });

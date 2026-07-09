@@ -1,4 +1,5 @@
 import type { ResolvedContainer, ResolvedModule } from "../container/service.js";
+import { skillResourcePaths } from "../modules/shared.js";
 import type { Skill } from "../modules/skills.js";
 import { loadPrompt } from "./prompts.js";
 
@@ -77,6 +78,23 @@ ${skill.body}
 </discipline>
 
 ${WRITE_POLICY}`;
+}
+
+export async function buildSharedRun(skill: Skill, input?: string): Promise<string> {
+  const resources = await skillResourcePaths(skill);
+  const resourceBlock = resources.length
+    ? `\n**Skill resources (open as needed):**\n${resources.map((p) => `- \`${p}\``).join("\n")}\n`
+    : "";
+  return `# OKH: run — ${skill.name} (shared)
+
+**Skill:** ${skill.name} — ${skill.description}
+**Input:** ${input ?? "(none provided — clarify with the user)"}
+${resourceBlock}
+<discipline name="${skill.name}">
+
+${skill.body}
+
+</discipline>`;
 }
 
 export async function buildOnboard(targets: ResolvedContainer[], wakePhrase: string): Promise<string> {
