@@ -52,6 +52,7 @@ same phrase (client-specific).
 - **Context:** `hub, assemble the context I need to build a login feature.`
 - **Reflect:** `hub, run reflect on my memory module.`
 - **Sync:** `hub, sync my container.` (commit + push) or `hub, open a PR with my changes.`
+- **Shared skill (no module):** `hub, run the grilling skill to stress-test my plan.` — shared skills (`grilling`, `okf-writer`) run via `run { skill }` with no container/module.
 
 `run` flows (`learn`, `remember`, `reflect`) are module skills — your agent follows
 the returned instructions, edits files locally, and asks before syncing. `sync`

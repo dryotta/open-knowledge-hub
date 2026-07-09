@@ -29,9 +29,11 @@ and `sync` are set at `add`-time, not in a per-container file.
 Each module folder carries a manifest with `type`, `name`, `description` (optional),
 and `config` (optional). The hub auto-discovers modules by scanning the container
 for these manifests — a folder is a module iff it has `.okh/module.yaml`.
-Built-in types ship vendored skills (`knowledge` → `learn`; `memory` → `remember`,
-`reflect`). Module-local skills are discovered from `.okh/skills/` and common
-external roots like `.claude/skills/`. `.okh/` is reserved for OKH state.
+Built-in types ship vendored skills (`knowledge` → `learn`, `initialize`; `memory` →
+`remember`, `reflect`). Module-local skills are discovered from `.okh/skills/` and
+common external roots like `.claude/skills/`. Shared, module-less skills (`grilling`,
+`okf-writer`) live under `resources/shared/skills/` and run via `run { skill }` with
+no container/module. `.okh/` is reserved for OKH state.
 
 ### Module
 A self-contained typed subfolder with its own `.okh/module.yaml`. Built-in types:

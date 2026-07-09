@@ -39,10 +39,12 @@ The container's `name` and `sync` mode (`auto` | `pr`) are set in the **registry
 entry** at `add`-time, not in a per-container file.
 
 ### Type skills
-Built-in types ship vendored skills: `knowledge` → `learn`; `memory` →
-`remember`, `reflect`. A module's effective skill set = vendored (for its type)
-∪ module-local skills (discovered from `.okh/skills/` and common roots like
-`.claude/skills/`). Skills use the standard `SKILL.md` format.
+Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `memory`
+→ `remember`, `reflect` (under `resources/module-types/<type>/skills/`). A module's
+effective skill set = vendored (for its type) ∪ module-local skills (discovered from
+`.okh/skills/` and common roots like `.claude/skills/`). Shared, module-less skills
+(`grilling`, `okf-writer`) live under `resources/shared/skills/` and run via
+`run { skill }` with no container/module. Skills use the standard `SKILL.md` format.
 
 ## MCP surface
 

@@ -41,8 +41,8 @@ Instruct the sub-agent to:
      not invent an answer.
 5. **Suggest next steps** whenever the question opens further ones — follow-up questions worth
    asking, related concepts in the pack to explore next, or, when the answer is missing/partial,
-   pointing at `okf-learn` to teach the pack the new knowledge (or `okf-new-from-repo` if the
-   pack is the wrong scope entirely).
+   pointing at the knowledge module's `learn` skill to teach it the new knowledge (or the
+   `initialize` skill if the module needs a fresh scope entirely).
 
 ### Stage 3 — Relay the distilled answer
 
@@ -51,9 +51,9 @@ Return the sub-agent's answer to the user largely as-is. Structure it as:
 - **Answer** — per question, with its citations.
 - **Confidence / coverage** — fully answered, partial (with the gap named), or out of scope.
 - **Next steps** — suggested follow-up questions and, where relevant, the skill to use
-  (`okf-ask` again for follow-ups, `okf-learn` to fill a gap).
+  (ask again for follow-ups, the `learn` skill to fill a gap).
 
-If a follow-up question arises, run `okf-ask` again rather than holding the bundle open in
+If a follow-up question arises, ask again rather than holding the bundle open in
 context — each ask is a fresh, cheap fork.
 
 ## Completion criterion
