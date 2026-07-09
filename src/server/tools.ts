@@ -139,7 +139,7 @@ function describeConfigError(err: z.ZodError): string {
   return `Invalid value for "${key}": ${first?.message ?? "invalid value"}.`;
 }
 
-/** Register the four operational tools (`inspect`, `add`, `sync`, `config`) plus the flows. */
+/** Register the operational tools (`inspect`, `add_container`, `add_module`, `sync`, `config`) plus the flows. */
 export async function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): Promise<void> {
   server.registerTool(
     "inspect",
@@ -156,70 +156,50 @@ export async function registerTools(server: McpServer, service: ContainerService
   );
 
   server.registerTool(
-    "add",
-    { ...(await toolReg("add")), annotations: { openWorldHint: true } },
-    handler(
-      async (args: {
-        source?: string;
-        name?: string;
-        sync?: "auto" | "pr";
-        backend?: "local" | "onedrive";
-        container?: string;
-        path?: string;
-        type?: string;
-        description?: string;
-        config?: Record<string, unknown>;
-        create?: boolean;
-      }) => {
-        const hasSource = args.source !== undefined;
-        const hasModuleFields =
-          args.container !== undefined || args.path !== undefined || args.type !== undefined || args.description !== undefined || args.config !== undefined;
-        if (hasSource && hasModuleFields) {
-          return fail("add requires either { source } or { container, path, type }, not both.");
-        }
-        if (args.source !== undefined) {
-          if (isBlank(args.source)) return fail("source cannot be empty.");
-          const outcome = await service.addContainer({
-            source: args.source,
-            ...(args.name ? { name: args.name } : {}),
-            ...(args.sync ? { sync: args.sync } : {}),
-            ...(args.backend ? { backend: args.backend } : {}),
-            ...(args.create ? { create: true } : {}),
-          });
-          if (outcome.kind === "plan") {
-            return ok(formatContainerPlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
-          }
-          return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
-        }
-        if (hasModuleFields) {
-          if (args.container === undefined || args.path === undefined || args.type === undefined || args.name === undefined) {
-            return fail("Adding a module requires { container, path, type, name }.");
-          }
-          if (isBlank(args.container)) return fail("container cannot be empty.");
-          if (isBlank(args.path)) return fail("path cannot be empty.");
-          if (isBlank(args.name)) return fail("name cannot be empty.");
-          const outcome = await service.addModule({
-            container: args.container,
-            path: args.path,
-            type: args.type,
-            name: args.name,
-            ...(args.description !== undefined ? { description: args.description } : {}),
-            ...(args.config ? { config: args.config } : {}),
-            ...(args.create ? { create: true } : {}),
-          });
-          if (outcome.kind === "plan") {
-            return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
-          }
-          const added = `Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
-          const next =
-            outcome.entry.type === "knowledge"
-              ? ` Next, populate it by running the initialize skill: run { container: "${args.container}", module: "${outcome.entry.path}", skill: "initialize" }.`
-              : "";
-          return ok(added + next, { entry: outcome.entry });
-        }
-        return fail("add requires either { source } (new container) or { container, path, type, name } (new module).");
-      },
-    ),
+    "add_container",
+    { ...(await toolReg("add_container")), annotations: { openWorldHint: true } },
+    handler(async (args: { source: string; name?: string; sync?: "auto" | "pr"; backend?: "local" | "onedrive"; create?: boolean }) => {
+      if (isBlank(args.source)) return fail("source cannot be empty.");
+      const outcome = await service.addContainer({
+        source: args.source,
+        ...(args.name ? { name: args.name } : {}),
+        ...(args.sync ? { sync: args.sync } : {}),
+        ...(args.backend ? { backend: args.backend } : {}),
+        ...(args.create ? { create: true } : {}),
+      });
+      if (outcome.kind === "plan") {
+        return ok(formatContainerPlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
+      }
+      return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
+    }),
+  );
+
+  server.registerTool(
+    "add_module",
+    { ...(await toolReg("add_module")), annotations: { openWorldHint: true } },
+    handler(async (args: { container: string; path: string; type: string; name: string; description?: string; config?: Record<string, unknown>; create?: boolean }) => {
+      if (isBlank(args.container)) return fail("container cannot be empty.");
+      if (isBlank(args.path)) return fail("path cannot be empty.");
+      if (isBlank(args.name)) return fail("name cannot be empty.");
+      const outcome = await service.addModule({
+        container: args.container,
+        path: args.path,
+        type: args.type,
+        name: args.name,
+        ...(args.description !== undefined ? { description: args.description } : {}),
+        ...(args.config ? { config: args.config } : {}),
+        ...(args.create ? { create: true } : {}),
+      });
+      if (outcome.kind === "plan") {
+        return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
+      }
+      const added = `Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
+      const next =
+        outcome.entry.type === "knowledge"
+          ? ` Next, populate it by running the initialize skill: run { container: "${args.container}", module: "${outcome.entry.path}", skill: "initialize" }.`
+          : "";
+      return ok(added + next, { entry: outcome.entry });
+    }),
   );
 
   server.registerTool(

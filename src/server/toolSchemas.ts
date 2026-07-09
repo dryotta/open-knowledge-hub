@@ -6,14 +6,18 @@ const moduleArg = z.string().optional();
 /** Bare Zod arg shapes for every tool; descriptions come from resources/tool-meta/<name>.md. */
 export const toolShapes = {
   inspect: { container, module: moduleArg },
-  add: {
-    source: z.string().optional(),
+  add_container: {
+    source: z.string(),
     name: z.string().optional(),
     sync: z.enum(["auto", "pr"]).optional(),
     backend: z.enum(["local", "onedrive"]).optional(),
-    container,
-    path: z.string().optional(),
-    type: z.string().min(1).optional(),
+    create: z.boolean().optional(),
+  },
+  add_module: {
+    container: z.string(),
+    path: z.string(),
+    type: z.string().min(1),
+    name: z.string(),
     description: z.string().optional(),
     config: z.record(z.string(), z.unknown()).optional(),
     create: z.boolean().optional(),
