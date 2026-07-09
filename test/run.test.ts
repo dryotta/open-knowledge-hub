@@ -33,6 +33,13 @@ describe("effective skills + resolveSkill", () => {
     await expect(svc.resolveSkill("h", "mem", "nope")).rejects.toThrow(/remember|reflect/);
   });
 
+  it("knowledge type exposes learn + initialize", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "kb"), { type: "knowledge", name: "KB", description: "" });
+    const names = (await svc.effectiveSkills("h", "kb")).map((s) => s.name).sort();
+    expect(names).toEqual(["initialize", "learn"]);
+  });
+
   it("custom module exposes only its module-local skills", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "recipes"), { type: "recipes", name: "Food", description: "" });
