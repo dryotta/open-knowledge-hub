@@ -19,7 +19,7 @@ const EXPECTED_COUNTS: Record<string, number> = {
   reflect: 1,
   onboard: 7,
   inspect: 1,
-  run: 1,
+  run: 2,
 };
 
 /** Every scenario config file (verb/<name>.yaml), skipping the shared/ folder. */
@@ -59,9 +59,9 @@ describe("promptfooconfig.yaml (single default)", () => {
 });
 
 describe("scenario configs", () => {
-  it("provides 19 scenario files across the expected verb folders", async () => {
+  it("provides 20 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
-    expect(files.length).toBe(19);
+    expect(files.length).toBe(20);
     const counts: Record<string, number> = {};
     for (const f of files) {
       const verb = f.split("/")[0];

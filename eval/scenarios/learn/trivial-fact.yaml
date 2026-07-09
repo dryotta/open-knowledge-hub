@@ -19,4 +19,4 @@
           config:
             criteria:
               - id: rejects-trivial
-                text: The okf-learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.
+                text: The learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.

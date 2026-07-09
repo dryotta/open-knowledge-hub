@@ -305,7 +305,7 @@ checklist says what to look for); the deterministic assertions run in `npm run e
 
   Expect: writes a valid OKF concept and `sync` commits **and pushes** to the bare origin
   (`git-committed` verifies it). The sibling "reject" test ("the sky is blue") should be
-  **rejected** by the okf-learn gate (`module-unchanged` verifies nothing changed).
+  **rejected** by the learn gate (`module-unchanged` verifies nothing changed).
 
 - **remember** (env `local-and-git`):
   > Remember this observation in container "kb-hub": "The login endpoint returned 500s for
