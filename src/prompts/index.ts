@@ -1,6 +1,6 @@
 import type { ResolvedContainer, ResolvedModule } from "../container/service.js";
 import type { Skill } from "../modules/skills.js";
-import { combineOkf, loadDiscipline } from "./discipline.js";
+import { loadPrompt } from "./prompts.js";
 
 const WRITE_POLICY = `## Write policy
 
@@ -26,7 +26,7 @@ function renderTargets(targets: ResolvedContainer[]): string {
 }
 
 export async function buildAsk(targets: ResolvedContainer[], question?: string): Promise<string> {
-  const discipline = await combineOkf(["okf-ask"]);
+  const discipline = await loadPrompt("ask");
   return `# OKH: ask
 
 **Question:** ${question ?? "(none provided — clarify with the user)"}
@@ -34,16 +34,20 @@ export async function buildAsk(targets: ResolvedContainer[], question?: string):
 **Scan these targets:**
 ${renderTargets(targets)}
 
-Answer using the \`okf-ask\` discipline: fork a fresh sub-agent that reads only the
+Answer using the \`ask\` discipline: fork a fresh sub-agent that reads only the
 relevant module(s), starting from each module's overview (knowledge: index.md;
 skills/tools: the listing; memory/project: recent files). Return a distilled,
 **cited** answer. Do not load whole modules into this context.
 
-${discipline}`;
+<discipline name="ask">
+
+${discipline}
+
+</discipline>`;
 }
 
 export async function buildContext(targets: ResolvedContainer[], task?: string): Promise<string> {
-  const discipline = await loadDiscipline("context");
+  const discipline = await loadPrompt("context");
   return `# OKH: context
 
 **Task:** ${task ?? "(none provided — clarify with the user)"}
@@ -76,7 +80,7 @@ ${WRITE_POLICY}`;
 }
 
 export async function buildOnboard(targets: ResolvedContainer[], wakePhrase: string): Promise<string> {
-  const discipline = await loadDiscipline("onboard");
+  const discipline = await loadPrompt("onboard");
   return `# OKH: onboard
 
 **Wake phrase:** \`${wakePhrase}\`

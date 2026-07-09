@@ -1,9 +1,3 @@
----
-name: okf-ask
-description: Answer a question from an OKF knowledge pack without loading the pack into the main context — fork a sub-agent to read it and return a distilled, self-contained answer with next steps.
-disable-model-invocation: true
----
-
 # OKF Ask
 
 **Answer questions from a *knowledge pack*** (an

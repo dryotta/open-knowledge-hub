@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { loadOkf, loadDiscipline, combineOkf } from "../src/prompts/discipline.js";
+import { loadPrompt } from "../src/prompts/prompts.js";
 import { buildAsk, buildContext, buildRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
@@ -14,24 +14,18 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-describe("discipline loader", () => {
-  it("loads a vendored OKF doc", async () => {
-    const text = await loadOkf("okf-ask");
+describe("prompt loader", () => {
+  it("loads the ask prompt", async () => {
+    const text = await loadPrompt("ask");
     expect(text.length).toBeGreaterThan(0);
   });
 
-  it("loads a new v2 discipline doc", async () => {
-    expect(await loadDiscipline("context")).toMatch(/working set/i);
+  it("loads the context prompt", async () => {
+    expect(await loadPrompt("context")).toMatch(/working set/i);
   });
 
-  it("combineOkf wraps each doc in a named discipline block", async () => {
-    const combined = await combineOkf(["okf-ask"]);
-    expect(combined).toContain('<discipline name="okf-ask">');
-    expect(combined).toContain("</discipline>");
-  });
-
-  it("onboard discipline is staged and routes wake-phrase changes to config", async () => {
-    const text = await loadDiscipline("onboard");
+  it("onboard prompt is staged and routes wake-phrase changes to config", async () => {
+    const text = await loadPrompt("onboard");
     expect(text).toMatch(/Stage 1/);
     expect(text).toMatch(/Stage 2/);
     expect(text).toMatch(/Stage 3/);
@@ -75,7 +69,7 @@ describe("prompt builders", () => {
     const text = await buildAsk(targets, "How does auth work?");
     expect(text).toContain("How does auth work?");
     expect(text).toContain("/c/hub/kb");
-    expect(text).toContain('<discipline name="okf-ask">');
+    expect(text).toContain('<discipline name="ask">');
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
