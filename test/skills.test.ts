@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverModuleSkills, mergeSkills, MODULE_SKILL_ROOTS, type Skill } from "../src/modules/skills.js";
+import { discoverModuleSkills, mergeSkills, MODULE_SKILL_ROOTS, readSkill, type Skill } from "../src/modules/skills.js";
 import { vendoredSkills } from "../src/modules/vendored.js";
 
 async function skill(root: string, rel: string, name: string, description: string, body = "do it"): Promise<void> {
@@ -20,6 +20,19 @@ describe("module skills", () => {
       expect(skills.map((s) => s.name).sort()).toEqual(["remember", "summarize"]);
       expect(skills.find((s) => s.name === "remember")!.body).toContain("do it");
       expect(MODULE_SKILL_ROOTS).toContain(".claude/skills");
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("populates the skill's absolute dir", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      const dir = join(mod, "grill");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "SKILL.md"), "---\nname: grill\ndescription: d\n---\n\nBody.\n");
+      const s = await readSkill(dir, "vendored");
+      expect(s?.dir).toBe(dir);
     } finally {
       await rm(mod, { recursive: true, force: true });
     }
