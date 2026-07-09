@@ -37,7 +37,7 @@ async function connect(): Promise<{ client: Client; home: string }> {
   cleanups.push(home);
   const paths = makePaths(home);
   const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
-  const server = buildServer({ service, paths });
+  const server = await buildServer({ service, paths });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   servers.push(server);
@@ -123,7 +123,7 @@ describe("MCP server surface", () => {
     const paths = makePaths(home);
     await savePreferences(paths, { wakePhrase: "brain" });
     const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
-    const server = buildServer({ service, paths });
+    const server = await buildServer({ service, paths });
     const [clientT, serverT] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "test", version: "0" });
     servers.push(server);

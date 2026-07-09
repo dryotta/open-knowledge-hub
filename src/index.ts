@@ -7,7 +7,7 @@ import { buildServer } from "./server/index.js";
  * MCP client uses for a locally-spawned server).
  */
 async function main(): Promise<void> {
-  const server = buildServer();
+  const server = await buildServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // Log to stderr only — stdout is the JSON-RPC channel.
