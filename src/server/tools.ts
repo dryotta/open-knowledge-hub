@@ -231,7 +231,12 @@ export function registerTools(server: McpServer, service: ContainerService, path
           if (outcome.kind === "plan") {
             return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
           }
-          return ok(`Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`, { entry: outcome.entry });
+          const added = `Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
+          const next =
+            outcome.entry.type === "knowledge"
+              ? ` Next, populate it by running the initialize skill: run { container: "${args.container}", module: "${outcome.entry.path}", skill: "initialize" }.`
+              : "";
+          return ok(added + next, { entry: outcome.entry });
         }
         return fail("add requires either { source } (new container) or { container, path, type, name } (new module).");
       },

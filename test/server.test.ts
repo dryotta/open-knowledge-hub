@@ -76,6 +76,18 @@ describe("MCP server surface", () => {
     expect(prompts).toEqual(["ask", "context", "onboard", "run"]);
   });
 
+  it("adding a knowledge module points at the initialize skill", async () => {
+    const { client } = await connect();
+    const source = await makeTempDir();
+    cleanups.push(source);
+    await client.callTool({ name: "add", arguments: { source, name: "hub", create: true } });
+    const res = await client.callTool({
+      name: "add",
+      arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true },
+    });
+    expect(textOf(res)).toMatch(/skill: "initialize"/);
+  });
+
   it("onboard returns multi-turn guidance without args and does not mutate config", async () => {
     const { client, home } = await connect();
     const guide = await client.callTool({ name: "onboard", arguments: {} });

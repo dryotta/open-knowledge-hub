@@ -43,6 +43,10 @@ the plan, get an explicit "yes", then call `add` again with `create: true`. Afte
 the container exists, offer to add a `knowledge` module (and others as needed) the
 same way.
 
+When a `knowledge` module is created, run its `initialize` skill
+(`run { container, module, skill: "initialize" }`) to survey the target repo into a
+scope-bounded pack.
+
 ## Stage 3 — Everyday use (required)
 
 Wrap up by showing how to use the hub day to day, addressing it by the chosen wake
