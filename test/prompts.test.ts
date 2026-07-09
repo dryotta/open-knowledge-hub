@@ -65,7 +65,7 @@ describe("prompt builders", () => {
       { type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" },
     ] },
   ];
-  it("ask includes the question, the target path, and the okf-ask discipline", async () => {
+  it("ask includes the question, the target path, and the ask discipline", async () => {
     const text = await buildAsk(targets, "How does auth work?");
     expect(text).toContain("How does auth work?");
     expect(text).toContain("/c/hub/kb");
