@@ -32,14 +32,33 @@ library, or `pdftotext`); use OCR or table extraction only for scanned or image 
 **can't be read or extracted**, do not invent its contents — list it as a failure and ask how to
 proceed.
 
-## Stage 3 — Normalize into candidates (with provenance)
+## Stage 3 — Retain sources (if the module's policy says so)
+
+Read the target module's `index.md` `## Sources` policy — via `inspect { container, module }`
+(its overview includes `index.md`) or by reading `index.md` directly. Then:
+
+- **Retain copies: yes** → for each source you **successfully extracted**, copy the original file
+  into `<module>/<folder>/<bucket>/<original-filename>` (default `<module>/sources/<YYYY-MM>/`,
+  bucketed by the ingest date). Create folders as needed; overwrite on a name collision. Never
+  retain a source you could **not** read.
+- **Retain copies: no**, or no `## Sources` section → retain nothing.
+
+Retained copies are committed on the next `sync` — flag this for large, binary, or sensitive
+documents so the user can opt out.
+
+## Stage 4 — Normalize into candidates (with provenance)
 
 Turn the extracted material into **discrete candidate facts or concepts**. Each candidate carries
-a **source citation** — the file name/path or URL, plus page/section/row where available — so the
-target skill can ground and cite it. Group candidates by their likely target module, and (for a
-knowledge module) by its declared structure.
+a **source citation**:
 
-## Stage 4 — Route to the target (delegate scope and writing)
+- retention **on** → cite the **retained in-module path** (`sources/<YYYY-MM>/<file>`) — stable,
+  versioned, and synced with the module.
+- retention **off** → cite the original file path or URL (plus page/section/row where available).
+
+Group candidates by their likely target module, and (for a knowledge module) by its declared
+structure.
+
+## Stage 5 — Route to the target (delegate scope and writing)
 
 Identify the **target module**; if the request doesn't make it clear, ask. Then hand candidates to
 the target's own skill — **do not write module files yourself**:
@@ -56,7 +75,7 @@ never silently expand scope. If the target module already has a scope contract i
 **not** re-initialize it — `learn` reads the existing contract; a module with zero concepts is not
 the same as an uninitialized one.
 
-## Stage 5 — Report
+## Stage 6 — Report
 
 Summarize the run: sources ingested; candidates written, grouped by target module; out-of-scope or
 deferred candidates; and any sources that failed extraction.
@@ -64,6 +83,8 @@ deferred candidates; and any sources that failed extraction.
 ## Completion criterion
 
 - Every provided source is **accounted for** — ingested, deferred, or reported as unreadable.
+- If the module retains sources, each successfully-ingested source was copied into the configured
+  folder (default `sources/<YYYY-MM>/`) and its concepts cite the retained copy.
 - Every **written** candidate carries a source citation and passed the target skill's scope gate.
 - Scope conflicts were **surfaced** to the user, not silently resolved.
 - No filesystem crawling occurred; missing sources were requested from the user.

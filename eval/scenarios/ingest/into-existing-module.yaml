@@ -1,6 +1,7 @@
-# ingest flow — a path source into an EXISTING, already-scoped knowledge module.
-# Captures the efficient path: resolve the module, read its scope contract, author a
-# concept (verified deterministically via okf-valid), without re-initializing.
+# ingest flow — a path source into an EXISTING, already-scoped knowledge module that
+# retains sources. Captures: resolve the module, read its scope contract, author a
+# concept (okf-valid), retain the source under sources/<YYYY-MM>/ (source-retained),
+# without re-initializing.
 - config:
     - vars:
         env: health
@@ -16,6 +17,9 @@
           value: file://assertions/okf-valid.ts
           config: { module: health, requireChanged: true }
         - type: javascript
+          value: file://assertions/source-retained.ts
+          config: { module: health, filename: lab-results.txt }
+        - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
@@ -25,3 +29,5 @@
                 text: The agent read or acknowledged the module's existing scope contract before writing, rather than treating the module as uninitialized.
               - id: no-reinitialize
                 text: The agent did NOT run the initialize skill on the already-scoped module.
+              - id: retained-source
+                text: The agent kept a copy of the ingested file under the module's sources folder, per the module's retention policy.
