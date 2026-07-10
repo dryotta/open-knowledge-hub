@@ -9,10 +9,17 @@ export type ProbeStatus =
   | "pending"
   | "not_exercised";
 
+export type CapabilityEvidenceCategory =
+  | "advertised"
+  | "observed"
+  | "exercised"
+  | "unsupported";
+
 export type CapabilityEvidence =
   | { kind: "count"; value: number }
-  | { kind: "number"; value: number }
-  | { kind: "enum"; value: string };
+  | { kind: "durationMs"; value: number }
+  | { kind: "flag"; value: boolean }
+  | { kind: "category"; value: CapabilityEvidenceCategory };
 
 export type CapabilityProbe = {
   status: ProbeStatus;
@@ -81,10 +88,117 @@ const PROBE_GROUPS = [
 
 type ProbeKey = keyof CapabilityReport["probes"];
 
+const COUNT_MIN = 0;
+const COUNT_MAX = 1_000;
+const DURATION_MIN_MS = 0;
+const DURATION_MAX_MS = 60_000;
+
+function clampFiniteInteger(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const normalized = Math.trunc(value);
+  if (normalized < min) return min;
+  if (normalized > max) return max;
+  return normalized;
+}
+
+function isCapabilityEvidenceCategory(value: unknown): value is CapabilityEvidenceCategory {
+  return (
+    value === "advertised" ||
+    value === "observed" ||
+    value === "exercised" ||
+    value === "unsupported"
+  );
+}
+
+function sanitizeEvidence(evidence: CapabilityEvidence | undefined): CapabilityEvidence | undefined {
+  if (evidence === undefined) return undefined;
+
+  const candidate = evidence as { kind?: unknown; value?: unknown };
+  switch (candidate.kind) {
+    case "count": {
+      const value = clampFiniteInteger(candidate.value, COUNT_MIN, COUNT_MAX);
+      return value === undefined ? undefined : { kind: "count", value };
+    }
+    case "durationMs": {
+      const value = clampFiniteInteger(candidate.value, DURATION_MIN_MS, DURATION_MAX_MS);
+      return value === undefined ? undefined : { kind: "durationMs", value };
+    }
+    case "flag":
+      return typeof candidate.value === "boolean" ? { kind: "flag", value: candidate.value } : undefined;
+    case "category":
+      return isCapabilityEvidenceCategory(candidate.value)
+        ? { kind: "category", value: candidate.value }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
 function formatEvidence(evidence: CapabilityEvidence | undefined): string {
   if (evidence === undefined) return "";
-  if (evidence.kind === "enum") return ` (${evidence.kind}: ${evidence.value})`;
-  return ` (${evidence.kind}: ${evidence.value})`;
+  switch (evidence.kind) {
+    case "count":
+      return ` (count: ${evidence.value})`;
+    case "durationMs":
+      return ` (durationMs: ${evidence.value})`;
+    case "flag":
+      return ` (flag: ${evidence.value ? "yes" : "no"})`;
+    case "category":
+      return ` (category: ${evidence.value})`;
+  }
+}
+
+function normalizeProbe(probe: CapabilityProbe): CapabilityProbe {
+  const evidence = sanitizeEvidence(probe.evidence);
+  return evidence === undefined
+    ? {
+        status: probe.status,
+        code: probe.code,
+        message: probe.message,
+      }
+    : {
+        status: probe.status,
+        code: probe.code,
+        message: probe.message,
+        evidence,
+      };
+}
+
+function normalizeReport(report: CapabilityReport): CapabilityReport {
+  return {
+    schemaVersion: report.schemaVersion,
+    runId: report.runId,
+    createdAt: report.createdAt,
+    expiresAt: report.expiresAt,
+    testedProtocolGeneration: report.testedProtocolGeneration,
+    client: {
+      declared: {
+        roots: report.client.declared.roots,
+        rootsListChanged: report.client.declared.rootsListChanged,
+        sampling: report.client.declared.sampling,
+        samplingTools: report.client.declared.samplingTools,
+        elicitationForm: report.client.declared.elicitationForm,
+        elicitationUrl: report.client.declared.elicitationUrl,
+        tasks: report.client.declared.tasks,
+      },
+    },
+    probes: {
+      roots: normalizeProbe(report.probes.roots),
+      samplingBasic: normalizeProbe(report.probes.samplingBasic),
+      samplingTools: normalizeProbe(report.probes.samplingTools),
+      elicitationForm: normalizeProbe(report.probes.elicitationForm),
+      elicitationUrl: normalizeProbe(report.probes.elicitationUrl),
+      appInitialize: normalizeProbe(report.probes.appInitialize),
+      appTheme: normalizeProbe(report.probes.appTheme),
+      appResize: normalizeProbe(report.probes.appResize),
+      tasksCreate: normalizeProbe(report.probes.tasksCreate),
+      tasksPoll: normalizeProbe(report.probes.tasksPoll),
+      tasksInput: normalizeProbe(report.probes.tasksInput),
+      tasksResult: normalizeProbe(report.probes.tasksResult),
+      tasksCancel: normalizeProbe(report.probes.tasksCancel),
+    },
+    overallStatus: report.overallStatus,
+  };
 }
 
 function formatProbeLine(name: ProbeKey, probe: CapabilityProbe): string {
@@ -95,36 +209,37 @@ function formatDeclared(value: boolean): string {
   return value ? "yes" : "no";
 }
 
-export function deriveOverallStatus(probes: readonly Pick<CapabilityProbe, "status">[]): CapabilityReport["overallStatus"] {
+export function deriveOverallStatus(probes: readonly { status: ProbeStatus }[]): CapabilityReport["overallStatus"] {
   if (probes.some((probe) => probe.status === "pending")) return "pending";
   if (probes.some((probe) => probe.status === "failed")) return "issues_detected";
   return "complete";
 }
 
 export function formatCapabilityReport(report: CapabilityReport): string {
+  const normalized = normalizeReport(report);
   const lines = [
     "MCP client capabilities diagnostic",
-    `Schema version: ${report.schemaVersion}`,
-    `Run ID: ${report.runId}`,
-    `Created at: ${report.createdAt}`,
-    `Expires at: ${report.expiresAt}`,
-    `Protocol generation: ${report.testedProtocolGeneration}`,
-    `Overall status: ${report.overallStatus}`,
+    `Schema version: ${normalized.schemaVersion}`,
+    `Run ID: ${normalized.runId}`,
+    `Created at: ${normalized.createdAt}`,
+    `Expires at: ${normalized.expiresAt}`,
+    `Protocol generation: ${normalized.testedProtocolGeneration}`,
+    `Overall status: ${normalized.overallStatus}`,
     "",
     "Client declarations:",
-    `- Roots: ${formatDeclared(report.client.declared.roots)}`,
-    `- Roots list changed: ${formatDeclared(report.client.declared.rootsListChanged)}`,
-    `- Sampling: ${formatDeclared(report.client.declared.sampling)}`,
-    `- Sampling tools: ${formatDeclared(report.client.declared.samplingTools)}`,
-    `- Elicitation form: ${formatDeclared(report.client.declared.elicitationForm)}`,
-    `- Elicitation URL: ${formatDeclared(report.client.declared.elicitationUrl)}`,
-    `- Tasks: ${formatDeclared(report.client.declared.tasks)}`,
+    `- Roots: ${formatDeclared(normalized.client.declared.roots)}`,
+    `- Roots list changed: ${formatDeclared(normalized.client.declared.rootsListChanged)}`,
+    `- Sampling: ${formatDeclared(normalized.client.declared.sampling)}`,
+    `- Sampling tools: ${formatDeclared(normalized.client.declared.samplingTools)}`,
+    `- Elicitation form: ${formatDeclared(normalized.client.declared.elicitationForm)}`,
+    `- Elicitation URL: ${formatDeclared(normalized.client.declared.elicitationUrl)}`,
+    `- Tasks: ${formatDeclared(normalized.client.declared.tasks)}`,
   ];
 
   for (const group of PROBE_GROUPS) {
     lines.push("", group.title);
     for (const key of group.keys) {
-      lines.push(formatProbeLine(key, report.probes[key]));
+      lines.push(formatProbeLine(key, normalized.probes[key]));
     }
   }
 
@@ -132,8 +247,9 @@ export function formatCapabilityReport(report: CapabilityReport): string {
 }
 
 export function toCapabilityToolResult(report: CapabilityReport): CallToolResult {
+  const normalized = normalizeReport(report);
   return {
-    content: [{ type: "text", text: formatCapabilityReport(report) }],
-    structuredContent: report,
+    content: [{ type: "text", text: formatCapabilityReport(normalized) }],
+    structuredContent: normalized,
   };
 }
