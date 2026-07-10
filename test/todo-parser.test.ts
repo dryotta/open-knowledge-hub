@@ -39,6 +39,15 @@ describe("parseTodoLine", () => {
     });
   });
 
+  it("captures full Unicode custom checkbox statuses as read-only", () => {
+    expect(parseTodoLine("- [🔥] Task")).toMatchObject({
+      status: "custom",
+      statusChar: "🔥",
+      readOnly: true,
+      text: "Task",
+    });
+  });
+
   it("keeps malformed metadata visible and reports warnings", () => {
     const parsed = parseTodoLine("- [ ] File taxes 📅 someday 🔼");
     expect(parsed?.text).toBe("File taxes");
@@ -127,6 +136,16 @@ describe("parseTodoLine", () => {
     expect(parsed?.text).toBe("Support C#interop and **keep  spacing**");
     expect(parsed?.labels).toEqual(["work"]);
     expect(parsed?.tokens.some((token) => token.kind === "label" && token.raw === "#interop")).toBe(false);
+  });
+
+  it("removes metadata without damaging punctuation or trailing whitespace", () => {
+    expect(parseTodoLine("- [ ] Do #work, now")).toMatchObject({
+      text: "Do, now",
+      labels: ["work"],
+    });
+    expect(parseTodoLine("- [ ] Buy milk  ")).toMatchObject({
+      text: "Buy milk",
+    });
   });
 
   it("keeps token spans body-relative and exact", () => {

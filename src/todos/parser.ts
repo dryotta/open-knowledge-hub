@@ -20,6 +20,9 @@ const PRIORITY_BY_EMOJI: Record<string, TodoPriority> = {
   "🔺": "highest",
 };
 
+const OPEN_PUNCTUATION = new Set(["(", "[", "{", "<", "“", "‘", "«", "‹", "（", "【", "「", "『", "《", "〔"]);
+const CLOSE_PUNCTUATION = new Set([",", ".", "!", "?", ";", ":", ")", "]", "}", ">", "”", "’", "»", "›", "）", "】", "」", "』", "》", "〕"]);
+
 const DATE_FIELD_BY_EMOJI: Record<string, "due" | "created" | "completed"> = {
   "📅": "due",
   "➕": "created",
@@ -45,7 +48,7 @@ function isIsoCalendarDate(value: string): boolean {
 }
 
 function parseTodoLinePrefix(raw: string): { prefix: string; statusChar: string; statusIndex: number; body: string } | undefined {
-  const m = /^(\s*)([-+*]|\d+[.)])(\s+)\[([^\]])\](\s*)(.*)$/.exec(raw);
+  const m = /^(\s*)([-+*]|\d+[.)])(\s+)\[(.)\](\s*)(.*)$/u.exec(raw);
   if (!m) return undefined;
 
   const indent = m[1] ?? "";
@@ -67,6 +70,27 @@ function statusFromChar(statusChar: string): { status: TodoStatus; readOnly: boo
 
 function pushToken(tokens: TodoToken[], token: TodoToken): void {
   tokens.push(token);
+}
+
+function firstCodePoint(text: string): string | undefined {
+  for (const char of text) return char;
+  return undefined;
+}
+
+function lastCodePoint(text: string): string | undefined {
+  let last: string | undefined;
+  for (const char of text) last = char;
+  return last;
+}
+
+function shouldInsertSpace(left: string, right: string): boolean {
+  const leftBoundary = lastCodePoint(left.trimEnd());
+  const rightBoundary = firstCodePoint(right.trimStart());
+  if (!leftBoundary || !rightBoundary) return false;
+  if (OPEN_PUNCTUATION.has(leftBoundary)) return false;
+  if (OPEN_PUNCTUATION.has(rightBoundary)) return false;
+  if (CLOSE_PUNCTUATION.has(rightBoundary)) return false;
+  return true;
 }
 
 function collectTokens(body: string): TodoToken[] {
@@ -146,25 +170,37 @@ function collectTokens(body: string): TodoToken[] {
 }
 
 function removeTokenSpans(body: string, tokens: TodoToken[]): string {
-  if (tokens.length === 0) return body;
+  if (tokens.length === 0) return body.trim();
+
+  const removedRanges: Array<{ start: number; end: number }> = [];
+  for (const token of tokens) {
+    let start = token.start;
+    let end = token.end;
+    while (start > 0 && /\s/u.test(body[start - 1]!)) start--;
+    while (end < body.length && /\s/u.test(body[end]!)) end++;
+    removedRanges.push({ start, end });
+  }
+
+  removedRanges.sort((a, b) => a.start - b.start || a.end - b.end);
 
   const pieces: string[] = [];
   let cursor = 0;
-  for (const token of tokens) {
-    if (token.start < cursor) continue;
-    pieces.push(body.slice(cursor, token.start));
-    cursor = token.end;
+  for (const range of removedRanges) {
+    pieces.push(body.slice(cursor, range.start));
+    cursor = range.end;
   }
   pieces.push(body.slice(cursor));
 
-  return pieces
-    .map((piece, index) => {
-      if (index === 0) return piece.replace(/\s+$/u, "");
-      if (index === pieces.length - 1) return piece.replace(/^\s+/u, "");
-      return piece.trim();
-    })
-    .filter((piece) => piece.length > 0)
-    .join(" ");
+  let text = "";
+  for (const piece of pieces) {
+    if (piece.length === 0) continue;
+    if (text.length > 0 && shouldInsertSpace(text, piece)) {
+      text += " ";
+    }
+    text += piece;
+  }
+
+  return text.trim();
 }
 
 function duplicateWarning(kind: TodoTokenKind): string {
