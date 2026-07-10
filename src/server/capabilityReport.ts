@@ -63,6 +63,13 @@ export type CapabilityReport = {
   overallStatus: "pending" | "complete" | "issues_detected";
 };
 
+type ProbeKey = keyof CapabilityReport["probes"];
+
+type ProbeGroup = {
+  title: string;
+  keys: readonly ProbeKey[];
+};
+
 const PROBE_GROUPS = [
   {
     title: "Roots",
@@ -84,9 +91,11 @@ const PROBE_GROUPS = [
     title: "Tasks",
     keys: ["tasksCreate", "tasksPoll", "tasksInput", "tasksResult", "tasksCancel"] as const,
   },
-] as const;
+] as const satisfies readonly ProbeGroup[];
 
-type ProbeKey = keyof CapabilityReport["probes"];
+type ProbeGroupKey = (typeof PROBE_GROUPS)[number]["keys"][number];
+
+({} satisfies Record<Exclude<ProbeKey, ProbeGroupKey>, never>);
 
 const COUNT_MIN = 0;
 const COUNT_MAX = 1_000;
@@ -215,41 +224,44 @@ export function deriveOverallStatus(probes: readonly { status: ProbeStatus }[]):
   return "complete";
 }
 
-export function formatCapabilityReport(report: CapabilityReport): string {
-  const normalized = normalizeReport(report);
+function formatCapabilityReportNormalized(report: CapabilityReport): string {
   const lines = [
     "MCP client capabilities diagnostic",
-    `Schema version: ${normalized.schemaVersion}`,
-    `Run ID: ${normalized.runId}`,
-    `Created at: ${normalized.createdAt}`,
-    `Expires at: ${normalized.expiresAt}`,
-    `Protocol generation: ${normalized.testedProtocolGeneration}`,
-    `Overall status: ${normalized.overallStatus}`,
+    `Schema version: ${report.schemaVersion}`,
+    `Run ID: ${report.runId}`,
+    `Created at: ${report.createdAt}`,
+    `Expires at: ${report.expiresAt}`,
+    `Protocol generation: ${report.testedProtocolGeneration}`,
+    `Overall status: ${report.overallStatus}`,
     "",
     "Client declarations:",
-    `- Roots: ${formatDeclared(normalized.client.declared.roots)}`,
-    `- Roots list changed: ${formatDeclared(normalized.client.declared.rootsListChanged)}`,
-    `- Sampling: ${formatDeclared(normalized.client.declared.sampling)}`,
-    `- Sampling tools: ${formatDeclared(normalized.client.declared.samplingTools)}`,
-    `- Elicitation form: ${formatDeclared(normalized.client.declared.elicitationForm)}`,
-    `- Elicitation URL: ${formatDeclared(normalized.client.declared.elicitationUrl)}`,
-    `- Tasks: ${formatDeclared(normalized.client.declared.tasks)}`,
+    `- Roots: ${formatDeclared(report.client.declared.roots)}`,
+    `- Roots list changed: ${formatDeclared(report.client.declared.rootsListChanged)}`,
+    `- Sampling: ${formatDeclared(report.client.declared.sampling)}`,
+    `- Sampling tools: ${formatDeclared(report.client.declared.samplingTools)}`,
+    `- Elicitation form: ${formatDeclared(report.client.declared.elicitationForm)}`,
+    `- Elicitation URL: ${formatDeclared(report.client.declared.elicitationUrl)}`,
+    `- Tasks: ${formatDeclared(report.client.declared.tasks)}`,
   ];
 
   for (const group of PROBE_GROUPS) {
     lines.push("", group.title);
     for (const key of group.keys) {
-      lines.push(formatProbeLine(key, normalized.probes[key]));
+      lines.push(formatProbeLine(key, report.probes[key]));
     }
   }
 
   return lines.join("\n");
 }
 
+export function formatCapabilityReport(report: CapabilityReport): string {
+  return formatCapabilityReportNormalized(normalizeReport(report));
+}
+
 export function toCapabilityToolResult(report: CapabilityReport): CallToolResult {
   const normalized = normalizeReport(report);
   return {
-    content: [{ type: "text", text: formatCapabilityReport(normalized) }],
+    content: [{ type: "text", text: formatCapabilityReportNormalized(normalized) }],
     structuredContent: normalized,
   };
 }
