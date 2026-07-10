@@ -3,7 +3,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type {
   AddContainerPlan,
-  AddModulePlan,
   ContainerService,
   InspectResult,
   SyncResult,
@@ -18,7 +17,9 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
+import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
+import { BUILTIN_MODULE_TYPES } from "../modules/types.js";
+import { vendoredSkills } from "../modules/vendored.js";
 import { loadToolMeta, describeShape } from "./toolMeta.js";
 import { toolShapes, type ToolName } from "./toolSchemas.js";
 import type { RenderContext } from "../prompts/templates.js";
@@ -100,14 +101,6 @@ function formatContainerPlan(plan: AddContainerPlan): string {
   return lines.join("\n");
 }
 
-function formatModulePlan(plan: AddModulePlan): string {
-  const lines = ["Plan (no changes made). Re-run add_module with create:true to apply:"];
-  if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.moduleRoot}`);
-  if (plan.actions.includes("scaffold")) lines.push(`- Scaffold ${plan.type} module content`);
-  lines.push(`- Add ${plan.type} module "${plan.name}" at "${plan.path}" to "${plan.container}"`);
-  return lines.join("\n");
-}
-
 function formatSync(rs: SyncResult[]): string {
   if (rs.length === 0) return "Nothing to sync.";
   return rs
@@ -177,27 +170,30 @@ export async function registerTools(server: McpServer, service: ContainerService
   server.registerTool(
     "add_module",
     { ...(await toolReg("add_module")), annotations: { openWorldHint: true } },
-    handler(async (args: { container: string; path: string; type: string; name: string; description?: string; config?: Record<string, unknown>; create?: boolean }) => {
-      if (isBlank(args.container)) return fail("container cannot be empty.");
-      if (isBlank(args.path)) return fail("path cannot be empty.");
-      if (isBlank(args.name)) return fail("name cannot be empty.");
+    handler(async (args: { container?: string; path?: string; type?: string; name?: string; description?: string; config?: Record<string, unknown>; create?: boolean }) => {
+      if (!args.create) {
+        const targets = await service.resolveTargets();
+        return ok(await buildAddModule(targets, BUILTIN_MODULE_TYPES));
+      }
+      if (isBlank(args.container ?? "")) return fail("container cannot be empty. (required when create:true)");
+      if (isBlank(args.path ?? "")) return fail("path cannot be empty. (required when create:true)");
+      if (isBlank(args.type ?? "")) return fail("type cannot be empty. (required when create:true)");
+      if (isBlank(args.name ?? "")) return fail("name cannot be empty. (required when create:true)");
       const outcome = await service.addModule({
-        container: args.container,
-        path: args.path,
-        type: args.type,
-        name: args.name,
+        container: args.container!,
+        path: args.path!,
+        type: args.type!,
+        name: args.name!,
         ...(args.description !== undefined ? { description: args.description } : {}),
         ...(args.config ? { config: args.config } : {}),
-        ...(args.create ? { create: true } : {}),
+        create: true,
       });
-      if (outcome.kind === "plan") {
-        return ok(formatModulePlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
-      }
+      if (outcome.kind !== "applied") return fail("add_module create:true did not apply.");
       const added = `Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
-      const next =
-        outcome.entry.type === "knowledge"
-          ? ` Next, populate it by running the initialize skill: run { container: "${args.container}", module: "${outcome.entry.path}", skill: "initialize" }.`
-          : "";
+      const hasInit = (await vendoredSkills(outcome.entry.type)).some((s) => s.name === "initialize");
+      const next = hasInit
+        ? ` Next, initialize it: run { container: "${args.container}", module: "${outcome.entry.path}", skill: "initialize" }.`
+        : "";
       return ok(added + next, { entry: outcome.entry });
     }),
   );

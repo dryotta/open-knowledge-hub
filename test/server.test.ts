@@ -80,6 +80,20 @@ describe("MCP server surface", () => {
     expect(config.description).not.toContain("{{");
   });
 
+  it("add_module without create returns the workflow (no mutation)", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
+    const res = await client.callTool({ name: "add_module", arguments: {} });
+
+    const text = textOf(res);
+    expect(text).toContain('<discipline name="add_module">');
+    expect(text).toContain("create: true");
+    expect(structuredOf(res).needsConfirmation).toBeUndefined();
+  });
+
   it("adding a knowledge module points at the initialize skill", async () => {
     const { client } = await connect();
     const source = await makeTempDir();
@@ -90,6 +104,18 @@ describe("MCP server surface", () => {
       arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true },
     });
     expect(textOf(res)).toMatch(/skill: "initialize"/);
+  });
+
+  it("adding a non-initialize type omits the initialize pointer", async () => {
+    const { client } = await connect();
+    const source = await makeTempDir();
+    cleanups.push(source);
+    await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
+    const res = await client.callTool({
+      name: "add_module",
+      arguments: { container: "hub", path: "sk", type: "skills", name: "SK", create: true },
+    });
+    expect(textOf(res)).not.toContain('skill: "initialize"');
   });
 
   it("onboard returns multi-turn guidance without args and does not mutate config", async () => {
@@ -193,22 +219,6 @@ describe("MCP server surface", () => {
     expect(textOf(applied)).toContain('Registered container "hub"');
   });
 
-  it("add previews module changes without create", async () => {
-    const { client } = await connect();
-    const dir = await makeTempDir();
-    cleanups.push(dir);
-
-    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    const preview = await client.callTool({
-      name: "add_module",
-      arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB" },
-    });
-
-    expect(textOf(preview)).toContain("Plan (no changes made)");
-    expect(textOf(preview)).toContain("add_module");
-    expect(structuredOf(preview).needsConfirmation).toBe(true);
-  });
-
   it("rejects a module inspect request without a container", async () => {
     const { client } = await connect();
     const res = await client.callTool({ name: "inspect", arguments: { module: "kb" } });
@@ -231,7 +241,7 @@ describe("MCP server surface", () => {
 
     const emptyPath = await client.callTool({
       name: "add_module",
-      arguments: { container: "hub", path: "", type: "knowledge", name: "KB" },
+      arguments: { container: "hub", path: "", type: "knowledge", name: "KB", create: true },
     });
     expect(isErrorResult(emptyPath)).toBe(true);
     expect(textOf(emptyPath)).toContain("path cannot be empty");
