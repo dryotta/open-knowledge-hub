@@ -40,6 +40,13 @@ describe("effective skills + resolveSkill", () => {
     expect(names).toEqual(["initialize", "learn"]);
   });
 
+  it("llmwiki type exposes initialize + lint + write", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    const names = (await svc.effectiveSkills("h", "wiki")).map((s) => s.name).sort();
+    expect(names).toEqual(["initialize", "lint", "write"]);
+  });
+
   it("custom module exposes only its module-local skills", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "recipes"), { type: "recipes", name: "Food", description: "" });
@@ -63,6 +70,7 @@ describe("shared skills", () => {
     const s = await svc.resolveSharedSkill("ingest");
     expect(s.name).toBe("ingest");
     expect(s.body).toMatch(/route/i);
+    expect(s.body).toMatch(/llmwiki/);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
   });
 });

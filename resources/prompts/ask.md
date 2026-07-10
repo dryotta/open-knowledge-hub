@@ -6,7 +6,7 @@
 {{var:targets}}
 
 Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
-relevant module(s), starting from each module's overview (knowledge: index.md;
+relevant module(s), starting from each module's overview (knowledge/llmwiki: index.md;
 skills/tools: the listing; memory/project: recent files). Return a distilled,
 **cited** answer. Do not load whole modules into this context.
 
@@ -56,7 +56,8 @@ Instruct the sub-agent to:
 5. **Suggest next steps** whenever the question opens further ones — follow-up questions worth
    asking, related concepts in the pack to explore next, or, when the answer is missing/partial,
    pointing at the knowledge module's `learn` skill to teach it the new knowledge (or the
-   `initialize` skill if the module needs a fresh scope entirely).
+   `initialize` skill if the module needs a fresh scope entirely). For an llmwiki module, point at
+   its `write` skill to file a durable answer back as a page.
 
 ### Stage 3 — Relay the distilled answer
 

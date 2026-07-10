@@ -3,7 +3,7 @@ title: Add a module
 args:
   container: Target container (required when create:true).
   path: Module folder path within the container (required when create:true).
-  type: "Module type: a built-in (knowledge, skills, tools, memory, project) or a custom type name (required when create:true)."
+  type: "Module type: a built-in (knowledge, skills, tools, memory, project, llmwiki) or a custom type name (required when create:true)."
   name: Module display name (required when create:true).
   description: One-line module description.
   config: Optional module config.

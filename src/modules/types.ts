@@ -1,5 +1,5 @@
-/** The five built-in module types. Order is not significant. */
-export const BUILTIN_MODULE_TYPES = ["knowledge", "skills", "tools", "memory", "project"] as const;
+/** The built-in module types. Order is not significant. */
+export const BUILTIN_MODULE_TYPES = ["knowledge", "skills", "tools", "memory", "project", "llmwiki"] as const;
 export type ModuleType = (typeof BUILTIN_MODULE_TYPES)[number];
 
 /** A module's on-disk `type` is any non-empty string; unknown => custom. */
@@ -19,6 +19,18 @@ export interface Item {
   type: string;
 }
 
+/** Deterministic structural health of an llmwiki module (computed from cross-links). */
+export interface WikiHealth {
+  /** Concept pages with no inbound link from another concept page. */
+  orphans: string[];
+  /** Links whose resolved target file does not exist, as { from, to } page paths. */
+  danglingLinks: Array<{ from: string; to: string }>;
+  /** Concept pages not linked from the root index.md catalog. */
+  uncataloged: string[];
+  /** Concept pages whose frontmatter lacks a non-empty OKF `type`. */
+  missingType: string[];
+}
+
 /**
  * How the Hub loads a module of a given type. Loaders are deterministic and do
  * not interpret content — they enumerate items and surface metadata only.
@@ -30,4 +42,6 @@ export interface Loader {
   overview(moduleRoot: string): Promise<string>;
   /** Optionally scaffold a type skeleton into a freshly created module folder. */
   scaffold?(moduleRoot: string): Promise<void>;
+  /** Optional deterministic structural health report (currently: llmwiki). */
+  health?(moduleRoot: string): Promise<WikiHealth>;
 }

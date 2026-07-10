@@ -1,0 +1,36 @@
+# write flow — add an in-scope page to an existing llmwiki, cross-linked, index+log updated.
+- config:
+    - vars:
+        env: wiki
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Run the "wiki" module's `write` skill in
+          container "wiki-hub" to add: "KV cache stores past keys and values so decoding
+          is linear per new token instead of quadratic." Then sync.
+  tests:
+    - description: Write - in-scope page - integrates, cross-links, syncs
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [run, sync] }
+        - type: javascript
+          value: file://assertions/okf-valid.ts
+          config: { module: wiki, requireChanged: true }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts: { module: wiki, maxFiles: 10 }
+            criteria:
+              - id: ran-write
+                text: The agent invoked the wiki module's write skill.
+                check:
+                  kind: transcript-contains
+                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"wiki")(?=[^\r\n]*"skill"\s*:\s*"write")'
+              - id: created-kv-page
+                text: A new OKF page about the KV cache was created under the wiki module (e.g. concepts/kv-cache.md).
+              - id: cross-linked
+                text: The new page links to and/or is linked from a related page (e.g. Attention), not left as an orphan.
+              - id: index-and-log-updated
+                text: The root index.md catalog and log.md were updated to reflect the new page.
+              - id: persisted-via-sync
+                text: The change was persisted via the sync tool.
+                check: { kind: tool, name: sync }

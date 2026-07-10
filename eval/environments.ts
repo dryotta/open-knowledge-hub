@@ -60,6 +60,11 @@ export const environments = {
     hubs: [{ container: "health-hub", fixture: "fixtures/health-hub", backend: "local" }],
     workspaceDir: "fixtures/health-source",
   },
+  wiki: {
+    placement: "registered",
+    hubs: [{ container: "wiki-hub", fixture: "fixtures/wiki-hub", backend: "local" }],
+    workspaceDir: undefined,
+  },
 } satisfies Record<string, Environment>;
 
 export type EnvName = keyof typeof environments;

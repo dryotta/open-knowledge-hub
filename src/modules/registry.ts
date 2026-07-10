@@ -5,6 +5,7 @@ import { skillsLoader } from "./loaders/skills.js";
 import { toolsLoader } from "./loaders/tools.js";
 import { memoryLoader } from "./loaders/memory.js";
 import { projectLoader } from "./loaders/project.js";
+import { llmwikiLoader } from "./loaders/llmwiki.js";
 import { fileListingLoader } from "./loaders/file-listing.js";
 
 const LOADERS: Record<ModuleType, Loader> = {
@@ -13,6 +14,7 @@ const LOADERS: Record<ModuleType, Loader> = {
   tools: toolsLoader,
   memory: memoryLoader,
   project: projectLoader,
+  llmwiki: llmwikiLoader,
 };
 
 const customLoader = fileListingLoader("custom", "Module");

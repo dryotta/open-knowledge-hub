@@ -1,11 +1,8 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseFrontmatter, stringField } from "../../util/frontmatter.js";
-import { walkFiles } from "../fs.js";
+import { okfEnumerate } from "./okf.js";
 import type { Item, Loader } from "../types.js";
-
-const RESERVED = new Set(["index.md", "log.md"]);
 
 // The starter index.md written into a new knowledge module. Authored as an
 // editable resource; resolves from src (tsx) and dist (built).
@@ -21,29 +18,7 @@ function isNotFound(err: unknown): boolean {
 }
 
 async function enumerate(moduleRoot: string): Promise<Item[]> {
-  const files = await walkFiles(moduleRoot, (n) => n.endsWith(".md"));
-  const items: Item[] = [];
-
-  for (const rel of files) {
-    if (RESERVED.has(basename(rel))) continue;
-
-    let text: string;
-    try {
-      text = await readFile(join(moduleRoot, rel), "utf8");
-    } catch {
-      continue;
-    }
-
-    const { data } = parseFrontmatter(text);
-    items.push({
-      path: rel,
-      title: stringField(data, "title") ?? basename(rel, ".md"),
-      description: stringField(data, "description") ?? "",
-      type: stringField(data, "type") ?? "concept",
-    });
-  }
-
-  return items;
+  return okfEnumerate(moduleRoot, "concept");
 }
 
 async function overview(moduleRoot: string): Promise<string> {

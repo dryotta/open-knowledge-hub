@@ -1,0 +1,35 @@
+# lint flow — read deterministic health, resolve the dangling link, log the pass.
+- config:
+    - vars:
+        env: wiki
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Run the "wiki" module's `lint` skill in
+          container "wiki-hub" to inspect the ml-wiki's health, fix what it safely can,
+          and log the pass. Then sync.
+  tests:
+    - description: Lint - wiki health - inspects, fixes dangling link, logs
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [inspect, run, sync] }
+        - type: javascript
+          value: file://assertions/okf-valid.ts
+          config: { module: wiki, requireChanged: true }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts: { module: wiki, maxFiles: 10 }
+            criteria:
+              - id: ran-lint
+                text: The agent invoked the wiki module's lint skill.
+                check:
+                  kind: transcript-contains
+                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"wiki")(?=[^\r\n]*"skill"\s*:\s*"lint")'
+              - id: inspected-health
+                text: The agent ran inspect and used its Wiki health report (orphans / dangling links).
+              - id: handled-orphan
+                text: The Positional Encoding page was surfaced as an orphan and was either connected to another content page or explicitly deferred in the lint log.
+              - id: resolved-dangling
+                text: The dangling link to the not-yet-written KV cache page was resolved — either by creating the page or correcting the link.
+              - id: logged-pass
+                text: A lint entry was appended to log.md describing what was fixed or flagged.
