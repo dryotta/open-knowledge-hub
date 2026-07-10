@@ -37,6 +37,17 @@ How the pack is organized, using OKF's building blocks:
 <!-- Optional — Sourcing conventions: where this module's knowledge comes from and how claims are
 cited/checked (e.g. code: cite repo paths, pin a commit SHA). Keep this section only if useful. -->
 
+## Sources
+
+<!-- Optional — ingestion retention policy. Default: do not keep copies.
+To keep a copy of each ingested source in this module, set Retain copies: yes and adjust:
+- **Retain copies:** yes
+- **Folder:** `./sources/`
+- **Bucketing:** by month — `<YYYY-MM>/` (the ingest date)
+-->
+
+Retain copies: no
+
 ## Concepts
 
 Progressive-disclosure listing (grouped by folder; each entry is title — one-line description).

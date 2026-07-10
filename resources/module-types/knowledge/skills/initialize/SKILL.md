@@ -30,6 +30,12 @@ Optionally record **sourcing conventions** — where the module's knowledge come
 claims are checked (e.g. code: "cite repository paths, pin a commit SHA"). Capture this only when
 it helps the module.
 
+Also decide **source retention** — whether documents ingested into this module should be **kept in
+the module** (default **no**). If yes, write a `## Sources` section to `index.md` recording
+**Retain copies: yes**, the **Folder** (default `./sources/`), and the **Bucketing** (default by
+month, `<YYYY-MM>/`, the ingest date). If retention stays off, either omit the section or write
+`Retain copies: no`. The `ingest` skill reads this section and honors it.
+
 Grill until goals, requirements, out-of-scope, and structure are sharp and consistent. Reject
 vague or unbounded requirements ("capture everything" is not a requirement).
 
