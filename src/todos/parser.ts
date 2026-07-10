@@ -132,8 +132,17 @@ function collectTokens(body: string): TodoToken[] {
     });
   }
 
-  tokens.sort((a, b) => a.start - b.start || a.end - b.end);
-  return tokens;
+  tokens.sort((a, b) => a.start - b.start || b.end - a.end);
+
+  const nonOverlapping: TodoToken[] = [];
+  let cursor = 0;
+  for (const token of tokens) {
+    if (token.start < cursor) continue;
+    nonOverlapping.push(token);
+    cursor = token.end;
+  }
+
+  return nonOverlapping;
 }
 
 function removeTokenSpans(body: string, tokens: TodoToken[]): string {

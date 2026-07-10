@@ -47,6 +47,70 @@ describe("parseTodoLine", () => {
     expect(parsed?.warnings).toContain('Invalid due date "someday".');
   });
 
+  it("keeps an id token from overlapping a nested label", () => {
+    const parsed = parseTodoLine("- [ ] Task 🆔 #work");
+    expect(parsed).toMatchObject({
+      text: "Task",
+      id: "#work",
+      labels: [],
+    });
+    expect(parsed?.tokens).toHaveLength(1);
+    expect(parsed?.tokens[0]).toMatchObject({
+      kind: "id",
+      raw: "🆔 #work",
+      value: "#work",
+    });
+  });
+
+  it("keeps an id token from overlapping a nested priority", () => {
+    const parsed = parseTodoLine("- [ ] Task 🆔 🔼");
+    expect(parsed).toMatchObject({
+      text: "Task",
+      id: "🔼",
+      priority: "normal",
+      labels: [],
+    });
+    expect(parsed?.tokens).toHaveLength(1);
+    expect(parsed?.tokens[0]).toMatchObject({
+      kind: "id",
+      raw: "🆔 🔼",
+      value: "🔼",
+    });
+  });
+
+  it("keeps an invalid due token from overlapping a nested label", () => {
+    const parsed = parseTodoLine("- [ ] Task 📅 #work");
+    expect(parsed).toMatchObject({
+      text: "Task",
+      due: undefined,
+      labels: [],
+    });
+    expect(parsed?.warnings).toContain('Invalid due date "#work".');
+    expect(parsed?.tokens).toHaveLength(1);
+    expect(parsed?.tokens[0]).toMatchObject({
+      kind: "due",
+      raw: "📅 #work",
+      value: "#work",
+      valid: false,
+    });
+  });
+
+  it("keeps malformed completed metadata visible and reports warnings", () => {
+    const parsed = parseTodoLine("- [ ] keep ✅ done");
+    expect(parsed).toMatchObject({
+      text: "keep",
+      completed: undefined,
+    });
+    expect(parsed?.warnings).toContain('Invalid completed date "done".');
+    expect(parsed?.tokens).toHaveLength(1);
+    expect(parsed?.tokens[0]).toMatchObject({
+      kind: "completed",
+      raw: "✅ done",
+      value: "done",
+      valid: false,
+    });
+  });
+
   it("treats embedded metadata-like text as ordinary text unless separated by whitespace", () => {
     const parsed = parseTodoLine("- [ ] Keep C🔼 A✅2026-07-10 and 🆔badge");
     expect(parsed).toMatchObject({
