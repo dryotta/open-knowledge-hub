@@ -40,7 +40,7 @@ Introduce the two terms they'll use:
 - **Container** — a repo/workspace/folder that holds your content: a local folder,
   an OS-synced (OneDrive) folder, or a git repository.
 - **Module** — a typed subfolder inside a container: `knowledge`, `skills`,
-  `tools`, `memory`, or `project`.
+  `tools`, `memory`, `project`, or `llmwiki`.
 
 Then offer to set up their first container. Ask which they want:
 - an existing folder they already have,

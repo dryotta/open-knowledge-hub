@@ -7,8 +7,9 @@ description: Turn source documents (PDFs, docs, images, URLs, or pasted content)
 
 Turn **source documents** — PDFs, docs, images, URLs, or content already pasted into the
 conversation — into cited candidate knowledge, then route each candidate to the **target module's
-own skill** (`learn` for knowledge, `remember` for memory), which owns the scope gate and the
-actual writing. You extract and reason; the target skill decides what earns a place and writes it.
+own skill** (`learn` for knowledge, `remember` for memory, `write` for llmwiki), which owns the
+scope gate and the actual writing. You extract and reason; the target skill decides what earns a
+place and writes it.
 
 OKH runs no model and never reads files — extraction is **your** job, and OKH **cannot see chat
 attachments**. Run these stages in order.
@@ -65,6 +66,7 @@ the target's own skill — **do not write module files yourself**:
 
 - **knowledge** → `run { container, module, skill: "learn" }`
 - **memory** → `run { container, module, skill: "remember" }`
+- **llmwiki** → `run { container, module, skill: "write" }`
 
 Before writing in bulk, present a short **routing plan**: what goes to which module, and which
 candidates look **out of scope**. Get the user's confirmation. Respect the target's scope

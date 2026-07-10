@@ -70,6 +70,7 @@ describe("shared skills", () => {
     const s = await svc.resolveSharedSkill("ingest");
     expect(s.name).toBe("ingest");
     expect(s.body).toMatch(/route/i);
+    expect(s.body).toMatch(/llmwiki/);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
   });
 });
