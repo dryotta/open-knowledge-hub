@@ -7,7 +7,7 @@ import {
   type TodoTokenKind,
 } from "./types.js";
 
-const LABEL_RE = /#[\p{L}\p{N}_/-]+/gu;
+const LABEL_RE = /(?<!\S)#[\p{L}\p{N}_/-]+/gu;
 const PRIORITY_RE = /[⏬🔽🔼⏫🔺]/gu;
 const DATED_TOKEN_RE = /(📅|➕|✅)\s*(\S+)/gu;
 const ID_RE = /🆔\s*(\S+)/gu;
@@ -139,15 +139,23 @@ function collectTokens(body: string): TodoToken[] {
 function removeTokenSpans(body: string, tokens: TodoToken[]): string {
   if (tokens.length === 0) return body;
 
-  let result = "";
+  const pieces: string[] = [];
   let cursor = 0;
   for (const token of tokens) {
     if (token.start < cursor) continue;
-    result += body.slice(cursor, token.start);
+    pieces.push(body.slice(cursor, token.start));
     cursor = token.end;
   }
-  result += body.slice(cursor);
-  return result.replace(/\s+/g, " ").trim();
+  pieces.push(body.slice(cursor));
+
+  return pieces
+    .map((piece, index) => {
+      if (index === 0) return piece.replace(/\s+$/u, "");
+      if (index === pieces.length - 1) return piece.replace(/^\s+/u, "");
+      return piece.trim();
+    })
+    .filter((piece) => piece.length > 0)
+    .join(" ");
 }
 
 function duplicateWarning(kind: TodoTokenKind): string {

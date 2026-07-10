@@ -47,6 +47,18 @@ describe("parseTodoLine", () => {
     expect(parsed?.warnings).toContain('Invalid due date "someday".');
   });
 
+  it("does not tokenize hashtags inside words and preserves markdown spacing", () => {
+    const parsed = parseTodoLine("- [ ] Support C#interop and **keep  spacing** #work");
+    expect(parsed?.text).toBe("Support C#interop and **keep  spacing**");
+    expect(parsed?.labels).toEqual(["work"]);
+    expect(parsed?.tokens.some((token) => token.kind === "label" && token.raw === "#interop")).toBe(false);
+  });
+
+  it("preserves unrelated internal whitespace when removing metadata", () => {
+    const parsed = parseTodoLine("- [ ] Preserve  this #work 📅 2026-07-11");
+    expect(parsed?.text).toBe("Preserve  this");
+  });
+
   it("returns undefined for ordinary prose", () => {
     expect(parseTodoLine("Remember to buy milk.")).toBeUndefined();
   });
