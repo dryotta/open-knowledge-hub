@@ -64,3 +64,18 @@ export interface TodoListResult {
   warnings: TodoWarning[];
   counts: { total: number; open: number; completed: number; custom: number };
 }
+
+export interface CreateTodoLineInput {
+  text: string;
+  labels: string[];
+  priority?: TodoPriority;
+  due?: string;
+  created: string;
+}
+
+export interface TodoLinePatch {
+  completed?: boolean;
+  labels?: string[];
+  due?: string | null;
+  priority?: TodoPriority | null;
+}
