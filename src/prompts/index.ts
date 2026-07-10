@@ -41,6 +41,12 @@ export function buildOnboard(targets: ResolvedContainer[], config: Record<string
   return renderTemplate("onboard", { config, vars: { targets: renderTargets(targets) } });
 }
 
+export function buildAddModule(targets: ResolvedContainer[], moduleTypes: readonly string[]): Promise<string> {
+  return renderTemplate("add_module", {
+    vars: { targets: renderTargets(targets), moduleTypes: moduleTypes.join(", ") },
+  });
+}
+
 /** Render a skill run. With target+module it's a module skill; with neither, a module-less shared skill. */
 export async function buildRun(
   skill: Skill,
