@@ -83,6 +83,18 @@ describe("todo serializer", () => {
       .toBe("- [ ] Renew subscription #todo ⏫ 📅   2026-07-20 ➕\t2026-07-10 🔁 every week 🆔 rel-7");
   });
 
+  it("preserves raw trailing whitespace when patching priority", () => {
+    const parsed = parseTodoLine("- [ ] Task #todo #work  ➕ 2026-07-10  ")!;
+    expect(patchTodoLine(parsed, { priority: "high" }, "2026-07-10"))
+      .toBe("- [ ] Task #todo #work  ⏫ ➕ 2026-07-10  ");
+  });
+
+  it("preserves trailing whitespace on bare tasks when patching completion", () => {
+    const parsed = parseTodoLine("- [ ] Task  ")!;
+    expect(patchTodoLine(parsed, { completed: true }, "2026-07-10"))
+      .toBe("- [x] Task  ✅ 2026-07-10");
+  });
+
   it("replaces duplicate target metadata with one canonical token", () => {
     const parsed = parseTodoLine("- [ ] Pay rent #todo 📅 2026-07-01 📅 2026-07-02 ➕ 2026-07-10")!;
     expect(patchTodoLine(parsed, { due: "2026-07-31" }, "2026-07-10"))

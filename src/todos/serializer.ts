@@ -70,7 +70,7 @@ function isReservedTodoLabel(token: TodoToken): boolean {
 }
 
 function removeTokenSpans(body: string, tokens: TodoToken[]): string {
-  if (tokens.length === 0) return body.trim();
+  if (tokens.length === 0) return body;
 
   const removedRanges: Array<{ start: number; end: number }> = [];
   for (const token of tokens) {
@@ -103,7 +103,7 @@ function removeTokenSpans(body: string, tokens: TodoToken[]): string {
     text += piece;
   }
 
-  return text.trim();
+  return text;
 }
 
 function insertSegment(body: string, index: number, segment: string): string {
