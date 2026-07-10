@@ -43,18 +43,18 @@ earnest until the contract is agreed and written.
 
 ### Stage 2 — Gather (requirement-guided)
 
-Collect only what the requirements demand, from the agreed sources. Follow the threads each
-requirement opens and **stop once every requirement is satisfiable** — don't exhaustively survey.
-Treat authoritative prior artifacts as input; don't re-derive what they already settle.
+Collect what the requirements demand — from wherever the knowledge lives: existing docs or code,
+or the user's own expertise. Follow the threads each requirement opens and **stop once every
+requirement is satisfiable**; gather nothing a requirement doesn't need.
 
 ### Stage 3 — Write
 
 Populate the module along the agreed structure. For an
 [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) bundle of concept
 docs, use the shared **okf-writer** skill (`run { skill: "okf-writer" }`). Name the requirement
-each piece serves. If a claim can't be verified from the sources — often a "why" the sources
-don't state — confirm it with the user or drop it; don't assert what you can't back up (flag a
-kept-but-unverified claim, e.g. `⚠️ UNVERIFIED`).
+each piece serves. If you can't confirm a claim — often an unstated "why" — check with the user or
+drop it; don't assert what you can't back up (flag a kept-but-unverified claim, e.g.
+`⚠️ UNVERIFIED`).
 
 ### Stage 4 — Verify (the scope gate)
 
@@ -66,8 +66,7 @@ against every requirement:
 
 Done when the fresh reader satisfies **every** requirement and nothing is unused. This gate is
 **optional when initializing from imported knowledge** — an existing, already-trusted pack
-brought in wholesale rather than authored. Verify authored or derived content, not trusted
-imports.
+brought in wholesale rather than authored. Verify what you authored; skip it for trusted imports.
 
 ## Completion criterion
 
@@ -75,5 +74,5 @@ imports.
   justifying every requirement.
 - Content follows the declared structure; every claim is one you can back up (confirmed or
   flagged).
-- For authored or derived content, a fresh reader satisfies every requirement and nothing unused
-  remains. (Trusted imported knowledge is exempt from the reader-test.)
+- For knowledge you authored, a fresh reader satisfies every requirement and nothing unused
+  remains. (Already-trusted imported knowledge is exempt from the reader-test.)
