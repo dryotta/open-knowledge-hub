@@ -8,9 +8,9 @@ import {
 } from "./types.js";
 
 const LABEL_RE = /(?<!\S)#[\p{L}\p{N}_/-]+/gu;
-const PRIORITY_RE = /[⏬🔽🔼⏫🔺]/gu;
-const DATED_TOKEN_RE = /(📅|➕|✅)\s*(\S+)/gu;
-const ID_RE = /🆔\s*(\S+)/gu;
+const PRIORITY_RE = /(?<!\S)[⏬🔽🔼⏫🔺](?=\s|$)/gu;
+const DATED_TOKEN_RE = /(?<!\S)(📅|➕|✅)\s+(\S+)/gu;
+const ID_RE = /(?<!\S)🆔\s+(\S+)/gu;
 
 const PRIORITY_BY_EMOJI: Record<string, TodoPriority> = {
   "⏬": "lowest",
