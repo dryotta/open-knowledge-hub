@@ -7,6 +7,7 @@ import { skillsLoader } from "../src/modules/loaders/skills.js";
 import { toolsLoader } from "../src/modules/loaders/tools.js";
 import { memoryLoader } from "../src/modules/loaders/memory.js";
 import { projectLoader } from "../src/modules/loaders/project.js";
+import { llmwikiLoader } from "../src/modules/loaders/llmwiki.js";
 import { getLoader } from "../src/modules/registry.js";
 
 const cleanups: string[] = [];
@@ -73,6 +74,50 @@ describe("knowledge loader", () => {
     const root = await tmp();
     await mkdir(join(root, "index.md"), { recursive: true });
     await expect(knowledgeLoader.overview(root)).rejects.toBeTruthy();
+  });
+});
+
+describe("llmwiki loader", () => {
+  it("enumerates OKF pages (excluding index.md/log.md), defaulting type to page", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# idx\n");
+    await write(root, "log.md", "# log\n");
+    await write(root, "concepts/attn.md", "---\ntitle: Attention\ndescription: attn\ntype: concept\n---\nbody");
+    await write(root, "notes/misc.md", "no frontmatter");
+
+    const items = await llmwikiLoader.enumerate(root);
+
+    expect(items.map((i) => i.path).sort()).toEqual(["concepts/attn.md", "notes/misc.md"]);
+    expect(items.find((i) => i.path === "concepts/attn.md")).toMatchObject({ title: "Attention", type: "concept" });
+    expect(items.find((i) => i.path === "notes/misc.md")!.type).toBe("page");
+  });
+
+  it("overview returns index.md when present, else a wiki-labeled listing", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# My Wiki\n");
+    expect(await llmwikiLoader.overview(root)).toContain("# My Wiki");
+
+    const root2 = await tmp();
+    await write(root2, "concepts/x.md", "---\ntitle: X\n---\n");
+    const ov = await llmwikiLoader.overview(root2);
+    expect(ov).toContain("Wiki (generated index)");
+    expect(ov).toContain("X");
+  });
+
+  it("scaffold writes an index.md skeleton and a log.md seed", async () => {
+    const root = await tmp();
+    await llmwikiLoader.scaffold!(root);
+    const ov = await llmwikiLoader.overview(root);
+    expect(ov).toContain("okf_version");
+    expect(ov).toContain("## Scope");
+    const log = await import("node:fs/promises").then((m) => m.readFile(join(root, "log.md"), "utf8"));
+    expect(log).toContain("Update Log");
+  });
+
+  it("scaffold does not overwrite an existing index.md", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# Existing\n");
+    await expect(llmwikiLoader.scaffold!(root)).rejects.toMatchObject({ code: "EEXIST" });
   });
 });
 
@@ -165,7 +210,7 @@ describe("memory/project loaders (thin file listing)", () => {
 
 describe("getLoader dispatch", () => {
   it("returns a loader for every module type", () => {
-    for (const t of ["knowledge", "skills", "tools", "memory", "project"] as const) {
+    for (const t of ["knowledge", "skills", "tools", "memory", "project", "llmwiki"] as const) {
       expect(typeof getLoader(t).enumerate).toBe("function");
       expect(typeof getLoader(t).overview).toBe("function");
     }
