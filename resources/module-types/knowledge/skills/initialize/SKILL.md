@@ -14,8 +14,8 @@ know-how.
 
 ## Stage 1 — Grill the requirements and structure
 
-Run the shared **grilling** skill (`run { skill: "grilling" }`), then write the agreed **scope
-contract** to the module's `index.md`:
+Run the shared **grilling** skill (`run { skill: "grilling" }`), then record the agreed **scope
+contract** in the module's `index.md` (its skeleton already lays out these sections):
 
 - **Goals** — what this module is *for*: who reads it and what they need to accomplish (1–3
   sentences). Goals are the yardstick for every later decision.
