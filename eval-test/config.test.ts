@@ -12,9 +12,10 @@ const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 /** Expected number of per-prompt config files in each verb folder. */
 const EXPECTED_COUNTS: Record<string, number> = {
-  ask: 3,
+  ask: 4,
   context: 2,
   ingest: 1,
+  initialize: 1,
   learn: 2,
   lint: 1,
   remember: 2,
@@ -62,9 +63,9 @@ describe("promptfooconfig.yaml (single default)", () => {
 });
 
 describe("scenario configs", () => {
-  it("provides 23 scenario files across the expected verb folders", async () => {
+  it("provides 25 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
-    expect(files.length).toBe(23);
+    expect(files.length).toBe(25);
     const counts: Record<string, number> = {};
     for (const f of files) {
       const verb = f.split("/")[0];

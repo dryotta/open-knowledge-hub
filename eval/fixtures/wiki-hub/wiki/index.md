@@ -29,6 +29,7 @@ Retain copies: no
 
 ### concepts
 * [Attention](/concepts/attention.md) — how attention weights tokens
+* [Positional Encoding](/concepts/positional-encoding.md) — how token order enters the model
 
 ### entities
 * [Transformer](/entities/transformer.md) — the overall architecture

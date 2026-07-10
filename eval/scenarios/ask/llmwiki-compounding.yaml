@@ -1,0 +1,40 @@
+# ask flow — answer from an llmwiki, then file durable synthesis back through write.
+- config:
+    - vars:
+        env: wiki
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Ask module "wiki" in container
+          "wiki-hub" how Attention fits within a Transformer. Then run that module's
+          `write` skill to file the durable explanation at
+          `/syntheses/attention-in-transformers.md` with required OKF
+          `type: synthesis` frontmatter. Cross-link it, update the root index and log,
+          and sync.
+  tests:
+    - description: Ask - llmwiki compounding - answers then files durable synthesis
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [ask, run, sync] }
+        - type: javascript
+          value: file://assertions/okf-valid.ts
+          config: { module: wiki, requireChanged: true }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts: { module: wiki, maxFiles: 10 }
+            criteria:
+              - id: answered-from-wiki
+                text: The agent answered how Attention fits within a Transformer using the existing wiki pages.
+                check: { kind: tool, name: ask }
+              - id: ran-write
+                text: The agent invoked the wiki module's write skill to persist the durable answer.
+                check:
+                  kind: transcript-contains
+                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"wiki")(?=[^\r\n]*"skill"\s*:\s*"write")'
+              - id: filed-synthesis
+                text: The on-disk changes include a new OKF synthesis page explaining the Attention-to-Transformer relationship.
+              - id: maintained-wiki
+                text: The synthesis is cross-linked and the root index.md catalog and log.md were updated.
+              - id: persisted-via-sync
+                text: The wiki changes were persisted via the sync tool.
+                check: { kind: tool, name: sync }

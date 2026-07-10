@@ -15,9 +15,9 @@ describe("okh-eval manual CLI (environment-centric)", () => {
     expect(listEnvironments().sort()).toEqual(["custom", "empty", "git", "health", "local-and-git", "wiki"]);
   });
 
-  it("loads 23 scenario configs with inline prompts + envs, recursively", async () => {
+  it("loads 25 scenario configs with inline prompts + envs, recursively", async () => {
     const all = await loadScenarios();
-    expect(all.length).toBe(23);
+    expect(all.length).toBe(25);
     for (const s of all) {
       expect(typeof s.prompt).toBe("string");
       expect(s.prompt.length).toBeGreaterThan(0);
@@ -31,7 +31,7 @@ describe("okh-eval manual CLI (environment-centric)", () => {
     expect((await scenariosForEnv("git")).length).toBe(1);
     expect((await scenariosForEnv("empty")).length).toBe(8);
     expect((await scenariosForEnv("custom")).length).toBe(2);
-    expect((await scenariosForEnv("wiki")).length).toBe(2);
+    expect((await scenariosForEnv("wiki")).length).toBe(4);
   });
 
   it("setup provisions local-and-git and lists its prompts + checklists", async () => {

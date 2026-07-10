@@ -18,7 +18,13 @@
         - type: javascript
           value: file://assertions/judge.ts
           config:
+            artifacts: { module: wiki, maxFiles: 10 }
             criteria:
+              - id: ran-write
+                text: The agent invoked the wiki module's write skill.
+                check:
+                  kind: transcript-contains
+                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"wiki")(?=[^\r\n]*"skill"\s*:\s*"write")'
               - id: created-kv-page
                 text: A new OKF page about the KV cache was created under the wiki module (e.g. concepts/kv-cache.md).
               - id: cross-linked
