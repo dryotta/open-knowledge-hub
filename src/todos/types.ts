@@ -38,6 +38,29 @@ export interface TodoSource {
   line: number;
 }
 
+export interface TodoQuery {
+  container?: string;
+  module?: string;
+  status?: TodoStatus | "all";
+  labels?: string[];
+  labelMode?: "any" | "all";
+  priorities?: TodoPriority[];
+  dueAfter?: string;
+  dueBefore?: string;
+  overdue?: boolean;
+  query?: string;
+}
+
+export interface TodoLocator {
+  v: 1;
+  container: string;
+  module: string;
+  path: string;
+  line: number;
+  fingerprint: string;
+  id?: string;
+}
+
 export interface TodoRecord {
   ref: string;
   status: TodoStatus;
