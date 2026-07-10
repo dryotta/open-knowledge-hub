@@ -50,11 +50,9 @@ Then offer to set up their first container. Ask which they want:
 Call `add_container`. Remember: it returns a *plan* and makes no changes by default.
 Show the plan, get an explicit "yes", then call `add_container` again with
 `create: true`. After the container exists, offer to add a `knowledge` module (and
-others as needed) with `add_module` the same way (plan first, then `create: true`).
-
-When a `knowledge` module is created, run its `initialize` skill
-(`run { container, module, skill: "initialize" }`) to survey the target repo into a
-scope-bounded pack.
+others as needed): call `add_module` — it returns a short step-by-step workflow.
+Follow it: it has you understand the need, propose the module and confirm with the
+user, apply with `create: true`, then run the type's `initialize` skill to populate it.
 
 ## Stage 3 — Everyday use (required)
 

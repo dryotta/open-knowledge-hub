@@ -1,12 +1,12 @@
 ---
 title: Add a module
 args:
-  container: Target container.
-  path: Module folder path within the container.
-  type: "Module type: a built-in (knowledge, skills, tools, memory, project) or a custom type name."
-  name: Module display name.
+  container: Target container (required when create:true).
+  path: Module folder path within the container (required when create:true).
+  type: "Module type: a built-in (knowledge, skills, tools, memory, project) or a custom type name (required when create:true)."
+  name: Module display name (required when create:true).
   description: One-line module description.
   config: Optional module config.
-  create: Apply the change. Omit to preview a plan (no changes).
+  create: Apply the change. Omit to get a step-by-step workflow (no changes).
 ---
-Add a typed module to a container with { container, path, type, name }. By default this returns a plan and makes no changes; show it to the user, get confirmation, then re-call with create:true.
+By default this returns a step-by-step workflow for adding, creating, and initializing a module — follow it: understand the need, propose { container, path, type, name, description } and get the user's agreement, then re-call with create:true to apply, and run the type's initialize skill if it has one.
