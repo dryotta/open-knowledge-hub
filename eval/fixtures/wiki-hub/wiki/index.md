@@ -19,7 +19,7 @@ Help a reader (human or agent) understand transformer components and how they co
 
 - **Groups / folders** — `concepts/`, `entities/`.
 - **Concept types** — `concept`, `entity`.
-- **Links** — OKF bundle-relative, e.g. `[x](/concepts/x.md)`. No orphans.
+- **Links** — OKF bundle-relative (for example, `/concepts/page.md`). No orphans.
 
 ## Sources
 

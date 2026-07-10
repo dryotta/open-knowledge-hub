@@ -3,8 +3,9 @@
     - vars:
         env: wiki
         prompt: |
-          Use the open-knowledge-hub MCP tools. Lint my ml-wiki wiki (container "wiki-hub",
-          module "wiki"): inspect its health, fix what you safely can, and log the pass. Then sync.
+          Use the open-knowledge-hub MCP tools. Run the "wiki" module's `lint` skill in
+          container "wiki-hub" to inspect the ml-wiki's health, fix what it safely can,
+          and log the pass. Then sync.
   tests:
     - description: Lint - wiki health - inspects, fixes dangling link, logs
       assert:

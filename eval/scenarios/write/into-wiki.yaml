@@ -3,8 +3,8 @@
     - vars:
         env: wiki
         prompt: |
-          Use the open-knowledge-hub MCP tools. Add this to my ml-wiki wiki (container
-          "wiki-hub", module "wiki"): "KV cache stores past keys and values so decoding
+          Use the open-knowledge-hub MCP tools. Run the "wiki" module's `write` skill in
+          container "wiki-hub" to add: "KV cache stores past keys and values so decoding
           is linear per new token instead of quadratic." Then sync.
   tests:
     - description: Write - in-scope page - integrates, cross-links, syncs

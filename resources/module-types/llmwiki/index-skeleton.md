@@ -26,7 +26,7 @@ what belongs here.
 - **Groups / folders** — TODO — the group folders (each has its own `index.md`).
 - **Concept types** — TODO — the OKF `type` vocabulary used across pages (declare each).
 - **Tags** — TODO — any cross-cutting tags (optional).
-- **Links** — OKF bundle-relative links between pages, e.g. `[x](/group/x.md)`. Every page links to
+- **Links** — OKF bundle-relative links between pages (for example, `/group/page.md`). Every page links to
   at least one other (no orphans).
 
 ## Sources

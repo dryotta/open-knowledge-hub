@@ -114,6 +114,15 @@ describe("llmwiki loader", () => {
     expect(log).toContain("Update Log");
   });
 
+  it("scaffolded index does not create a dangling example link", async () => {
+    const root = await tmp();
+    await llmwikiLoader.scaffold!(root);
+
+    const h = await llmwikiLoader.health!(root);
+
+    expect(h.danglingLinks).toEqual([]);
+  });
+
   it("scaffold does not overwrite an existing index.md", async () => {
     const root = await tmp();
     await write(root, "index.md", "# Existing\n");
