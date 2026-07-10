@@ -1,26 +1,15 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseFrontmatter, stringField } from "../../util/frontmatter.js";
 import { walkFiles } from "../fs.js";
 import type { Item, Loader } from "../types.js";
 
 const RESERVED = new Set(["index.md", "log.md"]);
 
-const INDEX_SKELETON = `---
-okf_version: "0.1"
-type: Pack Index
-title: Knowledge
-description: TODO one-line description of this knowledge module.
----
-
-# Knowledge
-
-> TODO: what this module is for.
-
-## Concepts
-
-_None yet._
-`;
+// The starter index.md written into a new knowledge module. Authored as an
+// editable resource; resolves from src (tsx) and dist (built).
+const INDEX_SKELETON_URL = new URL("../../../resources/module-types/knowledge/index-skeleton.md", import.meta.url);
 
 function isNotFound(err: unknown): boolean {
   return (
@@ -72,7 +61,8 @@ async function overview(moduleRoot: string): Promise<string> {
 
 async function scaffold(moduleRoot: string): Promise<void> {
   await mkdir(moduleRoot, { recursive: true });
-  await writeFile(join(moduleRoot, "index.md"), INDEX_SKELETON, { encoding: "utf8", flag: "wx" });
+  const skeleton = await readFile(fileURLToPath(INDEX_SKELETON_URL), "utf8");
+  await writeFile(join(moduleRoot, "index.md"), skeleton, { encoding: "utf8", flag: "wx" });
 }
 
 export const knowledgeLoader: Loader = { enumerate, overview, scaffold };

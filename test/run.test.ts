@@ -33,6 +33,13 @@ describe("effective skills + resolveSkill", () => {
     await expect(svc.resolveSkill("h", "mem", "nope")).rejects.toThrow(/remember|reflect/);
   });
 
+  it("knowledge type exposes learn + initialize", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "kb"), { type: "knowledge", name: "KB", description: "" });
+    const names = (await svc.effectiveSkills("h", "kb")).map((s) => s.name).sort();
+    expect(names).toEqual(["initialize", "learn"]);
+  });
+
   it("custom module exposes only its module-local skills", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "recipes"), { type: "recipes", name: "Food", description: "" });
@@ -40,5 +47,14 @@ describe("effective skills + resolveSkill", () => {
     await writeFile(join(root, "recipes", ".claude", "skills", "cook", "SKILL.md"), "---\nname: cook\ndescription: cook it\n---\n\nCook.\n");
     const skills = await svc.effectiveSkills("h", "recipes");
     expect(skills.map((s) => s.name)).toEqual(["cook"]);
+  });
+});
+
+describe("shared skills", () => {
+  it("resolveSharedSkill returns the grilling body; unknown throws with a list", async () => {
+    const { svc } = await setup();
+    const s = await svc.resolveSharedSkill("grilling");
+    expect(s.body.length).toBeGreaterThan(0);
+    await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
   });
 });

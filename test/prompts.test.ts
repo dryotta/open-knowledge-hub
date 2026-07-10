@@ -3,8 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { loadOkf, loadDiscipline, combineOkf } from "../src/prompts/discipline.js";
-import { buildAsk, buildContext, buildRun } from "../src/prompts/index.js";
+import { buildAsk, buildContext, buildOnboard, buildRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -12,32 +11,6 @@ class FakeGh { async createRepo(){return "x";} async createPr(){return "x";} }
 const cleanups: string[] = [];
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
-});
-
-describe("discipline loader", () => {
-  it("loads a vendored OKF doc", async () => {
-    const text = await loadOkf("okf-ask");
-    expect(text.length).toBeGreaterThan(0);
-  });
-
-  it("loads a new v2 discipline doc", async () => {
-    expect(await loadDiscipline("context")).toMatch(/working set/i);
-  });
-
-  it("combineOkf wraps each doc in a named discipline block", async () => {
-    const combined = await combineOkf(["okf-ask"]);
-    expect(combined).toContain('<discipline name="okf-ask">');
-    expect(combined).toContain("</discipline>");
-  });
-
-  it("onboard discipline is staged and routes wake-phrase changes to config", async () => {
-    const text = await loadDiscipline("onboard");
-    expect(text).toMatch(/Stage 1/);
-    expect(text).toMatch(/Stage 2/);
-    expect(text).toMatch(/Stage 3/);
-    expect(text).toContain("config { set: { wakePhrase");
-    expect(text).not.toContain("onboard { wakePhrase");
-  });
 });
 
 describe("resolveTargets", () => {
@@ -71,24 +44,39 @@ describe("prompt builders", () => {
       { type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" },
     ] },
   ];
-  it("ask includes the question, the target path, and the okf-ask discipline", async () => {
+  it("ask includes the question, the target path, and the ask discipline", async () => {
     const text = await buildAsk(targets, "How does auth work?");
     expect(text).toContain("How does auth work?");
     expect(text).toContain("/c/hub/kb");
-    expect(text).toContain('<discipline name="okf-ask">');
+    expect(text).toContain('<discipline name="ask">');
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
   });
-  it("buildRun embeds skill name, body, module path, and write policy", () => {
+  it("onboard includes staged guidance, the wake phrase, and config routing", async () => {
+    const text = await buildOnboard(targets, { wakePhrase: "sam" });
+    expect(text).toContain("sam");
+    expect(text).toMatch(/Stage 1/);
+    expect(text).toContain("config { set: { wakePhrase");
+    expect(text).not.toContain("onboard { wakePhrase");
+  });
+  it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;
     const mod: ResolvedModule = target.modules[1]!;
     const skill: Skill = { name: "remember", description: "Record an observation", body: "Append-only timestamped entries.", source: "vendored" };
-    const text = buildRun(target, mod, skill, "Observed X");
+    const text = await buildRun(skill, "Observed X", target, mod);
     expect(text).toContain("remember");
     expect(text).toContain("Append-only timestamped entries.");
     expect(text).toContain("mem");
     expect(text).toContain("Write policy");
     expect(text).toContain("Observed X");
+  });
+  it("buildRun without a target renders a module-less shared skill", async () => {
+    const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
+    const text = await buildRun(skill, "Draft the auth pack");
+    expect(text).toContain("okf-writer");
+    expect(text).toContain("Write cited concepts.");
+    expect(text).toContain("Draft the auth pack");
+    expect(text).not.toContain("**Module:**");
   });
 });

@@ -1,19 +1,13 @@
 import type { ResolvedContainer, ResolvedModule } from "../container/service.js";
+import { skillResourcePaths } from "../modules/shared.js";
 import type { Skill } from "../modules/skills.js";
-import { combineOkf, loadDiscipline } from "./discipline.js";
+import { renderTemplate } from "./templates.js";
 
-const WRITE_POLICY = `## Write policy
-
-After editing files:
-1. Summarise the diff for the user and get explicit confirmation before persisting.
-2. Call the \`sync\` tool ({ container }). It commits + pushes directly (sync: auto)
-   or opens a pull request (sync: pr), per the container's configuration.
-Never persist changes without the user's go-ahead. If several candidate
-containers/modules are listed below, choose or confirm ONE target before writing.`;
+const NONE = "(none provided — clarify with the user)";
 
 /** Render the target containers -> modules -> absolute paths as a markdown list. */
 function renderTargets(targets: ResolvedContainer[]): string {
-  if (targets.length === 0) return "_No containers are registered. Use the `add` tool first._";
+  if (targets.length === 0) return "_No containers are registered. Use the `add_container` tool first._";
   return targets
     .map((c) => {
       const header = `- **${c.name}** (${c.backend}, sync: ${c.sync}) — \`${c.root}\``;
@@ -25,68 +19,46 @@ function renderTargets(targets: ResolvedContainer[]): string {
     .join("\n");
 }
 
-export async function buildAsk(targets: ResolvedContainer[], question?: string): Promise<string> {
-  const discipline = await combineOkf(["okf-ask"]);
-  return `# OKH: ask
-
-**Question:** ${question ?? "(none provided — clarify with the user)"}
-
-**Scan these targets:**
-${renderTargets(targets)}
-
-Answer using the \`okf-ask\` discipline: fork a fresh sub-agent that reads only the
-relevant module(s), starting from each module's overview (knowledge: index.md;
-skills/tools: the listing; memory/project: recent files). Return a distilled,
-**cited** answer. Do not load whole modules into this context.
-
-${discipline}`;
+/** Render a skill's resource paths block (empty when there are none). */
+function renderResources(paths: string[]): string {
+  if (paths.length === 0) return "";
+  return `**Skill resources (open as needed):**\n${paths.map((p) => `- \`${p}\``).join("\n")}`;
 }
 
-export async function buildContext(targets: ResolvedContainer[], task?: string): Promise<string> {
-  const discipline = await loadDiscipline("context");
-  return `# OKH: context
-
-**Task:** ${task ?? "(none provided — clarify with the user)"}
-
-**Available targets:**
-${renderTargets(targets)}
-
-<discipline name="context">
-
-${discipline}
-
-</discipline>`;
+export function buildInstructions(config: Record<string, unknown>): Promise<string> {
+  return renderTemplate("instructions", { config });
 }
 
-export function buildRun(target: ResolvedContainer, module: ResolvedModule, skill: Skill, input?: string): string {
-  return `# OKH: run — ${skill.name}
-
-**Skill:** ${skill.name} — ${skill.description}
-**Module:** ${module.type} · ${module.name} (\`${module.path}\`) → \`${module.absPath}\`
-**Container:** ${target.name} (${target.backend}, sync: ${target.sync}) — \`${target.root}\`
-**Input:** ${input ?? "(none provided — clarify with the user)"}
-
-<discipline name="${skill.name}">
-
-${skill.body}
-
-</discipline>
-
-${WRITE_POLICY}`;
+export function buildAsk(targets: ResolvedContainer[], question?: string): Promise<string> {
+  return renderTemplate("ask", { vars: { question: question ?? NONE, targets: renderTargets(targets) } });
 }
 
-export async function buildOnboard(targets: ResolvedContainer[], wakePhrase: string): Promise<string> {
-  const discipline = await loadDiscipline("onboard");
-  return `# OKH: onboard
+export function buildContext(targets: ResolvedContainer[], task?: string): Promise<string> {
+  return renderTemplate("context", { vars: { task: task ?? NONE, targets: renderTargets(targets) } });
+}
 
-**Wake phrase:** \`${wakePhrase}\`
+export function buildOnboard(targets: ResolvedContainer[], config: Record<string, unknown>): Promise<string> {
+  return renderTemplate("onboard", { config, vars: { targets: renderTargets(targets) } });
+}
 
-**Current containers:**
-${renderTargets(targets)}
-
-<discipline name="onboard">
-
-${discipline}
-
-</discipline>`;
+/** Render a skill run. With target+module it's a module skill; with neither, a module-less shared skill. */
+export async function buildRun(
+  skill: Skill,
+  input?: string,
+  target?: ResolvedContainer,
+  module?: ResolvedModule,
+): Promise<string> {
+  const targetBlock =
+    target && module
+      ? `**Module:** ${module.type} · ${module.name} (\`${module.path}\`) → \`${module.absPath}\`\n` +
+        `**Container:** ${target.name} (${target.backend}, sync: ${String(target.sync)}) — \`${target.root}\`\n`
+      : "";
+  return renderTemplate("run", {
+    vars: {
+      skill: { name: skill.name, description: skill.description, body: skill.body },
+      input: input ?? NONE,
+      target: targetBlock,
+      resources: renderResources(await skillResourcePaths(skill)),
+    },
+  });
 }

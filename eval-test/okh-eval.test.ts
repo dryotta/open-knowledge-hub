@@ -15,9 +15,9 @@ describe("okh-eval manual CLI (environment-centric)", () => {
     expect(listEnvironments().sort()).toEqual(["custom", "empty", "git", "local-and-git"]);
   });
 
-  it("loads 19 scenario configs with inline prompts + envs, recursively", async () => {
+  it("loads 20 scenario configs with inline prompts + envs, recursively", async () => {
     const all = await loadScenarios();
-    expect(all.length).toBe(19);
+    expect(all.length).toBe(20);
     for (const s of all) {
       expect(typeof s.prompt).toBe("string");
       expect(s.prompt.length).toBeGreaterThan(0);
@@ -29,7 +29,7 @@ describe("okh-eval manual CLI (environment-centric)", () => {
   it("groups tests by environment", async () => {
     expect((await scenariosForEnv("local-and-git")).length).toBe(9);
     expect((await scenariosForEnv("git")).length).toBe(1);
-    expect((await scenariosForEnv("empty")).length).toBe(7);
+    expect((await scenariosForEnv("empty")).length).toBe(8);
     expect((await scenariosForEnv("custom")).length).toBe(2);
   });
 
@@ -48,7 +48,7 @@ describe("okh-eval manual CLI (environment-centric)", () => {
   it("setup empty leaves an empty registry with an unregistered notes folder", async () => {
     const res = await setupEnvironment("empty");
     roots.push(res.root);
-    expect(res.prompts.length).toBe(7);
+    expect(res.prompts.length).toBe(8);
     const reg = JSON.parse(await readFile(join(res.root, "okh-home", "registry.json"), "utf8"));
     expect(reg.containers).toHaveLength(0);
     expect(await exists(join(res.workspace, "notes"))).toBe(true);

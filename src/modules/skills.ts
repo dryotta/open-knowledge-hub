@@ -8,6 +8,8 @@ export interface Skill {
   body: string;
   /** Provenance label for inspect/debugging. */
   source: string;
+  /** Absolute path to the skill's folder (holds SKILL.md and any resource files). */
+  dir?: string;
 }
 
 /** Module-local skill roots scanned, in precedence order: on a name collision an
@@ -34,7 +36,7 @@ export async function readSkill(dir: string, source: string): Promise<Skill | un
   const { data, body } = parseFrontmatter(text);
   const name = stringField(data, "name");
   if (!name) return undefined;
-  return { name, description: stringField(data, "description") ?? "", body: body.trim(), source };
+  return { name, description: stringField(data, "description") ?? "", body: body.trim(), source, dir };
 }
 
 /** Discover module-local skills across all known skill roots inside a module.
@@ -57,10 +59,10 @@ export async function discoverModuleSkills(moduleRoot: string): Promise<Skill[]>
 }
 
 /** Discover vendored skills for a built-in type from an absolute vendored dir. */
-export async function discoverVendoredSkills(vendoredDir: string): Promise<Skill[]> {
+export async function discoverVendoredSkills(vendoredDir: string, source = "vendored"): Promise<Skill[]> {
   const out: Skill[] = [];
   for (const name of await subdirNames(vendoredDir)) {
-    const s = await readSkill(join(vendoredDir, name), "vendored");
+    const s = await readSkill(join(vendoredDir, name), source);
     if (s) out.push(s);
   }
   return out;

@@ -1,3 +1,12 @@
+# OKH: onboard
+
+**Wake phrase:** `{{config:wakePhrase}}`
+
+**Current containers:**
+{{var:targets}}
+
+<discipline name="onboard">
+
 # Onboarding a new user
 
 You are guiding someone who just installed Open Knowledge Hub. Keep it brief and
@@ -38,10 +47,14 @@ Then offer to set up their first container. Ask which they want:
 - a brand-new folder to create from scratch,
 - a git repository (GitHub) to clone.
 
-Call `add`. Remember: `add` returns a *plan* and makes no changes by default. Show
-the plan, get an explicit "yes", then call `add` again with `create: true`. After
-the container exists, offer to add a `knowledge` module (and others as needed) the
-same way.
+Call `add_container`. Remember: it returns a *plan* and makes no changes by default.
+Show the plan, get an explicit "yes", then call `add_container` again with
+`create: true`. After the container exists, offer to add a `knowledge` module (and
+others as needed) with `add_module` the same way (plan first, then `create: true`).
+
+When a `knowledge` module is created, run its `initialize` skill
+(`run { container, module, skill: "initialize" }`) to survey the target repo into a
+scope-bounded pack.
 
 ## Stage 3 — Everyday use (required)
 
@@ -58,3 +71,5 @@ Point them at USAGE.md for the full list. Finally, ask them to restart their age
 (MCP client) so the new wake phrase and any config changes load properly.
 
 Never create folders, initialize manifests, or sync without explicit confirmation.
+
+</discipline>

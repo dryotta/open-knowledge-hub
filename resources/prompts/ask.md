@@ -1,8 +1,16 @@
----
-name: okf-ask
-description: Answer a question from an OKF knowledge pack without loading the pack into the main context — fork a sub-agent to read it and return a distilled, self-contained answer with next steps.
-disable-model-invocation: true
----
+# OKH: ask
+
+**Question:** {{var:question}}
+
+**Scan these targets:**
+{{var:targets}}
+
+Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
+relevant module(s), starting from each module's overview (knowledge: index.md;
+skills/tools: the listing; memory/project: recent files). Return a distilled,
+**cited** answer. Do not load whole modules into this context.
+
+<discipline name="ask">
 
 # OKF Ask
 
@@ -47,8 +55,8 @@ Instruct the sub-agent to:
      not invent an answer.
 5. **Suggest next steps** whenever the question opens further ones — follow-up questions worth
    asking, related concepts in the pack to explore next, or, when the answer is missing/partial,
-   pointing at `okf-learn` to teach the pack the new knowledge (or `okf-new-from-repo` if the
-   pack is the wrong scope entirely).
+   pointing at the knowledge module's `learn` skill to teach it the new knowledge (or the
+   `initialize` skill if the module needs a fresh scope entirely).
 
 ### Stage 3 — Relay the distilled answer
 
@@ -57,9 +65,9 @@ Return the sub-agent's answer to the user largely as-is. Structure it as:
 - **Answer** — per question, with its citations.
 - **Confidence / coverage** — fully answered, partial (with the gap named), or out of scope.
 - **Next steps** — suggested follow-up questions and, where relevant, the skill to use
-  (`okf-ask` again for follow-ups, `okf-learn` to fill a gap).
+  (ask again for follow-ups, the `learn` skill to fill a gap).
 
-If a follow-up question arises, run `okf-ask` again rather than holding the bundle open in
+If a follow-up question arises, ask again rather than holding the bundle open in
 context — each ask is a fresh, cheap fork.
 
 ## Completion criterion
@@ -70,3 +78,5 @@ context — each ask is a fresh, cheap fork.
   `⚠️ UNVERIFIED` flags preserved.
 - Coverage is stated honestly: answered, partial (gap named), or out of scope — no invented facts.
 - The answer ends with concrete next steps when further questions remain.
+
+</discipline>

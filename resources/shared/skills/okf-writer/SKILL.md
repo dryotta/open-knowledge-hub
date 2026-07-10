@@ -57,8 +57,7 @@ decoratively; never invent edges.
 Represent glossary terms and architectural decisions as **OKF concepts inside the bundle** (give
 them a fitting `type`, e.g. a glossary-term type and a decision type). If the repo already has a
 `CONTEXT.md`, `CONTEXT-MAP.md`, or `docs/adr/`, treat those as authoritative: cite/link them as
-sources rather than re-deriving or contradicting them. Do not fork their authoring — that's
-`domain-modeling`'s job.
+sources rather than re-deriving or contradicting them. Do not re-derive what they already settle.
 
 ## Index & history
 

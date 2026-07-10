@@ -42,7 +42,7 @@ export async function loadModuleManifest(moduleRoot: string): Promise<ModuleMani
       throw new OkhError(
         "INVALID_MANIFEST",
         `Module at ${moduleRoot} has no ${MODULE_OKH_DIR}/${MODULE_MANIFEST_BASENAME}.`,
-        "Run the add tool to scaffold the module, or create the manifest by hand.",
+        "Run the add_module tool to scaffold the module, or create the manifest by hand.",
       );
     }
     throw err;

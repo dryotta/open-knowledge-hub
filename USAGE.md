@@ -15,7 +15,7 @@ announced **wake phrase**. Address the hub with the wake phrase — by default
   then follows — they don't act on their own. Naming the hub matters most for
   these; without it, a request often won't reach OKH. `learn`, `remember`, and
   `reflect` are module skills, invoked via `run { container, module, skill }`.
-- The *operational tools* (`inspect`, `add`, `sync`, `config`) act directly and
+- The *operational tools* (`inspect`, `add_container`, `add_module`, `sync`, `config`) act directly and
   usually route reliably even without the prefix.
 - Most explicit option: clients with a prompt UI expose OKH's flows as pickable
   `/`-commands.
@@ -30,10 +30,11 @@ container directly:
 - **From GitHub:** `hub, connect the repo https://github.com/me/my-notes.git.`
 - **Add a module:** `hub, add a knowledge module called kb.`
 
-**The confirmation step.** `add` never changes anything on disk on its own. It
-first replies with a **plan** ("will create folder …, will initialize a
-manifest …"). Review it and confirm; your agent then re-runs `add` to apply. This
-is why the first `add` shows a plan instead of doing the work immediately.
+**The confirmation step.** `add_container` and `add_module` never change anything on
+disk on their own. Each first replies with a **plan** ("will create folder …, will
+initialize a manifest …"). Review it and confirm; your agent then re-runs the same
+tool with `create:true` to apply. This is why the first call shows a plan instead of
+doing the work immediately.
 
 ## Choosing a wake phrase
 
@@ -52,6 +53,7 @@ same phrase (client-specific).
 - **Context:** `hub, assemble the context I need to build a login feature.`
 - **Reflect:** `hub, run reflect on my memory module.`
 - **Sync:** `hub, sync my container.` (commit + push) or `hub, open a PR with my changes.`
+- **Shared skill (no module):** `hub, run the grilling skill to stress-test my plan.` — shared skills (`grilling`, `okf-writer`) run via `run { skill }` with no container/module.
 
 `run` flows (`learn`, `remember`, `reflect`) are module skills — your agent follows
 the returned instructions, edits files locally, and asks before syncing. `sync`

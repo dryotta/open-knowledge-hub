@@ -11,7 +11,7 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [add] }
+          config: { expect: [add_container] }
         - type: javascript
           value: file://assertions/container-registered.ts
           config: { name: my-notes, backend: local, module: kb }
@@ -28,5 +28,5 @@
                 text: A container "my-notes" with a "kb" knowledge module was created.
                 check: { kind: container, name: my-notes, backend: local, module: kb }
               - id: called-add
-                text: The agent used the add tool.
-                check: { kind: tool, name: add }
+                text: The agent used the add_container tool.
+                check: { kind: tool, name: add_container }

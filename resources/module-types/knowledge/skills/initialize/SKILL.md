@@ -1,15 +1,16 @@
 ---
-name: okf-new-from-repo
-description: Turn a code repository into a scope-bounded knowledge pack in Open Knowledge Format (OKF).
-disable-model-invocation: true
+name: initialize
+description: Initialize a newly-created knowledge (OKF) module by surveying its target repository into a scope-bounded, question-driven knowledge pack.
 ---
 
-# Repo → OKF
+# Initialize a knowledge module
 
-**Survey** a code repository into a *knowledge pack*: a scope-bounded, question-driven
-[OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) bundle of
-markdown concept docs. The pack exists to answer a specific, agreed list of questions —
-nothing more. Anything that does not help answer a target question does not belong in the pack.
+**Populate a freshly-created `knowledge` module** by surveying its target repository
+into a *knowledge pack*: a scope-bounded, question-driven
+[OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) bundle
+of markdown concept docs. The pack exists to answer a specific, agreed list of
+questions — nothing more. Anything that does not help answer a target question does
+not belong in the pack.
 
 The whole point is restraint. A sprawling auto-generated wiki is the failure mode. Resist it.
 
@@ -19,7 +20,7 @@ Run these stages in order. Each stage has a clear hand-off to the next.
 
 ### Stage 1 — Grill the scope
 
-Run a `/grilling` session whose **sole purpose** is to produce a written **scope contract**:
+Run the shared **grilling** skill (`run { skill: "grilling" }`) whose **sole purpose** is to produce a written **scope contract**:
 
 - **Goals** — what this knowledge pack is *for*: who reads it and what they need to accomplish
   (e.g. "onboard a new engineer to the billing module so they can ship a fix unaided"). One to
@@ -43,8 +44,8 @@ Do not start reading the codebase in earnest until the scope contract is agreed.
 
 ### Stage 2 — Explore (question-guided)
 
-Use the `/explore-repo` discipline to map only the parts of the repository needed to answer the
-target questions. Start from structural entry points, follow the code paths the questions demand,
+Explore the repository to map only the parts needed to answer the target questions. Start from
+structural entry points, follow the code paths the questions demand,
 and **stop once every question is answerable**. Do not exhaustively read the repo.
 
 If existing knowledge artifacts are present (`CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`),
@@ -52,14 +53,14 @@ read them as authoritative input — do not re-derive what they already settle.
 
 ### Stage 3 — Grill the gaps
 
-A second, short `/grilling` pass — only for claims you found evidence of but **cannot verify
+A second, short grilling pass (`run { skill: "grilling" }`) — only for claims you found evidence of but **cannot verify
 from code alone** (almost always "why" questions: why this technology, why this split, what
 non-obvious constraint forced this). Resolve each before it is written, or it gets flagged
 `⚠️ UNVERIFIED` in the pack.
 
 ### Stage 4 — Write the bundle
 
-Use the `/okf-writer` discipline to author the OKF bundle. Default location is
+Use the shared **okf-writer** skill (`run { skill: "okf-writer" }`) to author the OKF bundle. Default location is
 `./knowledge/<pack-name>/` inside the target repo (the user may override). Every non-trivial
 claim is cited to a repository path; unverifiable claims are flagged `⚠️ UNVERIFIED`.
 
