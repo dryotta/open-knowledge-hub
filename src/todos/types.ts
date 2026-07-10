@@ -102,3 +102,29 @@ export interface TodoLinePatch {
   due?: string | null;
   priority?: TodoPriority | null;
 }
+
+export type TodoUpdateInput =
+  | {
+      operation: "create";
+      container: string;
+      module: string;
+      text: string;
+      entrySummary?: string;
+      observation?: string;
+      labels?: string[];
+      due?: string;
+      priority?: TodoPriority;
+    }
+  | {
+      operation: "patch";
+      ref: string;
+      completed?: boolean;
+      labels?: string[];
+      due?: string | null;
+      priority?: TodoPriority | null;
+    };
+
+export interface TodoUpdateResult {
+  todo: TodoRecord;
+  dirtyContainer: string;
+}
