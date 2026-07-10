@@ -24,12 +24,13 @@ discipline text; your agent does all the reasoning.
 - **Module** — a self-contained typed subfolder. Each module carries its own
   `.okh/module.yaml` manifest (`type`, `name`, `description`, optional `config`).
   The hub auto-discovers modules by scanning the container for these manifests.
-  Built-in types: `knowledge` (OKF markdown), `memory`. Custom types (any other
-  string) use a generic file-listing loader; skills come entirely from the module.
+  Built-in types: `knowledge` (OKF markdown), `llmwiki` (OKF-backed living wiki),
+  `memory`. Custom types (any other string) use a generic file-listing loader;
+  skills come entirely from the module.
 
 ### Module manifest (`<module>/.okh/module.yaml`)
 ```yaml
-type: knowledge   # built-in (knowledge, memory) or any custom string
+type: knowledge   # built-in (knowledge, llmwiki, memory, …) or any custom string
 name: my-kb
 description: Project notes   # optional
 # config: {}                 # optional, type-specific
@@ -39,8 +40,9 @@ The container's `name` and `sync` mode (`auto` | `pr`) are set in the **registry
 entry** at `add_container`-time, not in a per-container file.
 
 ### Type skills
-Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `memory`
-→ `remember`, `reflect` (under `resources/module-types/<type>/skills/`). A module's
+Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `llmwiki`
+→ `initialize`, `write`, `lint`; `memory` → `remember`, `reflect` (under
+`resources/module-types/<type>/skills/`). A module's
 effective skill set = vendored (for its type) ∪ module-local skills (discovered from
 `.okh/skills/` and common roots like `.claude/skills/`). Shared, module-less skills
 (`grilling`, `okf-writer`, `ingest`) live under `resources/shared/skills/` and run via
