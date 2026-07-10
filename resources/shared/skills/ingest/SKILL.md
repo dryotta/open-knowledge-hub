@@ -27,9 +27,10 @@ sources back and confirm it is complete before extracting, so nothing is silentl
 
 ## Stage 2 — Extract
 
-For each source, obtain its **text** with your own tools: PDF/doc/image → text, using OCR or table
-extraction when the document is scanned or tabular. If a source **can't be read or extracted**, do
-not invent its contents — list it as a failure and ask how to proceed.
+For each source, obtain its **text** with your own tools — prefer a local extractor (a small PDF
+library, or `pdftotext`); use OCR or table extraction only for scanned or image pages. If a source
+**can't be read or extracted**, do not invent its contents — list it as a failure and ask how to
+proceed.
 
 ## Stage 3 — Normalize into candidates (with provenance)
 
@@ -51,7 +52,9 @@ candidates look **out of scope**. Get the user's confirmation. Respect the targe
 contract — if material falls outside it (e.g. a Health module whose contract excludes
 metrics/vitals versus attached lab panels), **surface the conflict**: propose a scope change
 through the target's grilling, or a different or new module. Never silently drop a candidate, and
-never silently expand scope.
+never silently expand scope. If the target module already has a scope contract in `index.md`, do
+**not** re-initialize it — `learn` reads the existing contract; a module with zero concepts is not
+the same as an uninitialized one.
 
 ## Stage 5 — Report
 
