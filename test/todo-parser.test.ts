@@ -152,6 +152,25 @@ describe("parseTodoLine", () => {
     });
   });
 
+  it("keeps punctuation and word-shaping characters adjacent after removing priority metadata", () => {
+    expect(parseTodoLine("- [ ] Task 🔼* next")).toMatchObject({
+      priority: "medium",
+      text: "Task* next",
+    });
+    expect(parseTodoLine("- [ ] Task 🔼_em_ next")).toMatchObject({
+      priority: "medium",
+      text: "Task_em_ next",
+    });
+    expect(parseTodoLine("- [ ] Task 🔼，next")).toMatchObject({
+      priority: "medium",
+      text: "Task，next",
+    });
+    expect(parseTodoLine("- [ ] Task 🔼؟next")).toMatchObject({
+      priority: "medium",
+      text: "Task؟next",
+    });
+  });
+
   it("does not parse priority emoji when it touches a word", () => {
     expect(parseTodoLine("- [ ] 🔼momentum")).toMatchObject({
       priority: "normal",

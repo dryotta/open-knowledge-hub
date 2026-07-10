@@ -20,8 +20,9 @@ const PRIORITY_BY_EMOJI: Record<string, TodoPriority> = {
   "🔺": "highest",
 };
 
-const OPEN_PUNCTUATION = new Set(["(", "[", "{", "<", "“", "‘", "«", "‹", "（", "【", "「", "『", "《", "〔"]);
 const CLOSE_PUNCTUATION = new Set([",", ".", "!", "?", ";", ":", ")", "]", "}", ">", "”", "’", "»", "›", "）", "】", "」", "』", "》", "〕"]);
+const UNICODE_PUNCTUATION_RE = /^\p{P}$/u;
+const UNICODE_OPEN_OR_INITIAL_PUNCTUATION_RE = /^[\p{Ps}\p{Pi}]$/u;
 
 const DATE_FIELD_BY_EMOJI: Record<string, "due" | "created" | "completed"> = {
   "📅": "due",
@@ -98,9 +99,8 @@ function shouldInsertSpace(left: string, right: string): boolean {
   const rightBoundary = firstCodePoint(right.trimStart());
   if (!leftBoundary || !rightBoundary) return false;
   if (/^\s/u.test(right)) return false;
-  if (OPEN_PUNCTUATION.has(leftBoundary)) return false;
-  if (OPEN_PUNCTUATION.has(rightBoundary)) return false;
-  if (CLOSE_PUNCTUATION.has(rightBoundary)) return false;
+  if (UNICODE_OPEN_OR_INITIAL_PUNCTUATION_RE.test(leftBoundary)) return false;
+  if (UNICODE_PUNCTUATION_RE.test(rightBoundary)) return false;
   return true;
 }
 
