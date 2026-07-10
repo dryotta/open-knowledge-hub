@@ -120,6 +120,20 @@ describe("parseTodoLine", () => {
     });
   });
 
+  it("preserves trailing punctuation on ids while keeping the id value clean", () => {
+    expect(parseTodoLine("- [ ] Task 🆔 abc123, more text")).toMatchObject({
+      id: "abc123",
+      text: "Task, more text",
+    });
+  });
+
+  it("preserves trailing punctuation on created dates while keeping the date value clean", () => {
+    expect(parseTodoLine("- [ ] Note ➕ 2026-07-11: details")).toMatchObject({
+      created: "2026-07-11",
+      text: "Note: details",
+    });
+  });
+
   it("treats embedded metadata-like text as ordinary text unless separated by whitespace", () => {
     const parsed = parseTodoLine("- [ ] Keep C🔼 A✅2026-07-10 and 🆔badge");
     expect(parsed).toMatchObject({

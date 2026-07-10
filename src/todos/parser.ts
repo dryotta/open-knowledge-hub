@@ -83,6 +83,16 @@ function lastCodePoint(text: string): string | undefined {
   return last;
 }
 
+function trimTrailingTokenPunctuation(value: string): { value: string } {
+  let trimmed = value;
+  while (trimmed.length > 0) {
+    const char = lastCodePoint(trimmed);
+    if (!char || !CLOSE_PUNCTUATION.has(char)) break;
+    trimmed = trimmed.slice(0, trimmed.length - char.length);
+  }
+  return { value: trimmed };
+}
+
 function shouldInsertSpace(left: string, right: string): boolean {
   const leftBoundary = lastCodePoint(left.trimEnd());
   const rightBoundary = firstCodePoint(right.trimStart());
@@ -129,29 +139,33 @@ function collectTokens(body: string): TodoToken[] {
     const raw = match[0] ?? "";
     const start = match.index ?? 0;
     const emoji = match[1] ?? "";
-    const value = match[2] ?? "";
+    const captured = match[2] ?? "";
     const kind = DATE_FIELD_BY_EMOJI[emoji];
     if (!kind) continue;
+    const trimmed = trimTrailingTokenPunctuation(captured);
+    const rawEnd = start + emoji.length + 1 + trimmed.value.length;
     pushToken(tokens, {
       kind,
       start,
-      end: start + raw.length,
-      raw,
-      value,
-      valid: isIsoCalendarDate(value),
+      end: rawEnd,
+      raw: raw.slice(0, rawEnd - start),
+      value: trimmed.value,
+      valid: isIsoCalendarDate(trimmed.value),
     });
   }
 
   for (const match of body.matchAll(ID_RE)) {
     const raw = match[0] ?? "";
     const start = match.index ?? 0;
-    const value = match[1] ?? "";
+    const captured = match[1] ?? "";
+    const trimmed = trimTrailingTokenPunctuation(captured);
+    const rawEnd = start + "🆔".length + 1 + trimmed.value.length;
     pushToken(tokens, {
       kind: "id",
       start,
-      end: start + raw.length,
-      raw,
-      value,
+      end: rawEnd,
+      raw: raw.slice(0, rawEnd - start),
+      value: trimmed.value,
       valid: true,
     });
   }
@@ -203,7 +217,7 @@ function removeTokenSpans(body: string, tokens: TodoToken[]): string {
   return text.trim();
 }
 
-function duplicateWarning(kind: TodoTokenKind): string {
+function duplicateWarning(kind: Exclude<TodoTokenKind, "label">): string {
   switch (kind) {
     case "priority":
       return "Duplicate priority metadata found; using the last valid value.";
@@ -215,8 +229,6 @@ function duplicateWarning(kind: TodoTokenKind): string {
       return "Duplicate completion date metadata found; using the last valid value.";
     case "id":
       return "Duplicate todo ID metadata found; using the last valid value.";
-    case "label":
-      return "Duplicate label metadata found; keeping all labels.";
   }
 }
 
