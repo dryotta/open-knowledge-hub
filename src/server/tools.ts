@@ -97,7 +97,22 @@ function formatInspect(r: InspectResult): string {
   const overviewLines = overview
     ? ["Scope / overview:", ...overview.split("\n").map((l) => `  ${l}`)]
     : ["Scope / overview:", "  (no overview)"];
-  return [head, ...items, "Skills:", ...skillLines, ...overviewLines].join("\n");
+  const healthLines: string[] = [];
+  if (r.health) {
+    const h = r.health;
+    const clean = !h.orphans.length && !h.danglingLinks.length && !h.uncataloged.length && !h.missingType.length;
+    healthLines.push("Wiki health:");
+    if (clean) {
+      healthLines.push("  clean");
+    } else {
+      if (h.orphans.length) healthLines.push(`  Orphans (${h.orphans.length}): ${h.orphans.join(", ")}`);
+      if (h.danglingLinks.length)
+        healthLines.push(`  Dangling links (${h.danglingLinks.length}): ${h.danglingLinks.map((d) => `${d.from} → ${d.to}`).join(", ")}`);
+      if (h.uncataloged.length) healthLines.push(`  Uncataloged (${h.uncataloged.length}): ${h.uncataloged.join(", ")}`);
+      if (h.missingType.length) healthLines.push(`  Missing type (${h.missingType.length}): ${h.missingType.join(", ")}`);
+    }
+  }
+  return [head, ...items, "Skills:", ...skillLines, ...overviewLines, ...healthLines].join("\n");
 }
 
 function formatContainerPlan(plan: AddContainerPlan): string {

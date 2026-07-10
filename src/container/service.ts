@@ -25,7 +25,7 @@ import {
 import { discoverModules, type DiscoveredModule } from "../modules/discovery.js";
 import { migrateLegacyContainerManifest } from "./migrate.js";
 import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
-import { type Item } from "../modules/types.js";
+import { type Item, type WikiHealth } from "../modules/types.js";
 import { type SyncMode } from "../registry/schema.js";
 import { getLoader } from "../modules/registry.js";
 import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
@@ -210,6 +210,7 @@ export type InspectResult =
       overview: string;
       items: Item[];
       skills: Array<{ name: string; description: string }>;
+      health?: WikiHealth;
     };
 
 export interface SyncResult {
@@ -368,13 +369,16 @@ export class ContainerService {
     const manifest = await loadModuleManifest(moduleRoot);
     const items = await this.safeEnumerate(manifest.type, moduleRoot);
     const skills = await this.effectiveSkills(container, module);
-    const overview = await getLoader(manifest.type).overview(moduleRoot).catch(() => "");
+    const loader = getLoader(manifest.type);
+    const overview = await loader.overview(moduleRoot).catch(() => "");
+    const health = await loader.health?.(moduleRoot).catch(() => undefined);
     return {
       kind: "module",
       module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
       overview,
       items,
       skills: skills.map(s => ({ name: s.name, description: s.description })),
+      ...(health ? { health } : {}),
     };
   }
 
