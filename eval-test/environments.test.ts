@@ -11,8 +11,8 @@ afterEach(async () => {
 const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 describe("environments", () => {
-  it("defines exactly empty, git, local-and-git, custom", () => {
-    expect(Object.keys(environments).sort()).toEqual(["custom", "empty", "git", "health", "local-and-git"]);
+  it("defines exactly the eval environments", () => {
+    expect(Object.keys(environments).sort()).toEqual(["custom", "empty", "git", "health", "local-and-git", "wiki"]);
     expect(isEnvName("git")).toBe(true);
     expect(isEnvName("nope")).toBe(false);
   });

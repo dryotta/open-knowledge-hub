@@ -1,0 +1,26 @@
+# lint flow — read deterministic health, resolve the dangling link, log the pass.
+- config:
+    - vars:
+        env: wiki
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Lint my ml-wiki wiki (container "wiki-hub",
+          module "wiki"): inspect its health, fix what you safely can, and log the pass. Then sync.
+  tests:
+    - description: Lint - wiki health - inspects, fixes dangling link, logs
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [inspect, run, sync] }
+        - type: javascript
+          value: file://assertions/okf-valid.ts
+          config: { module: wiki, requireChanged: true }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: inspected-health
+                text: The agent ran inspect and used its Wiki health report (orphans / dangling links).
+              - id: resolved-dangling
+                text: The dangling link to the not-yet-written KV cache page was resolved — either by creating the page or correcting the link.
+              - id: logged-pass
+                text: A lint entry was appended to log.md describing what was fixed or flagged.
