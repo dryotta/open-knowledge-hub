@@ -13,6 +13,7 @@ const LOADERS: Record<ModuleType, Loader> = {
   tools: toolsLoader,
   memory: memoryLoader,
   project: projectLoader,
+  llmwiki: fileListingLoader("llmwiki", "LLM Wiki"),
 };
 
 const customLoader = fileListingLoader("custom", "Module");

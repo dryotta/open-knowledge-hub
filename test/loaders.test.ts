@@ -181,6 +181,11 @@ describe("type registry", () => {
     expect(BUILTIN_MODULE_TYPES).toContain("memory");
   });
 
+  it("recognises llmwiki as a built-in type", () => {
+    expect(isBuiltinType("llmwiki")).toBe(true);
+    expect(BUILTIN_MODULE_TYPES).toContain("llmwiki");
+  });
+
   it("falls back to a file-listing loader for a custom type", async () => {
     const loader = getLoader("recipes");
     const overview = await loader.overview("/does/not/exist");
