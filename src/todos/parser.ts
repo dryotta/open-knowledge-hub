@@ -143,7 +143,7 @@ function collectTokens(body: string): TodoToken[] {
     const kind = DATE_FIELD_BY_EMOJI[emoji];
     if (!kind) continue;
     const trimmed = trimTrailingTokenPunctuation(captured);
-    const rawEnd = start + emoji.length + 1 + trimmed.value.length;
+    const rawEnd = start + raw.length - (captured.length - trimmed.value.length);
     pushToken(tokens, {
       kind,
       start,
@@ -159,7 +159,7 @@ function collectTokens(body: string): TodoToken[] {
     const start = match.index ?? 0;
     const captured = match[1] ?? "";
     const trimmed = trimTrailingTokenPunctuation(captured);
-    const rawEnd = start + "🆔".length + 1 + trimmed.value.length;
+    const rawEnd = start + raw.length - (captured.length - trimmed.value.length);
     pushToken(tokens, {
       kind: "id",
       start,

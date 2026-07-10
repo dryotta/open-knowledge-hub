@@ -134,6 +134,40 @@ describe("parseTodoLine", () => {
     });
   });
 
+  it("keeps exact spans for dated metadata with multiple separator spaces", () => {
+    const parsed = parseTodoLine("- [ ] Task 📅   2026-07-11");
+    expect(parsed).toMatchObject({
+      due: "2026-07-11",
+      text: "Task",
+    });
+    expect(parsed?.tokens).toHaveLength(1);
+    expect(parsed?.tokens[0]).toMatchObject({
+      kind: "due",
+      raw: "📅   2026-07-11",
+      value: "2026-07-11",
+    });
+    expect(parsed?.body.slice(parsed.tokens[0].start, parsed.tokens[0].end)).toBe(
+      parsed.tokens[0].raw,
+    );
+  });
+
+  it("keeps exact spans for id metadata with a tab separator", () => {
+    const parsed = parseTodoLine("- [ ] Task 🆔	abc123, more text");
+    expect(parsed).toMatchObject({
+      id: "abc123",
+      text: "Task, more text",
+    });
+    expect(parsed?.tokens).toHaveLength(1);
+    expect(parsed?.tokens[0]).toMatchObject({
+      kind: "id",
+      raw: "🆔	abc123",
+      value: "abc123",
+    });
+    expect(parsed?.body.slice(parsed.tokens[0].start, parsed.tokens[0].end)).toBe(
+      parsed.tokens[0].raw,
+    );
+  });
+
   it("treats embedded metadata-like text as ordinary text unless separated by whitespace", () => {
     const parsed = parseTodoLine("- [ ] Keep C🔼 A✅2026-07-10 and 🆔badge");
     expect(parsed).toMatchObject({
