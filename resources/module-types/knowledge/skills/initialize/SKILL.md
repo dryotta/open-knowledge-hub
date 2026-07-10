@@ -1,6 +1,6 @@
 ---
 name: initialize
-description: Shape a newly-created knowledge module: grill out its requirements and structure, then scaffold that structure (empty module) or review and edit existing content to serve it.
+description: Shape a newly-created knowledge module — grill out its requirements and structure, then scaffold that structure (empty module) or review and edit existing content to serve it.
 ---
 
 # Initialize a knowledge module
