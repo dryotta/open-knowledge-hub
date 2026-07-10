@@ -1,0 +1,7 @@
+Result Trends — LIPID PANEL — David — Jul 9, 2026
+
+Analyte             Jul 9 2026    Jan 3 2025    Reference range
+Total Cholesterol   188 mg/dL     205 mg/dL     < 200 mg/dL
+LDL Cholesterol     108 mg/dL     130 mg/dL     < 100 mg/dL
+HDL Cholesterol      55 mg/dL      48 mg/dL     > 40 mg/dL
+Triglycerides       120 mg/dL     150 mg/dL     < 150 mg/dL
