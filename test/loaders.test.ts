@@ -155,6 +155,19 @@ describe("llmwiki loader", () => {
 
     expect(h).toEqual({ orphans: [], danglingLinks: [], uncataloged: [], missingType: [] });
   });
+
+  it("uses only the root catalog and other content pages for graph health", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# Wiki\n");
+    await write(root, "log.md", "[A](/concepts/a.md)\n");
+    await write(root, "concepts/index.md", "[A](/concepts/a.md)\n");
+    await write(root, "concepts/a.md", "---\ntype: concept\ntitle: A\n---\n[A](/concepts/a.md)\n");
+
+    const h = await llmwikiLoader.health!(root);
+
+    expect(h.uncataloged).toEqual(["concepts/a.md"]);
+    expect(h.orphans).toEqual(["concepts/a.md"]);
+  });
 });
 
 describe("skills loader", () => {

@@ -2,7 +2,7 @@
 
 Open Knowledge Hub (OKH) is the **hub** — the system you address by a wake phrase.
 The hub manages **containers** (a folder, an OS-synced folder, or a git repo), each
-made of typed **modules** (`knowledge`, `skills`, `tools`, `memory`, `project`).
+made of typed **modules** (`knowledge`, `skills`, `tools`, `memory`, `project`, `llmwiki`).
 Your agent does the thinking; OKH stores, validates, and syncs.
 
 ## How your prompt reaches the hub

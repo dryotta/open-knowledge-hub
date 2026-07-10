@@ -88,8 +88,9 @@ async function health(moduleRoot: string): Promise<WikiHealth> {
         danglingLinks.push({ from: page, to });
         continue;
       }
-      if (basename(page) === "index.md") catalogTargets.add(to);
-      else if (inbound.has(to)) inbound.set(to, inbound.get(to)! + 1);
+      if (page === "index.md") catalogTargets.add(to);
+      else if (inbound.has(page) && inbound.has(to) && to !== page)
+        inbound.set(to, inbound.get(to)! + 1);
     }
   }
 
