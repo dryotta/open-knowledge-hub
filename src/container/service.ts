@@ -198,6 +198,7 @@ export type InspectResult =
         backend: Backend;
         sync?: SyncMode;
         moduleCount: number;
+        modules: Array<{ path: string; type: string; name: string }>;
         manifestValid: boolean;
         localPath: string;
       }>;
@@ -346,6 +347,7 @@ export class ContainerService {
           return {
             name: c.name, backend: c.backend, sync: st?.sync ?? c.sync,
             moduleCount: st?.modules.length ?? 0,
+            modules: (st?.modules ?? []).map((m) => ({ path: m.path, type: m.type, name: m.name })),
             manifestValid: st?.manifestValid ?? false,
             localPath: c.localPath,
           };

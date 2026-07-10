@@ -85,6 +85,18 @@ describe("inspect", () => {
     if (res.kind === "containers") expect(res.containers[0]!.name).toBe("hub");
   });
 
+  it("lists each container's modules in the top-level inspect", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await seedModule(dir, "kb", "knowledge", "KB", "team kb");
+    const res = await service.inspect();
+    expect(res.kind).toBe("containers");
+    if (res.kind === "containers") {
+      expect(res.containers[0]!.modules).toEqual([{ path: "kb", type: "knowledge", name: "KB" }]);
+    }
+  });
+
   it("returns container status with a container arg, and module items with both", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
