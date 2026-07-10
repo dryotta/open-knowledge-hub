@@ -207,6 +207,7 @@ export type InspectResult =
   | {
       kind: "module";
       module: { path: string; type: string; name: string; description: string; config?: Record<string, unknown> };
+      overview: string;
       items: Item[];
       skills: Array<{ name: string; description: string }>;
     };
@@ -367,9 +368,11 @@ export class ContainerService {
     const manifest = await loadModuleManifest(moduleRoot);
     const items = await this.safeEnumerate(manifest.type, moduleRoot);
     const skills = await this.effectiveSkills(container, module);
+    const overview = await getLoader(manifest.type).overview(moduleRoot).catch(() => "");
     return {
       kind: "module",
       module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
+      overview,
       items,
       skills: skills.map(s => ({ name: s.name, description: s.description })),
     };

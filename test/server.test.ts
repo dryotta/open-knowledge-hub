@@ -206,6 +206,17 @@ describe("MCP server surface", () => {
     expect(textOf(mod)).toContain("KB");
   });
 
+  it("module inspect shows the scope contract / overview", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
+    const res = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
+    expect(textOf(res)).toContain("Scope / overview:");
+    expect(textOf(res)).toMatch(/okf_version|Knowledge module/);
+  });
+
   it("add previews (no changes) without create, and applies with create", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();

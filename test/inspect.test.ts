@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
@@ -118,5 +118,16 @@ describe("inspect", () => {
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     await expect(service.inspect("hub", "ghost")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("includes the module's overview (index.md scope contract)", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    await writeFile(join(dir, "kb", "index.md"), "# KB\n\n## Goals\n\nKnow the auth system.\n", "utf8");
+    const m = await service.inspect("hub", "kb");
+    expect(m.kind).toBe("module");
+    if (m.kind === "module") expect(m.overview).toContain("Know the auth system.");
   });
 });
