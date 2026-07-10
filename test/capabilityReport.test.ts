@@ -109,6 +109,7 @@ describe("capability report", () => {
   it("derives overall status from pending, failed, and unsupported probes", () => {
     expect(deriveOverallStatus([{ status: "pending" }])).toBe("pending");
     expect(deriveOverallStatus([{ status: "failed" }])).toBe("issues_detected");
+    expect(deriveOverallStatus([{ status: "failed" }, { status: "pending" }])).toBe("pending");
     expect(deriveOverallStatus([{ status: "unsupported" }])).toBe("complete");
   });
 
