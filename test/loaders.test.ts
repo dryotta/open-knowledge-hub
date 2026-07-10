@@ -119,6 +119,33 @@ describe("llmwiki loader", () => {
     await write(root, "index.md", "# Existing\n");
     await expect(llmwikiLoader.scaffold!(root)).rejects.toMatchObject({ code: "EEXIST" });
   });
+
+  it("health reports orphans, dangling links, uncataloged pages, and missing type", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "---\nokf_version: \"0.1\"\n---\n# Wiki\n## Catalog\n* [Attention](/concepts/attention.md) - attn\n");
+    await write(root, "log.md", "# Update Log\n");
+    await write(root, "concepts/attention.md", "---\ntype: concept\ntitle: Attention\n---\nSee [Transformer](/entities/transformer.md) and [Missing](/concepts/missing.md).\n");
+    await write(root, "entities/transformer.md", "---\ntype: entity\ntitle: Transformer\n---\nUses [Attention](/concepts/attention.md).\n");
+    await write(root, "concepts/orphan.md", "---\ntitle: Orphan\n---\nNothing links here.\n");
+
+    const h = await llmwikiLoader.health!(root);
+
+    expect(h.orphans).toEqual(["concepts/orphan.md"]);
+    expect(h.danglingLinks).toEqual([{ from: "concepts/attention.md", to: "concepts/missing.md" }]);
+    expect(h.uncataloged.sort()).toEqual(["concepts/orphan.md", "entities/transformer.md"]);
+    expect(h.missingType).toEqual(["concepts/orphan.md"]);
+  });
+
+  it("health is clean for a fully connected, cataloged wiki", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# Wiki\n## Catalog\n* [A](/a.md)\n* [B](/b.md)\n");
+    await write(root, "a.md", "---\ntype: concept\ntitle: A\n---\n[B](/b.md)\n");
+    await write(root, "b.md", "---\ntype: concept\ntitle: B\n---\n[A](/a.md)\n");
+
+    const h = await llmwikiLoader.health!(root);
+
+    expect(h).toEqual({ orphans: [], danglingLinks: [], uncataloged: [], missingType: [] });
+  });
 });
 
 describe("skills loader", () => {
