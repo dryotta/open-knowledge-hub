@@ -57,4 +57,12 @@ describe("shared skills", () => {
     expect(s.body.length).toBeGreaterThan(0);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
   });
+
+  it("resolveSharedSkill returns the ingest body; ingest is listed among shared skills", async () => {
+    const { svc } = await setup();
+    const s = await svc.resolveSharedSkill("ingest");
+    expect(s.name).toBe("ingest");
+    expect(s.body).toMatch(/route/i);
+    await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
+  });
 });

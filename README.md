@@ -43,7 +43,7 @@ Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `mem
 → `remember`, `reflect` (under `resources/module-types/<type>/skills/`). A module's
 effective skill set = vendored (for its type) ∪ module-local skills (discovered from
 `.okh/skills/` and common roots like `.claude/skills/`). Shared, module-less skills
-(`grilling`, `okf-writer`) live under `resources/shared/skills/` and run via
+(`grilling`, `okf-writer`, `ingest`) live under `resources/shared/skills/` and run via
 `run { skill }` with no container/module. Skills use the standard `SKILL.md` format.
 
 ## MCP surface
