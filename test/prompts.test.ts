@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { buildAsk, buildContext, buildOnboard, buildRun } from "../src/prompts/index.js";
+import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -78,5 +78,13 @@ describe("prompt builders", () => {
     expect(text).toContain("Write cited concepts.");
     expect(text).toContain("Draft the auth pack");
     expect(text).not.toContain("**Module:**");
+  });
+  it("buildAddModule injects containers + module types and the workflow discipline", async () => {
+    const text = await buildAddModule(targets, ["knowledge", "skills", "memory"]);
+    expect(text).toContain("/c/hub/kb");            // injected container/module path
+    expect(text).toContain("knowledge, skills, memory"); // injected module types
+    expect(text).toContain('<discipline name="add_module">');
+    expect(text).toContain("create: true");          // step 3 names the apply call
+    expect(text).toMatch(/initialize/);              // step 4 names initialize
   });
 });

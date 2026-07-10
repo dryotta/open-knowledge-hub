@@ -1,88 +1,66 @@
 ---
 name: initialize
-description: Initialize a newly-created knowledge (OKF) module by surveying its target repository into a scope-bounded, question-driven knowledge pack.
+description: Shape a newly-created knowledge module — grill out its requirements and structure, then scaffold that structure (empty module) or review and edit existing content to serve it.
 ---
 
 # Initialize a knowledge module
 
-**Populate a freshly-created `knowledge` module** by surveying its target repository
-into a *knowledge pack*: a scope-bounded, question-driven
-[OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) bundle
-of markdown concept docs. The pack exists to answer a specific, agreed list of
-questions — nothing more. Anything that does not help answer a target question does
-not belong in the pack.
+The module already exists (name, type, and description were set when it was added). Give it a
+scope-bounded shape — an agreed set of requirements and an organized structure, nothing more.
+Restraint is the point: a sprawling auto-generated wiki is the failure mode.
 
-The whole point is restraint. A sprawling auto-generated wiki is the failure mode. Resist it.
+No assumptions about the subject — a codebase, a product area, research, org or personal
+know-how.
 
-## Workflow
+## Stage 1 — Grill the requirements and structure
 
-Run these stages in order. Each stage has a clear hand-off to the next.
+Run the shared **grilling** skill (`run { skill: "grilling" }`), then record the agreed **scope
+contract** in the module's `index.md` (its skeleton already lays out these sections):
 
-### Stage 1 — Grill the scope
+- **Goals** — what this module is *for*: who reads it and what they need to accomplish (1–3
+  sentences). Goals are the yardstick for every later decision.
+- **Requirements** — the concrete things a reader must be able to answer or do. For each
+  candidate piece of information, decide explicitly: **should this module manage it, or not?**
+  Every in-scope requirement traces to a goal; list what's **out-of-scope** and why.
+- **Structure** — how to organize the pack with OKF's building blocks: a folder/group layout
+  (subdirectories, each with their own `index.md`), the concept **`type`** vocabulary (the labels
+  that classify concepts), and any **`tags`** and cross-linking scheme.
 
-Run the shared **grilling** skill (`run { skill: "grilling" }`) whose **sole purpose** is to produce a written **scope contract**:
+Optionally record **sourcing conventions** — where the module's knowledge comes from and how
+claims are checked (e.g. code: "cite repository paths, pin a commit SHA"). Capture this only when
+it helps the module.
 
-- **Goals** — what this knowledge pack is *for*: who reads it and what they need to accomplish
-  (e.g. "onboard a new engineer to the billing module so they can ship a fix unaided"). One to
-  three sentences. Goals are the yardstick: every target question and scope boundary must serve a
-  goal, and later requests to add or change scope are judged against the goals.
-- **Target questions** — the concrete questions a reader must be able to answer from the pack.
-  Each must trace to a goal.
-- **Out-of-scope** — an explicit list of what the pack will *not* cover, and (briefly) why it
-  doesn't serve the goals.
+Grill until goals, requirements, out-of-scope, and structure are sharp and consistent. Reject
+vague or unbounded requirements ("capture everything" is not a requirement).
 
-Grill until all three are sharp and **mutually consistent**: goals justify every question, no
-question falls outside the goals, and the out-of-scope list has no overlap with the questions.
-Drive toward questions that are answerable from the repository, and push back on vague or
-unbounded ones ("document everything" is not a question). **Iterate with the user** to tighten
-the contract — trim redundant or overlapping questions, fold near-duplicates together, and cut
-anything that doesn't measurably advance a goal — until goals and scope are concise, consistent,
-and tight. Write the agreed scope contract (goals + target questions + out-of-scope) to the
-bundle root's `index.md` once known (see `okf-writer`).
+## Stage 2 — Build to the contract
 
-Do not start reading the codebase in earnest until the scope contract is agreed.
+What you do next depends on whether the module already holds content.
 
-### Stage 2 — Explore (question-guided)
+**Empty module (the common case)** — lay down only the **structure**: write the scope contract to
+the root `index.md`, and create the declared group folders with their own `index.md`. **Do not
+invent content** — concepts accrue later through the `learn` skill. You're done.
 
-Explore the repository to map only the parts needed to answer the target questions. Start from
-structural entry points, follow the code paths the questions demand,
-and **stop once every question is answerable**. Do not exhaustively read the repo.
+**Existing content** (an imported pack, or material already in the folder) — review it against the
+requirements and edit it to fit. For an OKF bundle, author edits with the shared **okf-writer**
+skill (`run { skill: "okf-writer" }`):
 
-If existing knowledge artifacts are present (`CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`),
-read them as authoritative input — do not re-derive what they already settle.
+- **Keep & organize** what serves a requirement; map it into the declared structure.
+- **Cut** anything no requirement needs.
+- **Fix** claims you can't confirm — check with the user, or flag `⚠️ UNVERIFIED`.
+- **Note gaps** where a requirement isn't covered yet; leave them for `learn`, or grill the user.
 
-### Stage 3 — Grill the gaps
-
-A second, short grilling pass (`run { skill: "grilling" }`) — only for claims you found evidence of but **cannot verify
-from code alone** (almost always "why" questions: why this technology, why this split, what
-non-obvious constraint forced this). Resolve each before it is written, or it gets flagged
-`⚠️ UNVERIFIED` in the pack.
-
-### Stage 4 — Write the bundle
-
-Use the shared **okf-writer** skill (`run { skill: "okf-writer" }`) to author the OKF bundle. Default location is
-`./knowledge/<pack-name>/` inside the target repo (the user may override). Every non-trivial
-claim is cited to a repository path; unverifiable claims are flagged `⚠️ UNVERIFIED`.
-
-### Stage 5 — Reader-test (the scope gate)
-
-This is the completion criterion. Spawn a **fresh sub-agent given ONLY the generated bundle**
-(no access to the codebase or this conversation) and ask it every target question.
-
-- If it cannot answer a target question correctly → the pack has a gap. Fix it (explore more,
-  or grill the user), then re-test.
-- **Prune ruthlessly:** any concept, section, or sentence that is *not* needed to answer a
-  target question is out of scope. Cut it.
-
-The pack is done only when the fresh reader answers **every** target question correctly and
-nothing in the pack is unused by those answers.
+Then **verify**: spawn a **fresh sub-agent given ONLY the module's content** and check it against
+every requirement; fix gaps, prune anything unused, and re-test until the fresh reader satisfies
+every requirement with nothing unused. (Skip verification for an already-trusted import brought in
+wholesale.)
 
 ## Completion criterion
 
-- A written scope contract (goals + target questions + out-of-scope) exists in the bundle root
-  `index.md`, with goals justifying every target question and scope boundary.
-- The bundle is OKF-conformant (every concept has parseable frontmatter with a non-empty `type`).
-- Every non-trivial claim is either cited to a repo path, flagged `⚠️ UNVERIFIED`, or sourced
-  from the grilling session.
-- A fresh reader sub-agent, given only the bundle, answers every target question correctly.
-- No concept or section survives that isn't needed to answer a target question.
+- A scope contract (goals + requirements + out-of-scope + structure) exists in `index.md`, goals
+  justifying every requirement.
+- **Empty module:** the declared structure exists (group folders + `index.md`); no invented
+  content.
+- **Existing content:** it follows the structure and serves the requirements, every claim is one
+  you can back up, and — unless it's a trusted import — a fresh reader satisfies every requirement
+  with nothing unused.

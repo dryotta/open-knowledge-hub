@@ -30,11 +30,12 @@ container directly:
 - **From GitHub:** `hub, connect the repo https://github.com/me/my-notes.git.`
 - **Add a module:** `hub, add a knowledge module called kb.`
 
-**The confirmation step.** `add_container` and `add_module` never change anything on
-disk on their own. Each first replies with a **plan** ("will create folder …, will
-initialize a manifest …"). Review it and confirm; your agent then re-runs the same
-tool with `create:true` to apply. This is why the first call shows a plan instead of
-doing the work immediately.
+**The confirmation step.** `add_container` never changes anything on disk on its own:
+it first replies with a **plan** ("will create folder …, will initialize a manifest …").
+Review it and confirm; your agent then re-runs it with `create:true` to apply.
+`add_module` instead returns a short **workflow** — your agent understands the need,
+proposes the module, confirms with you, then applies with `create:true` and runs the
+type's `initialize` skill to populate it.
 
 ## Choosing a wake phrase
 

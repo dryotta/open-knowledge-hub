@@ -58,7 +58,7 @@ These read state or change containers directly.
 | --- | --- | --- |
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
 | `add_container` | `source`, `name?`, `sync?`, `backend?`, `create?` | Register a container. Returns a plan unless `create:true`. |
-| `add_module` | `container`, `path`, `type`, `name`, `description?`, `config?`, `create?` | Add a typed module to a container. Returns a plan unless `create:true`. |
+| `add_module` | `container?`, `path?`, `type?`, `name?`, `description?`, `config?`, `create?` | Returns a step-by-step workflow to add/create/initialize a module; applies on `create:true` (identity args required then). |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 
@@ -112,7 +112,7 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 ## Typical usage
 
 - `add_container { source: "https://github.com/me/my-notes.git", name: "my-notes" }` → clone + register a container.
-- `add_module { container: "my-notes", path: "kb", type: "knowledge", name: "kb" }` → add a module.
+- `add_module` → returns a step-by-step workflow; after proposing the module, `add_module { container: "my-notes", path: "kb", type: "knowledge", name: "kb", create: true }` adds it.
 - `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
   folds knowledge in, then `sync { container: "my-notes" }` commits+pushes (or opens a PR).
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
