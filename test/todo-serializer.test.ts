@@ -100,4 +100,10 @@ describe("todo serializer", () => {
     expect(patchTodoLine(parsed, { due: "2026-07-31" }, "2026-07-10"))
       .toBe("- [ ] Pay rent #todo 📅 2026-07-31 ➕ 2026-07-10");
   });
+
+  it("replaces duplicate due metadata without moving unrelated whitespace", () => {
+    const parsed = parseTodoLine("- [ ] Pay rent #todo  📅 2026-07-01 📅 2026-07-02   ➕ 2026-07-10  ")!;
+    expect(patchTodoLine(parsed, { due: "2026-07-31" }, "2026-07-10"))
+      .toBe("- [ ] Pay rent #todo  📅 2026-07-31   ➕ 2026-07-10  ");
+  });
 });
