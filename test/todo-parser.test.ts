@@ -141,6 +141,25 @@ describe("parseTodoLine", () => {
     ]);
   });
 
+  it("parses priority emoji followed by Unicode punctuation without swallowing it", () => {
+    expect(parseTodoLine("- [ ] Task 🔼) next")).toMatchObject({
+      priority: "medium",
+      text: "Task) next",
+    });
+    expect(parseTodoLine("- [ ] Task 🔼” next")).toMatchObject({
+      priority: "medium",
+      text: "Task” next",
+    });
+  });
+
+  it("does not parse priority emoji when it touches a word", () => {
+    expect(parseTodoLine("- [ ] 🔼momentum")).toMatchObject({
+      priority: "normal",
+      text: "🔼momentum",
+      tokens: [],
+    });
+  });
+
   it("preserves trailing punctuation on created dates while keeping the date value clean", () => {
     expect(parseTodoLine("- [ ] Note ➕ 2026-07-11: details")).toMatchObject({
       created: "2026-07-11",

@@ -8,7 +8,7 @@ import {
 } from "./types.js";
 
 const LABEL_RE = /(?<!\S)#[\p{L}\p{N}_/-]+/gu;
-const PRIORITY_RE = /(?<!\S)[⏬🔽🔼⏫🔺](?=$|\s|[,.;:!?])/gu;
+const PRIORITY_RE = /(?<!\S)[⏬🔽🔼⏫🔺](?=$|\s|\p{P})/gu;
 const DATED_TOKEN_RE = /(?<!\S)(📅|➕|✅)\s+(\S+)/gu;
 const ID_RE = /(?<!\S)🆔\s+(\S+)/gu;
 
