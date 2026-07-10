@@ -27,6 +27,12 @@ longitudinal lab/bloodwork results, plus reference notes that help interpret the
 - **Tags** — optional, e.g. the analyte or panel name.
 - **Cross-linking** — bundle-relative links between related concepts.
 
+## Sources
+
+- **Retain copies:** yes
+- **Folder:** `./sources/`
+- **Bucketing:** by month — `<YYYY-MM>/` (the ingest date)
+
 ## Concepts
 
 _None yet._
