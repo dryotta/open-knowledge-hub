@@ -127,6 +127,20 @@ describe("parseTodoLine", () => {
     });
   });
 
+  it("parses priority emoji followed by punctuation without swallowing it", () => {
+    expect(parseTodoLine("- [ ] Task 🔼, next")).toMatchObject({
+      priority: "medium",
+      text: "Task, next",
+    });
+    expect(parseTodoLine("- [ ] Task 🔼, next")?.tokens).toMatchObject([
+      {
+        kind: "priority",
+        raw: "🔼",
+        value: "medium",
+      },
+    ]);
+  });
+
   it("preserves trailing punctuation on created dates while keeping the date value clean", () => {
     expect(parseTodoLine("- [ ] Note ➕ 2026-07-11: details")).toMatchObject({
       created: "2026-07-11",
@@ -184,6 +198,13 @@ describe("parseTodoLine", () => {
     expect(parsed?.text).toBe("Support C#interop and **keep  spacing**");
     expect(parsed?.labels).toEqual(["work"]);
     expect(parsed?.tokens.some((token) => token.kind === "label" && token.raw === "#interop")).toBe(false);
+  });
+
+  it("preserves body spacing adjacent to removed authored metadata", () => {
+    expect(parseTodoLine("- [ ] Alpha #work  beta")).toMatchObject({
+      text: "Alpha  beta",
+      labels: ["work"],
+    });
   });
 
   it("removes metadata without damaging punctuation or trailing whitespace", () => {

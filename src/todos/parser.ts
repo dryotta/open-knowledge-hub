@@ -8,7 +8,7 @@ import {
 } from "./types.js";
 
 const LABEL_RE = /(?<!\S)#[\p{L}\p{N}_/-]+/gu;
-const PRIORITY_RE = /(?<!\S)[⏬🔽🔼⏫🔺](?=\s|$)/gu;
+const PRIORITY_RE = /(?<!\S)[⏬🔽🔼⏫🔺](?=$|\s|[,.;:!?])/gu;
 const DATED_TOKEN_RE = /(?<!\S)(📅|➕|✅)\s+(\S+)/gu;
 const ID_RE = /(?<!\S)🆔\s+(\S+)/gu;
 
@@ -97,6 +97,7 @@ function shouldInsertSpace(left: string, right: string): boolean {
   const leftBoundary = lastCodePoint(left.trimEnd());
   const rightBoundary = firstCodePoint(right.trimStart());
   if (!leftBoundary || !rightBoundary) return false;
+  if (/^\s/u.test(right)) return false;
   if (OPEN_PUNCTUATION.has(leftBoundary)) return false;
   if (OPEN_PUNCTUATION.has(rightBoundary)) return false;
   if (CLOSE_PUNCTUATION.has(rightBoundary)) return false;
@@ -190,8 +191,11 @@ function removeTokenSpans(body: string, tokens: TodoToken[]): string {
   for (const token of tokens) {
     let start = token.start;
     let end = token.end;
-    while (start > 0 && /\s/u.test(body[start - 1]!)) start--;
-    while (end < body.length && /\s/u.test(body[end]!)) end++;
+    if (start > 0 && /\s/u.test(body[start - 1]!)) {
+      while (start > 0 && /\s/u.test(body[start - 1]!)) start--;
+    } else if (start === 0 || !/\s/u.test(body[start - 1] ?? "")) {
+      while (end < body.length && /\s/u.test(body[end]!)) end++;
+    }
     removedRanges.push({ start, end });
   }
 
