@@ -7,7 +7,7 @@ const NONE = "(none provided — clarify with the user)";
 
 /** Render the target containers -> modules -> absolute paths as a markdown list. */
 function renderTargets(targets: ResolvedContainer[]): string {
-  if (targets.length === 0) return "_No containers are registered. Use the `add` tool first._";
+  if (targets.length === 0) return "_No containers are registered. Use the `add_container` tool first._";
   return targets
     .map((c) => {
       const header = `- **${c.name}** (${c.backend}, sync: ${c.sync}) — \`${c.root}\``;

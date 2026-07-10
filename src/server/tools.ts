@@ -53,7 +53,7 @@ function isBlank(value: string): boolean {
 
 function formatInspect(r: InspectResult): string {
   if (r.kind === "containers") {
-    if (r.containers.length === 0) return "No containers registered. Use add { source } to register one.";
+    if (r.containers.length === 0) return "No containers registered. Use add_container { source } to register one.";
     return r.containers
       .map(
         (c) =>
@@ -92,7 +92,7 @@ function formatInspect(r: InspectResult): string {
 }
 
 function formatContainerPlan(plan: AddContainerPlan): string {
-  const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
+  const lines = ["Plan (no changes made). Re-run add_container with create:true to apply:"];
   if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.target}`);
   if (plan.actions.includes("clone"))
     lines.push(`- Clone ${plan.source} → ${plan.target}`);
@@ -101,7 +101,7 @@ function formatContainerPlan(plan: AddContainerPlan): string {
 }
 
 function formatModulePlan(plan: AddModulePlan): string {
-  const lines = ["Plan (no changes made). Re-run add with create:true to apply:"];
+  const lines = ["Plan (no changes made). Re-run add_module with create:true to apply:"];
   if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.moduleRoot}`);
   if (plan.actions.includes("scaffold")) lines.push(`- Scaffold ${plan.type} module content`);
   lines.push(`- Add ${plan.type} module "${plan.name}" at "${plan.path}" to "${plan.container}"`);

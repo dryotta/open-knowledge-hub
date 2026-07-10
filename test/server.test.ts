@@ -186,6 +186,7 @@ describe("MCP server surface", () => {
 
     const preview = await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub" } });
     expect(textOf(preview)).toContain("Plan (no changes made)");
+    expect(textOf(preview)).toContain("add_container");
     expect(structuredOf(preview).needsConfirmation).toBe(true);
 
     const applied = await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
@@ -204,6 +205,7 @@ describe("MCP server surface", () => {
     });
 
     expect(textOf(preview)).toContain("Plan (no changes made)");
+    expect(textOf(preview)).toContain("add_module");
     expect(structuredOf(preview).needsConfirmation).toBe(true);
   });
 
