@@ -12,7 +12,7 @@ const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 describe("environments", () => {
   it("defines exactly empty, git, local-and-git, custom", () => {
-    expect(Object.keys(environments).sort()).toEqual(["custom", "empty", "git", "local-and-git"]);
+    expect(Object.keys(environments).sort()).toEqual(["custom", "empty", "git", "health", "local-and-git"]);
     expect(isEnvName("git")).toBe(true);
     expect(isEnvName("nope")).toBe(false);
   });
@@ -51,5 +51,13 @@ describe("environments", () => {
     expect(reg.containers).toHaveLength(0);
     expect(prov.containerPath.startsWith(prov.workspace)).toBe(true);
     expect(await exists(join(prov.workspace, "notes"))).toBe(true);
+  });
+
+  it("health seeds the source file into the workspace and registers health-hub", async () => {
+    const prov = await provisionEnvironment("health", { repoRoot: "C:/repo", runner: testRun });
+    cleanups.push(prov.root);
+    expect(await exists(join(prov.workspace, "lab-results.txt"))).toBe(true);
+    const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    expect(reg.containers[0].name).toBe("health-hub");
   });
 });

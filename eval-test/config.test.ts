@@ -14,6 +14,7 @@ const exists = async (p: string) => !!(await stat(p).catch(() => null));
 const EXPECTED_COUNTS: Record<string, number> = {
   ask: 3,
   context: 2,
+  ingest: 1,
   learn: 2,
   remember: 2,
   reflect: 1,
@@ -59,9 +60,9 @@ describe("promptfooconfig.yaml (single default)", () => {
 });
 
 describe("scenario configs", () => {
-  it("provides 20 scenario files across the expected verb folders", async () => {
+  it("provides 21 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
-    expect(files.length).toBe(20);
+    expect(files.length).toBe(21);
     const counts: Record<string, number> = {};
     for (const f of files) {
       const verb = f.split("/")[0];

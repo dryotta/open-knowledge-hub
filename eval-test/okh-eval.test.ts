@@ -12,16 +12,16 @@ const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 describe("okh-eval manual CLI (environment-centric)", () => {
   it("lists the four environments", () => {
-    expect(listEnvironments().sort()).toEqual(["custom", "empty", "git", "local-and-git"]);
+    expect(listEnvironments().sort()).toEqual(["custom", "empty", "git", "health", "local-and-git"]);
   });
 
-  it("loads 20 scenario configs with inline prompts + envs, recursively", async () => {
+  it("loads 21 scenario configs with inline prompts + envs, recursively", async () => {
     const all = await loadScenarios();
-    expect(all.length).toBe(20);
+    expect(all.length).toBe(21);
     for (const s of all) {
       expect(typeof s.prompt).toBe("string");
       expect(s.prompt.length).toBeGreaterThan(0);
-      expect(["empty", "git", "local-and-git", "custom"]).toContain(s.env);
+      expect(["empty", "git", "local-and-git", "custom", "health"]).toContain(s.env);
       expect(s.file).toMatch(/^[a-z-]+\/[a-z-]+\.yaml$/);
     }
   });

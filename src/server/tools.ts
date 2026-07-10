@@ -56,11 +56,15 @@ function formatInspect(r: InspectResult): string {
   if (r.kind === "containers") {
     if (r.containers.length === 0) return "No containers registered. Use add_container { source } to register one.";
     return r.containers
-      .map(
-        (c) =>
+      .map((c) => {
+        const head =
           `- ${c.name} [${c.backend}] sync=${c.sync ?? "?"} modules=${c.moduleCount}` +
-          `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`,
-      )
+          `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`;
+        const mods = c.modules.length
+          ? c.modules.map((m) => `    · ${m.type} · ${m.name} (${m.path})`).join("\n")
+          : "    (no modules)";
+        return `${head}\n${mods}`;
+      })
       .join("\n");
   }
   if (r.kind === "container") {
@@ -89,7 +93,11 @@ function formatInspect(r: InspectResult): string {
   const skillLines = r.skills.length
     ? r.skills.map((s) => `  - ${s.name} — ${s.description}`)
     : ["  (none)"];
-  return [head, ...items, "Skills:", ...skillLines].join("\n");
+  const overview = r.overview.trim();
+  const overviewLines = overview
+    ? ["Scope / overview:", ...overview.split("\n").map((l) => `  ${l}`)]
+    : ["Scope / overview:", "  (no overview)"];
+  return [head, ...items, "Skills:", ...skillLines, ...overviewLines].join("\n");
 }
 
 function formatContainerPlan(plan: AddContainerPlan): string {

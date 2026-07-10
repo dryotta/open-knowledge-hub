@@ -7,7 +7,7 @@ Fold candidate knowledge into this `knowledge` module without letting it sprawl.
 
 ## Stage 1 — Load the scope contract
 
-Read the module's `index.md` and recover its **scope contract**: the **goals**, the **target questions**, and the **out-of-scope** list. Restate it back to the user in one or two lines. If there is no written scope contract, stop and reconstruct one first — you cannot judge "worth remembering" without it.
+Read the module's `index.md` and recover its **scope contract**: the **goals**, the **requirements / target questions**, and the **out-of-scope** list. Restate it back to the user in one or two lines. A module with **0 concepts can still have a full scope contract** in `index.md` — do not treat an empty concept list as "uninitialized", and do not run `initialize` on a module that already has a contract. Only if there is genuinely no written scope contract, stop and reconstruct one first — you cannot judge "worth remembering" without it.
 
 ## Stage 2 — The gate (default answer: NO)
 

@@ -28,16 +28,19 @@ export interface EnvHub {
 export interface Environment {
   placement: "registered" | "workspace";
   hubs: EnvHub[];
+  workspaceDir?: string;
 }
 
 export const environments = {
   empty: {
     placement: "workspace",
     hubs: [{ container: "notes", fixture: "fixtures/plain-notes" }],
+    workspaceDir: undefined,
   },
   git: {
     placement: "registered",
     hubs: [{ container: "git-hub", fixture: "fixtures/git-hub", backend: "git-auto" }],
+    workspaceDir: undefined,
   },
   "local-and-git": {
     placement: "registered",
@@ -45,10 +48,17 @@ export const environments = {
       { container: "kb-hub", fixture: "fixtures/kb-hub", backend: "local" },
       { container: "git-hub", fixture: "fixtures/git-hub", backend: "git-auto" },
     ],
+    workspaceDir: undefined,
   },
   custom: {
     placement: "registered",
     hubs: [{ container: "custom-hub", fixture: "fixtures/custom-hub", backend: "local" }],
+    workspaceDir: undefined,
+  },
+  health: {
+    placement: "registered",
+    hubs: [{ container: "health-hub", fixture: "fixtures/health-hub", backend: "local" }],
+    workspaceDir: "fixtures/health-source",
   },
 } satisfies Record<string, Environment>;
 
@@ -161,6 +171,10 @@ export async function provisionEnvironment(
       }
     }
     await saveRegistry(paths, registry);
+  }
+
+  if (def.workspaceDir) {
+    await cp(fixturePath(def.workspaceDir), workspace, { recursive: true });
   }
 
   await writeMcpConfig(copilotHome, opts.repoRoot, okhHome);

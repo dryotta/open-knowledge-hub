@@ -1,0 +1,27 @@
+# ingest flow — a path source into an EXISTING, already-scoped knowledge module.
+# Captures the efficient path: resolve the module, read its scope contract, author a
+# concept (verified deterministically via okf-valid), without re-initializing.
+- config:
+    - vars:
+        env: health
+        prompt: |
+          hub, ingest ./lab-results.txt into my Health module.
+  tests:
+    - description: Ingest - existing scoped module - path source, no re-initialize
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [inspect, run] }
+        - type: javascript
+          value: file://assertions/okf-valid.ts
+          config: { module: health, requireChanged: true }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: resolved-module
+                text: The agent located the existing Health knowledge module (in health-hub) to ingest into.
+              - id: read-scope-contract
+                text: The agent read or acknowledged the module's existing scope contract before writing, rather than treating the module as uninitialized.
+              - id: no-reinitialize
+                text: The agent did NOT run the initialize skill on the already-scoped module.

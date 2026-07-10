@@ -198,6 +198,7 @@ export type InspectResult =
         backend: Backend;
         sync?: SyncMode;
         moduleCount: number;
+        modules: Array<{ path: string; type: string; name: string }>;
         manifestValid: boolean;
         localPath: string;
       }>;
@@ -206,6 +207,7 @@ export type InspectResult =
   | {
       kind: "module";
       module: { path: string; type: string; name: string; description: string; config?: Record<string, unknown> };
+      overview: string;
       items: Item[];
       skills: Array<{ name: string; description: string }>;
     };
@@ -346,6 +348,7 @@ export class ContainerService {
           return {
             name: c.name, backend: c.backend, sync: st?.sync ?? c.sync,
             moduleCount: st?.modules.length ?? 0,
+            modules: (st?.modules ?? []).map((m) => ({ path: m.path, type: m.type, name: m.name })),
             manifestValid: st?.manifestValid ?? false,
             localPath: c.localPath,
           };
@@ -365,9 +368,11 @@ export class ContainerService {
     const manifest = await loadModuleManifest(moduleRoot);
     const items = await this.safeEnumerate(manifest.type, moduleRoot);
     const skills = await this.effectiveSkills(container, module);
+    const overview = await getLoader(manifest.type).overview(moduleRoot).catch(() => "");
     return {
       kind: "module",
       module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
+      overview,
       items,
       skills: skills.map(s => ({ name: s.name, description: s.description })),
     };
