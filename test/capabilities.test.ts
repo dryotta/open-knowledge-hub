@@ -519,6 +519,14 @@ describe("capabilities actions", () => {
     }));
     expect(after.probes.appInitialize.status).toBe("unsupported");
   });
+
+  it("returns the SDK not-found error for a tasks/get poll of an unknown task", async () => {
+    const { client } = await connect();
+
+    await expect(client.experimental.tasks.getTask("does-not-exist")).rejects.toThrow(
+      "Failed to retrieve task: Task not found",
+    );
+  });
 });
 
 describe("capabilities dependency wiring", () => {

@@ -293,7 +293,10 @@ export class CapabilityTaskStore implements TaskStore {
     const binding = this.bindings.get(taskId);
     if (binding === undefined || !binding.taskAugmented || binding.action !== "scan") return;
     this.observeRun(() => {
-      this.runs.replaceProbe(binding.clientKey, binding.runId, "tasksPoll", TASK_PROBES.pollPassed);
+      const current = this.runs.getSnapshotForClient(binding.clientKey, binding.runId);
+      if (current.report.probes.tasksPoll.status === "pending") {
+        this.runs.replaceProbe(binding.clientKey, binding.runId, "tasksPoll", TASK_PROBES.pollPassed);
+      }
     });
   }
 

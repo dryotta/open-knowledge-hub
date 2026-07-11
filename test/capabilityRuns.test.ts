@@ -352,4 +352,30 @@ describe("CapabilityRunStore", () => {
     expect(second.id).toBe(run.id);
     expect(store.getRunForClient(clientKey, run.id).signal.aborted).toBe(true);
   });
+
+  it("freezes pending probe-runner probes on abort so late results cannot overwrite them", () => {
+    const clientKey = {};
+    const store = new CapabilityRunStore();
+    const run = store.createRun(clientKey, (context) =>
+      makeReport(context, {
+        roots: probe("pending", "roots.list", "Roots listing is pending."),
+        samplingBasic: probe("pending", "sampling.basic", "Basic sampling is pending."),
+        elicitationForm: probe("passed", "elicitation.form", "Form elicitation accepted."),
+      }),
+    );
+
+    store.abortRun(clientKey, run.id);
+
+    const afterAbort = store.getSnapshotForClient(clientKey, run.id).report.probes;
+    expect(afterAbort.roots.status).toBe("not_exercised");
+    expect(afterAbort.roots.message).toBe("Scan was cancelled before this probe completed.");
+    expect(afterAbort.samplingBasic.status).toBe("not_exercised");
+    expect(afterAbort.elicitationForm.status).toBe("passed");
+
+    store.updateProbe(clientKey, run.id, "roots", probe("passed", "roots.list", "Roots listed."));
+
+    expect(store.getSnapshotForClient(clientKey, run.id).report.probes.roots.status).toBe(
+      "not_exercised",
+    );
+  });
 });

@@ -201,6 +201,31 @@ describe("CapabilityTaskStore", () => {
     store.cleanup();
   });
 
+  it("keeps the poll-skipped outcome when a poll arrives after the result", async () => {
+    const clientKey = {};
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const { store } = createStore(runs);
+    const task = await store.createTask(
+      { ttl: null, context: context(clientKey, run.id, "scan") },
+      1,
+      request(true),
+    );
+    await store.storeTaskResult(task.taskId, "completed", { stale: "delegate-payload" });
+
+    await store.getTaskResult(task.taskId);
+    expect(runs.getSnapshotForClient(clientKey, run.id).report.probes.tasksPoll.status).toBe(
+      "supported_not_completed",
+    );
+
+    store.markPolled(task.taskId);
+
+    expect(runs.getSnapshotForClient(clientKey, run.id).report.probes.tasksPoll.status).toBe(
+      "supported_not_completed",
+    );
+    store.cleanup();
+  });
+
   it("delegates getTaskResult verbatim for a non-augmented optional task call", async () => {
     const clientKey = {};
     const runs = new CapabilityRunStore();

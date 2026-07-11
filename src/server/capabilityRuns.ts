@@ -81,6 +81,14 @@ export type CapabilityRunStoreOptions = {
 
 const APP_PROBE_KEYS = ["appInitialize", "appTheme", "appResize"] as const satisfies readonly ProbeKey[];
 
+const PROBE_RUNNER_KEYS = [
+  "roots",
+  "samplingBasic",
+  "samplingTools",
+  "elicitationForm",
+  "elicitationUrl",
+] as const satisfies readonly ProbeKey[];
+
 function normalizeReport(report: CapabilityReport, context: CapabilityRunContext): CapabilityReport {
   return normalizeCapabilityReport(
     {
@@ -151,6 +159,27 @@ function failExpiredPendingAppProbes(report: CapabilityReport): CapabilityReport
         status: "failed",
         code: probes[key].code,
         message: "Probe expired before completion.",
+      };
+    }
+  }
+
+  return {
+    ...normalized,
+    probes,
+    overallStatus: deriveOverallStatus(Object.values(probes)),
+  };
+}
+
+function freezeCancelledPendingProbes(report: CapabilityReport): CapabilityReport {
+  const normalized = cloneReport(report);
+  const probes = { ...normalized.probes };
+
+  for (const key of PROBE_RUNNER_KEYS) {
+    if (probes[key].status === "pending") {
+      probes[key] = {
+        status: "not_exercised",
+        code: probes[key].code,
+        message: "Scan was cancelled before this probe completed.",
       };
     }
   }
@@ -265,6 +294,7 @@ export class CapabilityRunStore {
 
   abortRun(clientKey: object, runId: string): CapabilityRunSnapshot {
     const run = this.requireAccessibleRun(clientKey, runId);
+    run.report = freezeCancelledPendingProbes(run.report);
     run.abortController.abort();
     return toSnapshot(run);
   }
