@@ -6,6 +6,7 @@
  */
 export type OkhErrorCode =
   | "NOT_FOUND"
+  | "CONFLICT"
   | "ALREADY_EXISTS"
   | "NOT_INSTALLED"
   | "ALREADY_INSTALLED"

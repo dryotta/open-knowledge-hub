@@ -108,6 +108,8 @@ describe("CopilotProvider", () => {
     expect(seen[0]).toBe("Use the hub and set me up.");
     expect(seen[1]).toBe("call it brain");
     expect(res.metadata.toolCalls).toEqual(["add", "config", "onboard"]);
+    expect(res.metadata.toolEvents).toBeInstanceOf(Array);
+    expect(res.metadata.toolEvents.length).toBeGreaterThanOrEqual(3);
     expect(res.metadata.turns.length).toBeGreaterThanOrEqual(2);
   });
 

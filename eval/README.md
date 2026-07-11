@@ -4,7 +4,7 @@ End-to-end tests that exercise the **real** Open Knowledge Hub MCP server **insi
 GitHub Copilot CLI** against real fixture containers. There is **no external grader
 key** — both the agent and the judge run through Copilot CLI.
 
-The same 25 scenarios run two ways:
+The same 28 scenarios run two ways:
 
 - **Automated** — [promptfoo](https://promptfoo.dev) drives a custom Copilot-CLI
   provider, applies deterministic `javascript` assertions plus a Copilot-CLI **judge**,
@@ -273,7 +273,7 @@ insufficient votes) fails.
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
 npm run eval:validate    # structural promptfoo validation
-npm run eval             # full live run (premium usage) — all 25 scenarios, concurrently
+npm run eval             # full live run (premium usage) — all scenarios, concurrently
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
 # a single scenario: filter by description, e.g. promptfoo eval -c eval/promptfooconfig.yaml --filter-pattern "Ask - answerable"
 ```

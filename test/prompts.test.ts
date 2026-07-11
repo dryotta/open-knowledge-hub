@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun } from "../src/prompts/index.js";
+import { buildAddModule, buildAsk, buildContext, buildInstructions, buildOnboard, buildRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -64,6 +64,20 @@ describe("prompt builders", () => {
     expect(text).toMatch(/Stage 1/);
     expect(text).toContain("config { set: { wakePhrase");
     expect(text).not.toContain("onboard { wakePhrase");
+  });
+  it("buildInstructions routes deterministic todo work through todos while preserving remember and todo skill distinctions", async () => {
+    const text = await buildInstructions({ wakePhrase: "sam" });
+    expect(text).toContain("read, list, filter, or check todo lists");
+    expect(text).toContain("call `todos`");
+    expect(text).toContain("Every deterministic todo operation is performed through `todos`");
+    expect(text).toContain("explicitly asks to remember an observation, reminder, commitment, or task");
+    expect(text).toContain('use the target memory module\'s `remember` skill');
+    expect(text).toContain("For other natural-language todo management");
+    expect(text).toContain('use the target memory module\'s `todo` skill');
+    expect(text).not.toContain("update_todo");
+    expect(text).not.toContain("must first call `run { container, module, skill: \"todo\", input? }`");
+    expect(text).not.toContain("before `todos`");
+    expect(text).not.toContain("without bypassing or restarting it");
   });
   it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;

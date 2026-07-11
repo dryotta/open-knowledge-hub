@@ -1,5 +1,4 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type {
   AddContainerPlan,
@@ -8,7 +7,6 @@ import type {
   SyncResult,
 } from "../container/service.js";
 import type { OkhPaths } from "../config.js";
-import { isOkhError } from "../errors.js";
 import {
   configFieldMeta,
   configKeys,
@@ -20,37 +18,9 @@ import {
 import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
 import { BUILTIN_MODULE_TYPES } from "../modules/types.js";
 import { vendoredSkills } from "../modules/vendored.js";
-import { loadToolMeta, describeShape } from "./toolMeta.js";
-import { toolShapes, type ToolName } from "./toolSchemas.js";
-import type { RenderContext } from "../prompts/templates.js";
-
-async function toolReg<N extends ToolName>(name: N, ctx?: RenderContext) {
-  const m = await loadToolMeta(name, ctx);
-  return { title: m.title, description: m.description, inputSchema: describeShape(toolShapes[name], m.args) };
-}
-
-function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
-  return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
-}
-
-function fail(message: string, hint?: string): CallToolResult {
-  return { content: [{ type: "text", text: hint ? `${message}\n\nHint: ${hint}` : message }], isError: true };
-}
-
-function handler<A>(fn: (args: A) => Promise<CallToolResult>) {
-  return async (args: A): Promise<CallToolResult> => {
-    try {
-      return await fn(args);
-    } catch (err) {
-      if (isOkhError(err)) return fail(`[${err.code}] ${err.message}`, err.hint);
-      throw err;
-    }
-  };
-}
-
-function isBlank(value: string): boolean {
-  return value.trim().length === 0;
-}
+import { TodoService } from "../todos/service.js";
+import { handler, isBlank, fail, ok, toolReg } from "./toolSupport.js";
+import { registerTodoTools } from "./todoTools.js";
 
 function formatInspect(r: InspectResult): string {
   if (r.kind === "containers") {
@@ -156,7 +126,12 @@ function describeConfigError(err: z.ZodError): string {
 }
 
 /** Register the operational tools (`inspect`, `add_container`, `add_module`, `sync`, `config`) plus the flows. */
-export async function registerTools(server: McpServer, service: ContainerService, paths: OkhPaths): Promise<void> {
+export async function registerTools(
+  server: McpServer,
+  service: ContainerService,
+  paths: OkhPaths,
+  todoService: TodoService,
+): Promise<void> {
   server.registerTool(
     "inspect",
     { ...(await toolReg("inspect")), annotations: { readOnlyHint: true } },
@@ -268,6 +243,7 @@ export async function registerTools(server: McpServer, service: ContainerService
   );
 
   await registerFlowTools(server, service);
+  await registerTodoTools(server, todoService);
 }
 
 /**

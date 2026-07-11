@@ -1,0 +1,22 @@
+# todos flow — show filtered open tasks across all registered memory modules.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. Show me every open todo labeled
+          "shopping" across all registered memory modules.
+  tests:
+    - description: Todos - shopping - shows matching open tasks across modules
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [todos] }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config: { mustContain: [Buy milk, shopping] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: no-unrelated-tasks
+                text: The response reports the matching open shopping todo and does not invent unrelated tasks.

@@ -4,6 +4,10 @@ import { parseToolMeta, describeShape, loadToolMeta } from "../src/server/toolMe
 import { toolShapes, type ToolName } from "../src/server/toolSchemas.js";
 import type { RenderContext } from "../src/prompts/templates.js";
 
+function normalizedWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 describe("parseToolMeta", () => {
   it("parses title + args and renders the body as description", async () => {
     const raw = "---\ntitle: T\nargs:\n  a: desc-a\n---\nHello body.\n";
@@ -58,4 +62,14 @@ describe("every tool has complete, consistent metadata", () => {
       expect(() => describeShape(toolShapes[name], m.args)).not.toThrow();
     });
   }
+
+  it("documents the unified todos API without a separate update tool", async () => {
+    expect(Object.keys(toolShapes)).not.toContain("update_todo");
+
+    const todos = await loadToolMeta("todos");
+    const description = normalizedWhitespace(todos.description);
+    expect(description).toContain("List, preview, create, or update Markdown todos in memory modules.");
+    expect(description).toContain("Create and update return a preview without writing unless `apply: true` is supplied.");
+    expect(todos.args.operation).toContain("defaults to `list`");
+  });
 });

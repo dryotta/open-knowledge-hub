@@ -65,7 +65,7 @@ describe("module skills", () => {
 describe("vendored skills", () => {
   it("lists knowledge and memory vendored skills", async () => {
     expect((await vendoredSkills("knowledge")).map((s) => s.name)).toContain("learn");
-    expect((await vendoredSkills("memory")).map((s) => s.name).sort()).toEqual(["reflect", "remember"]);
+    expect((await vendoredSkills("memory")).map((s) => s.name).sort()).toEqual(["reflect", "remember", "todo"]);
     expect(await vendoredSkills("recipes")).toEqual([]);
   });
 });

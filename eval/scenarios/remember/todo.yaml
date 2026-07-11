@@ -1,0 +1,45 @@
+# remember flow — create a confirmed todo-bearing memory entry.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. In container "kb-hub", module "mem",
+          remember that I need to buy printer ink by 2026-07-15. It is high
+          priority and labeled shopping. Preview the exact todo you would create,
+          wait for my confirmation, then apply only that confirmed todo and sync it.
+        turns:
+          - id: confirm
+            after: start
+            when: '\b(confirm|confirmation|proceed|approve)\b|go ahead|shall i|proposed|proposal|exact proposed|ready to (create|add|save|write)|before i (write|create|add)'
+            send: "Yes, I explicitly confirm that exact proposed todo. Go ahead and write it."
+        terminal:
+          after: confirm
+          requiredTools: [run, todos, sync]
+  tests:
+    - description: Remember - todo - creates confirmed prioritized shopping task
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [run, todos, sync] }
+        - type: javascript
+          value: file://assertions/todo-markdown.ts
+          config:
+            module: mem
+            text: buy printer ink
+            status: open
+            labels: [shopping]
+            due: "2026-07-15"
+            priority: high
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts: { module: mem }
+            criteria:
+              - id: used-remember-skill
+                text: The transcript shows the agent first used the remember skill to extract the observation and entry-summary context for the new memory-backed todo.
+                check: { kind: tool, name: run }
+              - id: confirmed-preview-apply
+                text: The agent previews the exact todo creation on one turn, waits for confirmation, then applies that same mutation and syncs it.
+                check: { kind: todo-preview-apply, operation: create }
+              - id: created-confirmed-todo
+                text: The on-disk memory contains the confirmed open printer-ink todo with shopping label, 2026-07-15 due date, and high priority.

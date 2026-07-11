@@ -15,29 +15,35 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts",
+    "build": "npm run build:server && npm run build:app",
+    "dev": "npm run build:app && tsx src/index.ts",
     "start": "node dist/index.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "npm run typecheck:server && npm run typecheck:app",
     "inspect": "npm run build && npx @modelcontextprotocol/inspector node dist/index.js",
-    "inspect:dev": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "inspect:dev": "npm run build:app && npx @modelcontextprotocol/inspector npx tsx src/index.ts",
+    "test": "npm run build:app && vitest run",
+    "test:watch": "npm run build:app && vitest",
     "prepare": "npm run build",
     "typecheck:eval": "tsc -p tsconfig.eval.json",
     "test:eval": "vitest run --config vitest.eval.config.ts",
     "eval": "node --import tsx eval/run-scenarios.ts eval",
     "eval:validate": "node --import tsx eval/run-scenarios.ts validate",
     "eval:view": "promptfoo view",
-    "eval:setup": "tsx eval/okh-eval.ts"
+    "eval:setup": "tsx eval/okh-eval.ts",
+    "build:server": "tsc -p tsconfig.json",
+    "build:app": "node scripts/build-todo-app.mjs",
+    "typecheck:server": "tsc -p tsconfig.json --noEmit",
+    "typecheck:app": "tsc -p tsconfig.app.json"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.1.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "yaml": "^2.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "0.28.1",
     "promptfoo": "^0.120.5",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
