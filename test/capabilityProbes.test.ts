@@ -217,6 +217,24 @@ describe("runRootsProbe", () => {
     expect(JSON.stringify(probe)).not.toContain(uri);
   });
 
+  it("fails a malformed roots result shape as an invalid result without retaining it", async () => {
+    const { store, clientKey, runId } = createRun({ roots: {} });
+    const client = makeClient({
+      listRoots: async () =>
+        ({ roots: [{ name: "secret-nameless-root" }] }) as unknown as ListRootsResult,
+    });
+
+    await runRootsProbe(client, store, clientKey, runId, DEFAULT_PROBE_TIMEOUTS);
+
+    const probe = store.getSnapshotForClient(clientKey, runId).report.probes.roots;
+    expect(probe).toEqual({
+      status: "failed",
+      code: "roots.invalid_result",
+      message: "Roots listing returned an invalid result.",
+    });
+    expect(JSON.stringify(probe)).not.toContain("secret-nameless-root");
+  });
+
   it("does not report an empty root name as an observed display name", async () => {
     const { store, clientKey, runId } = createRun({ roots: {} });
     const client = makeClient({

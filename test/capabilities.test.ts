@@ -790,6 +790,82 @@ describe("capabilities live probes", () => {
       `MCP error ${ErrorCode.InvalidParams}: Capability run has expired.`,
     );
   });
+
+  it("classifies a non-decline sampling error as failed without leaking the reason", async () => {
+    const errorSecret = "sampling-backend-secret-failure";
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: {
+        roots: rootsHandler,
+        sampling: async () => {
+          throw new McpError(ErrorCode.InternalError, errorSecret);
+        },
+        elicitation: acceptElicitation,
+      },
+    });
+
+    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const report = reportOf(result);
+
+    expect(report.probes.samplingBasic.status).toBe("failed");
+    expect(report.probes.samplingBasic.code).toBe("sampling.request_failed");
+    expect(report.probes.samplingTools.status).toBe("failed");
+    expect(report.probes.samplingTools.code).toBe("sampling.tools_request_failed");
+    expect(JSON.stringify(result)).not.toContain(errorSecret);
+    assertNoObservedValues(JSON.stringify(result));
+  });
+
+  it("records form and URL elicitation cancellation as supported but not completed", async () => {
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: {
+        roots: rootsHandler,
+        sampling: samplingHandler,
+        elicitation: async () => ({ action: "cancel" }),
+      },
+    });
+
+    const report = reportOf(await client.callTool({ name: "capabilities", arguments: {} }));
+
+    expect(report.probes.samplingBasic.status).toBe("passed");
+    expect(report.probes.elicitationForm.status).toBe("supported_not_completed");
+    expect(report.probes.elicitationForm.code).toBe("elicitation.form_not_completed");
+    expect(report.probes.elicitationUrl.status).toBe("supported_not_completed");
+    expect(report.probes.elicitationUrl.code).toBe("elicitation.url_not_completed");
+  });
+
+  it("fails the sampling tool loop on duplicate tool-use IDs without leaking values", async () => {
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: {
+        roots: rootsHandler,
+        elicitation: acceptElicitation,
+        sampling: async (request) => {
+          const params = request.params as { tools?: unknown; toolChoice?: { mode?: string } };
+          if (params.tools && params.toolChoice?.mode === "required") {
+            return {
+              role: "assistant",
+              model: SECRETS.model,
+              stopReason: "endTurn",
+              content: [
+                { type: "tool_use", id: "duplicate-id", name: "capability_echo", input: { value: SECRETS.toolInput } },
+                { type: "tool_use", id: "duplicate-id", name: "capability_echo", input: { value: SECRETS.toolInput } },
+              ],
+            };
+          }
+          return samplingHandler(request);
+        },
+      },
+    });
+
+    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const report = reportOf(result);
+
+    expect(report.probes.samplingBasic.status).toBe("passed");
+    expect(report.probes.samplingTools.status).toBe("failed");
+    expect(report.probes.samplingTools.code).toBe("sampling.tools_duplicate_id");
+    assertNoObservedValues(JSON.stringify(result));
+  });
 });
 
 describe("capabilities dependency wiring", () => {
