@@ -15,6 +15,13 @@ async function setup() {
   return { home, root, paths, svc: new ContainerService(paths) };
 }
 
+function expectTerms(text: string, terms: Array<string | RegExp>): void {
+  for (const term of terms) {
+    if (typeof term === "string") expect(text).toContain(term);
+    else expect(text).toMatch(term);
+  }
+}
+
 describe("effective skills + resolveSkill", () => {
   it("merges vendored memory skills with module-local skills", async () => {
     const { root, svc } = await setup();
@@ -22,15 +29,53 @@ describe("effective skills + resolveSkill", () => {
     await mkdir(join(root, "mem", ".okh", "skills", "purge"), { recursive: true });
     await writeFile(join(root, "mem", ".okh", "skills", "purge", "SKILL.md"), "---\nname: purge\ndescription: drop old notes\n---\n\nPurge.\n");
     const skills = await svc.effectiveSkills("h", "mem");
-    expect(skills.map((s) => s.name).sort()).toEqual(["purge", "reflect", "remember"]);
+    expect(skills.map((s) => s.name).sort()).toEqual(["purge", "reflect", "remember", "todo"]);
   });
 
-  it("resolveSkill returns the SKILL body; unknown skill throws with a list", async () => {
+  it("resolveSkill returns remember guidance for facts and todo-bearing input; unknown skill throws with a list", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "mem"), { type: "memory", name: "Mem", description: "" });
     const s = await svc.resolveSkill("h", "mem", "remember");
-    expect(s.body).toMatch(/append/i);
-    await expect(svc.resolveSkill("h", "mem", "nope")).rejects.toThrow(/remember|reflect/);
+    expectTerms(s.body, [
+      /append/i,
+      /ISO timestamp/i,
+      /action|commitment|reminder|todo/i,
+      "todos",
+      /inspect existing labels/i,
+      "update_todo",
+      /operation:\s*"create"/i,
+      /labels/i,
+      /general/i,
+      /confirm/i,
+      /sync/i,
+      /\bIDs?\b/i,
+      /recurr/i,
+      /dependenc/i,
+    ]);
+    await expect(svc.resolveSkill("h", "mem", "nope")).rejects.toThrow(/todo/);
+  });
+
+  it("resolveSkill returns deterministic todo mutation guidance", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "mem"), { type: "memory", name: "Mem", description: "" });
+    const s = await svc.resolveSkill("h", "mem", "todo");
+    expectTerms(s.body, [
+      /deterministic/i,
+      "todos",
+      "update_todo",
+      /complete/i,
+      /reopen/i,
+      /labels/i,
+      /due/i,
+      /priority/i,
+      /confirm/i,
+      /sync/i,
+      /ref/i,
+      /\bIDs?\b/i,
+      /custom statuses?/i,
+      /delete/i,
+      /recurr/i,
+    ]);
   });
 
   it("knowledge type exposes learn + initialize", async () => {

@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { ContainerService, type ResolvedContainer, type ResolvedModule } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
-import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun } from "../src/prompts/index.js";
+import { buildAddModule, buildAsk, buildContext, buildInstructions, buildOnboard, buildRun } from "../src/prompts/index.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -64,6 +64,12 @@ describe("prompt builders", () => {
     expect(text).toMatch(/Stage 1/);
     expect(text).toContain("config { set: { wakePhrase");
     expect(text).not.toContain("onboard { wakePhrase");
+  });
+  it("buildInstructions routes todo lists to todos and todo edits to the memory todo skill", async () => {
+    const text = await buildInstructions({ wakePhrase: "sam" });
+    expect(text).toContain("show, review, filter, or check todo lists");
+    expect(text).toContain("call `todos`");
+    expect(text).toContain("`todo` skill");
   });
   it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;
