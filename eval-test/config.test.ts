@@ -177,3 +177,226 @@ describe("scenario configs", () => {
     }
   });
 });
+
+describe("llmwiki scenario structured tool expectations", () => {
+  async function loadScenario(path: string) {
+    const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+    return doc[0];
+  }
+
+  function getToolsCalledConfig(sc: { tests: Array<{ assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }> }> }) {
+    const assertion = sc.tests[0].assert.find(
+      (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).includes("tools-called"),
+    );
+    return assertion?.config as { expect: Array<string | { name: string; arguments?: Record<string, unknown> }>; ordered?: boolean } | undefined;
+  }
+
+  function getLlmwikiStateConfig(sc: { tests: Array<{ assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }> }> }) {
+    const assertion = sc.tests[0].assert.find(
+      (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).includes("llmwiki-state"),
+    );
+    return assertion?.config as Record<string, unknown> | undefined;
+  }
+
+  it("initialize/llmwiki.yaml uses ordered structured tool expectations with required args", async () => {
+    const sc = await loadScenario("initialize/llmwiki.yaml");
+    const cfg = getToolsCalledConfig(sc);
+    expect(cfg, "tools-called config must exist").toBeDefined();
+    expect(cfg!.ordered, "initialize must use ordered expectations").toBe(true);
+
+    const expectations = cfg!.expect;
+    expect(expectations.length).toBeGreaterThanOrEqual(3);
+
+    // First: module initialize with container/module/skill args
+    const initExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
+    expect(initExp.name).toBe("run");
+    expect(initExp.arguments).toBeDefined();
+    expect(initExp.arguments!.container).toBe("wiki-hub");
+    expect(initExp.arguments!.module).toBe("new-wiki");
+    expect(initExp.arguments!.skill).toBe("initialize");
+
+    // Second: shared grilling (no container/module required)
+    const grillExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
+    expect(grillExp.name).toBe("run");
+    expect(grillExp.arguments).toBeDefined();
+    expect(grillExp.arguments!.skill).toBe("grilling");
+    // shared skill must not require container/module keys
+    expect(grillExp.arguments).not.toHaveProperty("container");
+    expect(grillExp.arguments).not.toHaveProperty("module");
+
+    // Last: sync
+    const syncExp = expectations[expectations.length - 1] as { name: string } | string;
+    const syncName = typeof syncExp === "string" ? syncExp : syncExp.name;
+    expect(syncName).toBe("sync");
+  });
+
+  it("initialize/llmwiki.yaml has llmwiki-state assertion config", async () => {
+    const sc = await loadScenario("initialize/llmwiki.yaml");
+    const cfg = getLlmwikiStateConfig(sc);
+    expect(cfg, "llmwiki-state assertion must exist").toBeDefined();
+    expect(cfg!.module).toBe("new-wiki");
+    expect(cfg!.requiredIndexText).toBeDefined();
+    const indexText = cfg!.requiredIndexText as string[];
+    expect(indexText).toContain("backend developers");
+    expect(indexText).toContain("product roadmaps");
+    expect(indexText).toContain("concept");
+    expect(indexText).toContain("synthesis");
+    expect(cfg!.requiredGroupIndexes).toBeDefined();
+    const groupIndexes = cfg!.requiredGroupIndexes as string[];
+    expect(groupIndexes).toContain("concepts/index.md");
+    expect(groupIndexes).toContain("entities/index.md");
+    expect(groupIndexes).toContain("summaries/index.md");
+    expect(groupIndexes).toContain("syntheses/index.md");
+    expect(cfg!.noContentPages).toBe(true);
+  });
+
+  it("write/into-wiki.yaml uses ordered structured tool expectations", async () => {
+    const sc = await loadScenario("write/into-wiki.yaml");
+    const cfg = getToolsCalledConfig(sc);
+    expect(cfg, "tools-called config must exist").toBeDefined();
+    expect(cfg!.ordered, "write must use ordered expectations").toBe(true);
+
+    const expectations = cfg!.expect;
+    expect(expectations.length).toBeGreaterThanOrEqual(4);
+
+    // 1: module run write
+    const writeExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
+    expect(writeExp.name).toBe("run");
+    expect(writeExp.arguments!.container).toBe("wiki-hub");
+    expect(writeExp.arguments!.module).toBe("wiki");
+    expect(writeExp.arguments!.skill).toBe("write");
+
+    // 2: shared okf-writer (no container/module)
+    const writerExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
+    expect(writerExp.name).toBe("run");
+    expect(writerExp.arguments!.skill).toBe("okf-writer");
+    expect(writerExp.arguments).not.toHaveProperty("container");
+    expect(writerExp.arguments).not.toHaveProperty("module");
+
+    // 3: inspect
+    const inspectExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
+    expect(inspectExp.name).toBe("inspect");
+    expect(inspectExp.arguments!.container).toBe("wiki-hub");
+    expect(inspectExp.arguments!.module).toBe("wiki");
+
+    // 4: sync
+    const syncExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
+    expect(typeof syncExp === "string" ? syncExp : syncExp.name).toBe("sync");
+    if (typeof syncExp !== "string") {
+      expect(syncExp.arguments!.container).toBe("wiki-hub");
+    }
+  });
+
+  it("write/into-wiki.yaml has llmwiki-state assertion config for expectedNewPage", async () => {
+    const sc = await loadScenario("write/into-wiki.yaml");
+    const cfg = getLlmwikiStateConfig(sc);
+    expect(cfg, "llmwiki-state assertion must exist").toBeDefined();
+    const page = cfg!.expectedNewPage as { folder: string; type: string; terms: string[] };
+    expect(page.folder).toBe("concepts");
+    expect(page.type).toBe("concept");
+    expect(page.terms.some((t: string) => /kv|cache/i.test(t))).toBe(true);
+    expect(cfg!.requireIndexAndLogChanged).toBe(true);
+    expect(cfg!.requireCleanHealth).toBe(true);
+  });
+
+  it("lint/wiki-health.yaml uses ordered structured tool expectations", async () => {
+    const sc = await loadScenario("lint/wiki-health.yaml");
+    const cfg = getToolsCalledConfig(sc);
+    expect(cfg, "tools-called config must exist").toBeDefined();
+    expect(cfg!.ordered, "lint must use ordered expectations").toBe(true);
+
+    const expectations = cfg!.expect;
+    expect(expectations.length).toBeGreaterThanOrEqual(3);
+
+    // 1: module run lint
+    const lintExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
+    expect(lintExp.name).toBe("run");
+    expect(lintExp.arguments!.container).toBe("wiki-hub");
+    expect(lintExp.arguments!.module).toBe("wiki");
+    expect(lintExp.arguments!.skill).toBe("lint");
+
+    // inspect must appear
+    const inspectExp = expectations.find(
+      (e: string | { name: string }) => (typeof e === "string" ? e : e.name) === "inspect",
+    ) as { name: string; arguments?: Record<string, unknown> };
+    expect(inspectExp).toBeDefined();
+    expect(inspectExp.arguments!.container).toBe("wiki-hub");
+
+    // sync must appear last
+    const lastExp = expectations[expectations.length - 1] as { name: string } | string;
+    expect(typeof lastExp === "string" ? lastExp : lastExp.name).toBe("sync");
+  });
+
+  it("ask/llmwiki-compounding.yaml uses ordered structured tool expectations", async () => {
+    const sc = await loadScenario("ask/llmwiki-compounding.yaml");
+    const cfg = getToolsCalledConfig(sc);
+    expect(cfg, "tools-called config must exist").toBeDefined();
+    expect(cfg!.ordered, "compounding must use ordered expectations").toBe(true);
+
+    const expectations = cfg!.expect;
+    expect(expectations.length).toBeGreaterThanOrEqual(4);
+
+    // 1: module run write
+    const writeExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
+    expect(writeExp.name).toBe("run");
+    expect(writeExp.arguments!.container).toBe("wiki-hub");
+    expect(writeExp.arguments!.module).toBe("wiki");
+    expect(writeExp.arguments!.skill).toBe("write");
+
+    // 2: shared okf-writer (no container/module)
+    const writerExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
+    expect(writerExp.name).toBe("run");
+    expect(writerExp.arguments!.skill).toBe("okf-writer");
+    expect(writerExp.arguments).not.toHaveProperty("container");
+    expect(writerExp.arguments).not.toHaveProperty("module");
+
+    // 3: inspect
+    const inspectExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
+    expect(inspectExp.name).toBe("inspect");
+
+    // 4: sync
+    const syncExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
+    expect(typeof syncExp === "string" ? syncExp : syncExp.name).toBe("sync");
+  });
+
+  it("ask/llmwiki-compounding.yaml has llmwiki-state config for synthesis", async () => {
+    const sc = await loadScenario("ask/llmwiki-compounding.yaml");
+    const cfg = getLlmwikiStateConfig(sc);
+    expect(cfg, "llmwiki-state assertion must exist").toBeDefined();
+    const page = cfg!.expectedNewPage as { folder: string; type: string; terms: string[] };
+    expect(page.folder).toBe("syntheses");
+    expect(page.type).toBe("synthesis");
+    expect(page.terms.some((t: string) => /attention/i.test(t))).toBe(true);
+    expect(page.terms.some((t: string) => /transformer/i.test(t))).toBe(true);
+    expect(cfg!.requireIndexAndLogChanged).toBe(true);
+    expect(cfg!.requireCleanHealth).toBe(true);
+  });
+});
+
+describe("llmwiki fixture schema", () => {
+  const FIXTURE_WIKI = join(EVAL, "fixtures", "wiki-hub", "wiki");
+
+  it("root index.md declares concepts/, entities/, syntheses/ folders and concept, entity, synthesis types", async () => {
+    const content = await readFile(join(FIXTURE_WIKI, "index.md"), "utf8");
+    // Declared group folders
+    expect(content).toMatch(/concepts\//);
+    expect(content).toMatch(/entities\//);
+    expect(content).toMatch(/syntheses\//);
+    // Declared concept types
+    expect(content).toMatch(/\bconcept\b/);
+    expect(content).toMatch(/\bentity\b/);
+    expect(content).toMatch(/\bsynthesis\b/);
+  });
+
+  it("syntheses/index.md exists as a group stub with heading and description, no concept frontmatter", async () => {
+    const synthPath = join(FIXTURE_WIKI, "syntheses", "index.md");
+    expect(await exists(synthPath), "syntheses/index.md must exist").toBe(true);
+    const content = await readFile(synthPath, "utf8");
+    // Has heading
+    expect(content).toMatch(/^#\s+Syntheses/m);
+    // Has durable explanation description
+    expect(content).toMatch(/durable.*explanation.*connecting|connecting.*multiple.*wiki/i);
+    // No concept frontmatter (no type: field in YAML block)
+    expect(content).not.toMatch(/^---[\s\S]*?type:/m);
+  });
+});

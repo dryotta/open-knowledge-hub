@@ -4,11 +4,7 @@
         env: wiki
         prompt: |
           Use the open-knowledge-hub MCP tools. In container "wiki-hub", run module
-          "new-wiki"'s `initialize` skill, including its required shared `grilling`
-          skill. Guide me one decision at a time in this order: purpose and goals
-          together, scope boundaries together, template choice after showing the full
-          menu, tags, source retention, then final confirmation. After we agree, build
-          the empty wiki structure and sync it.
+          "new-wiki"'s `initialize` skill and guide me through setting up the wiki.
         turns:
           - id: purpose
             after: start
@@ -50,12 +46,12 @@
               developers and coding agents; cover backend components, request flows,
               architecture decisions, and terminology; exclude product roadmaps and
               customer data; use the Encyclopedia groups and matching singular types;
-              use no tags and retain no source copies. Build the empty structure and invoke
-              sync in this turn without asking for another confirmation.
+              use no tags and retain no source copies. Build the empty structure locally
+              and show me a diff summary.
           - id: sync-confirmed
             after: scope-confirmed
             when: "ready to sync|shall i sync|want me to sync|sync now\\?"
-            send: "Yes. Invoke sync now."
+            send: "Yes, sync those changes now."
         terminal:
           after: sync-confirmed
           requiredTools: [run, sync]
@@ -64,7 +60,21 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run, sync] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: wiki-hub, module: new-wiki, skill: initialize }
+              - name: run
+                arguments: { skill: grilling }
+              - name: sync
+        - type: javascript
+          value: file://assertions/llmwiki-state.ts
+          config:
+            module: new-wiki
+            requiredIndexText: [backend developers, product roadmaps, concept, synthesis]
+            requiredGroupIndexes: [concepts/index.md, entities/index.md, summaries/index.md, syntheses/index.md]
+            noContentPages: true
         - type: javascript
           value: file://assertions/judge.ts
           config:
@@ -72,14 +82,10 @@
             criteria:
               - id: ran-initialize
                 text: The agent invoked the new-wiki module's initialize skill.
-                check:
-                  kind: transcript-contains
-                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"new-wiki")(?=[^\r\n]*"skill"\s*:\s*"initialize")'
+                advisory: true
               - id: used-grilling
                 text: The agent invoked the shared grilling skill and gathered decisions one at a time.
-                check:
-                  kind: transcript-contains
-                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"skill"\s*:\s*"grilling")'
+                advisory: true
               - id: offered-template-menu
                 text: The agent offered multiple structure templates before the user selected Encyclopedia.
               - id: wrote-scope-contract
@@ -88,4 +94,4 @@
                 text: The resulting module has group index files for concepts, entities, summaries, and syntheses, without invented concept content.
               - id: persisted-via-sync
                 text: The initialized wiki was persisted via the sync tool.
-                check: { kind: tool, name: sync }
+                advisory: true

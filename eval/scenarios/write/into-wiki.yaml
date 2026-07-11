@@ -11,7 +11,24 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run, sync] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: wiki-hub, module: wiki, skill: write }
+              - name: run
+                arguments: { skill: okf-writer }
+              - name: inspect
+                arguments: { container: wiki-hub, module: wiki }
+              - name: sync
+                arguments: { container: wiki-hub }
+        - type: javascript
+          value: file://assertions/llmwiki-state.ts
+          config:
+            module: wiki
+            expectedNewPage: { folder: concepts, type: concept, terms: [kv, cache] }
+            requireIndexAndLogChanged: true
+            requireCleanHealth: true
         - type: javascript
           value: file://assertions/okf-valid.ts
           config: { module: wiki, requireChanged: true }
@@ -22,9 +39,7 @@
             criteria:
               - id: ran-write
                 text: The agent invoked the wiki module's write skill.
-                check:
-                  kind: transcript-contains
-                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"wiki")(?=[^\r\n]*"skill"\s*:\s*"write")'
+                advisory: true
               - id: created-kv-page
                 text: A new OKF page about the KV cache was created under the wiki module (e.g. concepts/kv-cache.md).
               - id: cross-linked
@@ -33,4 +48,4 @@
                 text: The root index.md catalog and log.md were updated to reflect the new page.
               - id: persisted-via-sync
                 text: The change was persisted via the sync tool.
-                check: { kind: tool, name: sync }
+                advisory: true

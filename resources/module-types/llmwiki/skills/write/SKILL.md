@@ -8,13 +8,16 @@ description: Integrate new material into this llmwiki — author OKF pages, touc
 Fold new material into this wiki as OKF concept pages, keeping the graph connected and the index
 current. A single source or insight typically **touches several pages** — that is expected. Author
 all pages with the shared **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and
-citation rules. Run these stages in order.
+citation rules — invoke it with only `skill` and `input`, omitting `container` and `module` because
+it is a shared skill. The `input` must contain: target path, declared type, source context, and
+affected cross-links. Run these stages in order.
 
 ## Stage 1 — Load the scope contract
 
-Read the module's `index.md` and recover its **scope contract**: goals, in-scope, out-of-scope.
-Restate it in one line. Do not run this on an uninitialized module — if there is no contract, run
-`initialize` first. A wiki with zero pages but a written contract is initialized; do not
+Read the module's root `index.md` and recover its **scope contract**: goals, in-scope, out-of-scope,
+declared group folders, and exact type vocabulary. Choose the target path and declared type from
+this schema before authoring. Do not run this on an uninitialized module — if there is no contract,
+run `initialize` first. A wiki with zero pages but a written contract is initialized; do not
 re-initialize it.
 
 ## Stage 2 — The scope gate (coverage within scope)

@@ -17,8 +17,8 @@ Help a reader (human or agent) understand transformer components and how they co
 
 ## Structure
 
-- **Groups / folders** — `concepts/`, `entities/`.
-- **Concept types** — `concept`, `entity`.
+- **Groups / folders** — `concepts/`, `entities/`, `syntheses/`.
+- **Concept types** — `concept`, `entity`, `synthesis`.
 - **Links** — OKF bundle-relative (for example, `/concepts/page.md`). No orphans.
 
 ## Sources
@@ -33,3 +33,6 @@ Retain copies: no
 
 ### entities
 * [Transformer](/entities/transformer.md) — the overall architecture
+
+### syntheses
+_None yet._
