@@ -229,32 +229,111 @@ describe("okf-valid", () => {
 });
 
 describe("memory-append", () => {
+  const observation = "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy.";
+
   async function pair(): Promise<{ fx: string; c: string }> {
     const fx = await makeTempDir("mem-fx-"); cleanups.push(fx);
     const c = await makeTempDir("mem-"); cleanups.push(c);
     await mkdir(join(fx, "mem"), { recursive: true });
     await mkdir(join(c, "mem"), { recursive: true });
     await writeFile(join(fx, "mem", "2026-01-01.md"), "old\n", "utf8");
-    await writeFile(join(c, "mem", "2026-01-01.md"), "old\n", "utf8"); // container starts as a copy
+    await writeFile(join(c, "mem", "2026-01-01.md"), "old\n", "utf8");
     return { fx, c };
   }
 
-  it("passes when a new entry is added and prior entries are unchanged (append-only)", async () => {
+  function validEntry(obs: string): string {
+    return `## 2026-07-02T14:05:00Z\n\n${obs}\n`;
+  }
+
+  it("passes when a new file has exactly one timestamp heading and the exact observation", async () => {
     const { fx, c } = await pair();
-    await writeFile(join(c, "mem", "2026-07-02.md"), "new\n", "utf8");
-    expect((await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(true);
+    await writeFile(join(c, "mem", "2026-07-02.md"), validEntry(observation), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(true);
   });
 
-  it("fails when a prior entry was rewritten (append-only violated)", async () => {
+  it("passes when observation is appended to an existing file (prior content preserved as prefix)", async () => {
     const { fx, c } = await pair();
-    await writeFile(join(c, "mem", "2026-01-01.md"), "REWRITTEN\n", "utf8"); // history changed
-    await writeFile(join(c, "mem", "2026-07-02.md"), "new\n", "utf8");
-    expect((await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(false);
+    const prior = "old\n";
+    await writeFile(join(c, "mem", "2026-01-01.md"), prior + "\n" + validEntry(observation), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(true);
   });
 
-  it("fails when no new entry was added", async () => {
+  it("fails when an extra 'completed successfully' sentence is appended after the observation", async () => {
     const { fx, c } = await pair();
-    expect((await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", baselineFileCount: 1 }))).pass).toBe(false);
+    const extra = `## 2026-07-02T14:05:00Z\n\n${observation}\nCompleted successfully.\n`;
+    await writeFile(join(c, "mem", "2026-07-02.md"), extra, "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/extra non-empty line/i);
+  });
+
+  it("fails when two Markdown files were added", async () => {
+    const { fx, c } = await pair();
+    await writeFile(join(c, "mem", "2026-07-02.md"), validEntry(observation), "utf8");
+    await writeFile(join(c, "mem", "2026-07-03.md"), validEntry(observation), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/exactly one/i);
+  });
+
+  it("fails when two timestamp entries exist in the appended content", async () => {
+    const { fx, c } = await pair();
+    const double = `## 2026-07-02T14:05:00Z\n\n${observation}\n\n## 2026-07-02T14:06:00Z\n\nAnother entry.\n`;
+    await writeFile(join(c, "mem", "2026-07-02.md"), double, "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/exactly one.*timestamp/i);
+  });
+
+  it("fails when prior content was rewritten (changed file does not start with prior content)", async () => {
+    const { fx, c } = await pair();
+    await writeFile(join(c, "mem", "2026-01-01.md"), "REWRITTEN\n" + validEntry(observation), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/prior content/i);
+  });
+
+  it("fails when a prior Markdown file was deleted", async () => {
+    const { fx, c } = await pair();
+    const { rm: fsRm } = await import("node:fs/promises");
+    await fsRm(join(c, "mem", "2026-01-01.md"));
+    await writeFile(join(c, "mem", "2026-07-02.md"), validEntry(observation), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/removed/i);
+  });
+
+  it("fails when the exact observation text is missing from appended content", async () => {
+    const { fx, c } = await pair();
+    const wrong = `## 2026-07-02T14:05:00Z\n\nSomething else entirely.\n`;
+    await writeFile(join(c, "mem", "2026-07-02.md"), wrong, "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/observation not found/i);
+  });
+
+  it("fails when observation config is missing", async () => {
+    const { fx, c } = await pair();
+    await writeFile(join(c, "mem", "2026-07-02.md"), validEntry(observation), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem" }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/observation.*required/i);
+  });
+
+  it("preserves multiline observations verbatim", async () => {
+    const { fx, c } = await pair();
+    const multiObs = "Line one of observation.\nLine two with detail.\nLine three final.";
+    await writeFile(join(c, "mem", "2026-07-02.md"), validEntry(multiObs), "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation: multiObs }));
+    expect(r.pass).toBe(true);
+  });
+
+  it("fails when no markdown file was added or changed", async () => {
+    const { fx, c } = await pair();
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
   });
 });
 
