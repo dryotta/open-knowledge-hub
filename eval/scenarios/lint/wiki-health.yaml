@@ -30,7 +30,7 @@
             criteria:
               - id: ran-lint
                 text: The agent invoked the wiki module's lint skill.
-                advisory: true
+                required: false
               - id: inspected-health
                 text: The agent ran inspect and used its Wiki health report (orphans / dangling links).
               - id: handled-orphan

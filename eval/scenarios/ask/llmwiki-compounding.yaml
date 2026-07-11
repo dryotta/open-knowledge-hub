@@ -41,11 +41,11 @@
                 text: The agent answered how Attention fits within a Transformer using the existing wiki pages.
               - id: ran-write
                 text: The agent invoked the wiki module's write skill to persist the durable answer.
-                advisory: true
+                required: false
               - id: filed-synthesis
                 text: The on-disk changes include a new OKF synthesis page explaining the Attention-to-Transformer relationship.
               - id: maintained-wiki
                 text: The synthesis is cross-linked and the root index.md catalog and log.md were updated.
               - id: persisted-via-sync
                 text: The wiki changes were persisted via the sync tool.
-                advisory: true
+                required: false

@@ -371,6 +371,48 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.requireIndexAndLogChanged).toBe(true);
     expect(cfg!.requireCleanHealth).toBe(true);
   });
+
+  function getJudgeCriteria(sc: {
+    tests: Array<{
+      assert: Array<{ type: string; value?: string; config?: { criteria?: Array<Record<string, unknown>> } }>;
+    }>;
+  }) {
+    const judgeAssert = sc.tests[0].assert.find(
+      (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
+    );
+    return judgeAssert?.config?.criteria as Array<{ id: string; text: string; required?: boolean; advisory?: unknown }> | undefined;
+  }
+
+  const MECHANICAL_IDS: Record<string, string[]> = {
+    "initialize/llmwiki.yaml": ["ran-initialize", "used-grilling", "persisted-via-sync"],
+    "write/into-wiki.yaml": ["ran-write", "persisted-via-sync"],
+    "lint/wiki-health.yaml": ["ran-lint"],
+    "ask/llmwiki-compounding.yaml": ["ran-write", "persisted-via-sync"],
+  };
+
+  it("mechanical judge criteria use required:false (not advisory:true) in all four llmwiki scenarios", async () => {
+    for (const [file, ids] of Object.entries(MECHANICAL_IDS)) {
+      const sc = await loadScenario(file);
+      const criteria = getJudgeCriteria(sc);
+      expect(criteria, `${file}: judge criteria must exist`).toBeDefined();
+      for (const id of ids) {
+        const c = criteria!.find((c) => c.id === id);
+        expect(c, `${file}: criterion "${id}" must exist`).toBeDefined();
+        expect(c!.required, `${file}: criterion "${id}" must have required:false`).toBe(false);
+      }
+    }
+  });
+
+  it("no judge criterion in the four llmwiki scenarios uses the unsupported advisory key", async () => {
+    for (const file of Object.keys(MECHANICAL_IDS)) {
+      const sc = await loadScenario(file);
+      const criteria = getJudgeCriteria(sc);
+      expect(criteria, `${file}: judge criteria must exist`).toBeDefined();
+      for (const c of criteria!) {
+        expect(c.advisory, `${file}: criterion "${c.id}" must not have unsupported advisory key`).toBeUndefined();
+      }
+    }
+  });
 });
 
 describe("llmwiki fixture schema", () => {

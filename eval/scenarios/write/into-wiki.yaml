@@ -39,7 +39,7 @@
             criteria:
               - id: ran-write
                 text: The agent invoked the wiki module's write skill.
-                advisory: true
+                required: false
               - id: created-kv-page
                 text: A new OKF page about the KV cache was created under the wiki module (e.g. concepts/kv-cache.md).
               - id: cross-linked
@@ -48,4 +48,4 @@
                 text: The root index.md catalog and log.md were updated to reflect the new page.
               - id: persisted-via-sync
                 text: The change was persisted via the sync tool.
-                advisory: true
+                required: false
