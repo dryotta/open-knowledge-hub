@@ -23,6 +23,7 @@
     "inspect:dev": "npm run build:app && npx @modelcontextprotocol/inspector npx tsx src/index.ts",
     "test": "npm run build:app && vitest run",
     "test:watch": "npm run build:app && vitest",
+    "test:e2e": "npm run build:app && vitest run --config vitest.e2e.config.ts",
     "prepare": "npm run build",
     "typecheck:eval": "tsc -p tsconfig.eval.json",
     "test:eval": "vitest run --config vitest.eval.config.ts",
@@ -44,6 +45,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "esbuild": "0.28.1",
+    "playwright": "1.61.1",
     "promptfoo": "^0.120.5",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
