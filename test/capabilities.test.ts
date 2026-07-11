@@ -569,6 +569,17 @@ describe("capabilities live probes", () => {
     elicitation: { form: {}, url: {} },
   };
 
+  // Interactive probes are only exercised through a task-augmented scan, which adds
+  // task streaming/polling latency. Give those probes room so the injected machine
+  // timeout does not race the task lifecycle and flake the assertions.
+  const taskAugmentedTimeouts: CapabilityRegistrationTimeouts = {
+    machineMs: 2_000,
+    samplingMs: 2_000,
+    elicitationMs: 2_000,
+    cancellationTtlMs: 2_000,
+    taskPollIntervalMs: 5,
+  };
+
   const SECRETS = {
     rootUri: "file:///private/secret-root",
     rootName: "secret-root-display-name",
@@ -631,10 +642,11 @@ describe("capabilities live probes", () => {
   it("passes every interactive probe and never echoes observed values", async () => {
     const { client } = await connect({
       capabilities: fullCapabilities,
+      build: { capabilityTimeouts: taskAugmentedTimeouts },
       handlers: { roots: rootsHandler, sampling: samplingHandler, elicitation: acceptElicitation },
     });
 
-    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const result = await taskAugmentedScan(client);
     const report = reportOf(result);
 
     expect(report.client.declared).toEqual({
@@ -657,9 +669,40 @@ describe("capabilities live probes", () => {
     expect(textOf(result)).toBe(formatCapabilityReport(report));
   });
 
+  it("marks advertised interactive probes advertised_only on a normal scan without invoking the client", async () => {
+    const samplingSpy = vi.fn(async () => {
+      throw new Error("sampling must not run on a normal scan");
+    });
+    const elicitationSpy = vi.fn(async () => {
+      throw new Error("elicitation must not run on a normal scan");
+    });
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: { roots: rootsHandler, sampling: samplingSpy, elicitation: elicitationSpy },
+    });
+
+    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const report = reportOf(result);
+
+    expect(report.probes.roots.status).toBe("passed");
+    for (const key of [
+      "samplingBasic",
+      "samplingTools",
+      "elicitationForm",
+      "elicitationUrl",
+    ] as const) {
+      expect(report.probes[key].status).toBe("advertised_only");
+    }
+    expect(report.overallStatus).toBe("complete");
+    expect(samplingSpy).not.toHaveBeenCalled();
+    expect(elicitationSpy).not.toHaveBeenCalled();
+    assertNoObservedValues(JSON.stringify(result));
+  });
+
   it("records interactive rejection and decline as supported but not completed without leaking reasons", async () => {
     const { client } = await connect({
       capabilities: fullCapabilities,
+      build: { capabilityTimeouts: taskAugmentedTimeouts },
       handlers: {
         roots: rootsHandler,
         sampling: async () => {
@@ -669,7 +712,7 @@ describe("capabilities live probes", () => {
       },
     });
 
-    const report = reportOf(await client.callTool({ name: "capabilities", arguments: {} }));
+    const report = reportOf(await taskAugmentedScan(client));
 
     expect(report.probes.roots.status).toBe("passed");
     expect(report.probes.samplingBasic.status).toBe("supported_not_completed");
@@ -795,6 +838,7 @@ describe("capabilities live probes", () => {
     const errorSecret = "sampling-backend-secret-failure";
     const { client } = await connect({
       capabilities: fullCapabilities,
+      build: { capabilityTimeouts: taskAugmentedTimeouts },
       handlers: {
         roots: rootsHandler,
         sampling: async () => {
@@ -804,7 +848,7 @@ describe("capabilities live probes", () => {
       },
     });
 
-    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const result = await taskAugmentedScan(client);
     const report = reportOf(result);
 
     expect(report.probes.samplingBasic.status).toBe("failed");
@@ -818,6 +862,7 @@ describe("capabilities live probes", () => {
   it("records form and URL elicitation cancellation as supported but not completed", async () => {
     const { client } = await connect({
       capabilities: fullCapabilities,
+      build: { capabilityTimeouts: taskAugmentedTimeouts },
       handlers: {
         roots: rootsHandler,
         sampling: samplingHandler,
@@ -825,7 +870,7 @@ describe("capabilities live probes", () => {
       },
     });
 
-    const report = reportOf(await client.callTool({ name: "capabilities", arguments: {} }));
+    const report = reportOf(await taskAugmentedScan(client));
 
     expect(report.probes.samplingBasic.status).toBe("passed");
     expect(report.probes.elicitationForm.status).toBe("supported_not_completed");
@@ -837,6 +882,7 @@ describe("capabilities live probes", () => {
   it("fails the sampling tool loop on duplicate tool-use IDs without leaking values", async () => {
     const { client } = await connect({
       capabilities: fullCapabilities,
+      build: { capabilityTimeouts: taskAugmentedTimeouts },
       handlers: {
         roots: rootsHandler,
         elicitation: acceptElicitation,
@@ -858,7 +904,7 @@ describe("capabilities live probes", () => {
       },
     });
 
-    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const result = await taskAugmentedScan(client);
     const report = reportOf(result);
 
     expect(report.probes.samplingBasic.status).toBe("passed");

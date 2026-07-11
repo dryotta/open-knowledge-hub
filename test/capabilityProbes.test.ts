@@ -248,7 +248,7 @@ describe("runRootsProbe", () => {
     );
   });
 
-  it("skips unsupported roots and forwards timeout, signal, and related task when pending", async () => {
+  it("skips unsupported roots and forwards timeout and signal when pending", async () => {
     const unsupported = createRun({});
     const unsupportedListRoots = vi.fn(async () => ({ roots: [] }));
 
@@ -269,13 +269,11 @@ describe("runRootsProbe", () => {
       pending.clientKey,
       pending.runId,
       DEFAULT_PROBE_TIMEOUTS,
-      RELATED_TASK,
     );
 
     expect(pendingListRoots).toHaveBeenCalledWith(undefined, {
       timeout: DEFAULT_PROBE_TIMEOUTS.machineMs,
       signal: pending.signal,
-      relatedTask: RELATED_TASK,
     });
     expect(pending.store.getSnapshotForClient(pending.clientKey, pending.runId).report.probes.roots).toEqual({
       status: "passed",
@@ -1144,7 +1142,7 @@ describe("runSamplingToolsProbe", () => {
   });
 
   describe("runCapabilityProbes", () => {
-    it("runs strictly sequentially, toggles each pending interactive probe, and forwards relatedTask", async () => {
+    it("runs strictly sequentially, toggles each pending interactive probe, and forwards relatedTask to interactive probes only", async () => {
       const { store, clientKey, runId } = createRun({
         roots: {},
         sampling: { tools: {} },
@@ -1163,7 +1161,7 @@ describe("runSamplingToolsProbe", () => {
       };
       const listRoots = vi.fn(async (_params, options) => {
         events.push("roots");
-        expect(options?.relatedTask).toEqual({ taskId: task.taskId });
+        expect(options?.relatedTask).toBeUndefined();
         return { roots: [] };
       });
       const createMessage = vi.fn(async (params, options) => {
@@ -1218,6 +1216,43 @@ describe("runSamplingToolsProbe", () => {
         "url",
         "working",
       ]);
+    });
+
+    it("marks advertised interactive probes advertised_only without a task and without invoking the client", async () => {
+      const { store, clientKey, runId } = createRun({
+        roots: {},
+        sampling: { tools: {} },
+        elicitation: { form: {}, url: {} },
+      });
+      const listRoots = vi.fn(async () => ({ roots: [] }));
+      const createMessage = vi.fn(async () => {
+        throw new Error("sampling must not run without a task");
+      });
+      const elicitInput = vi.fn(async () => {
+        throw new Error("elicitation must not run without a task");
+      });
+
+      await runCapabilityProbes(
+        makeClient({ listRoots, createMessage, elicitInput }),
+        store,
+        clientKey,
+        runId,
+        DEFAULT_PROBE_TIMEOUTS,
+      );
+
+      const { report } = store.getRunForClient(clientKey, runId);
+      expect(report.probes.roots.status).toBe("passed");
+      for (const key of [
+        "samplingBasic",
+        "samplingTools",
+        "elicitationForm",
+        "elicitationUrl",
+      ] as const) {
+        expect(report.probes[key].status).toBe("advertised_only");
+      }
+      expect(listRoots).toHaveBeenCalledTimes(1);
+      expect(createMessage).not.toHaveBeenCalled();
+      expect(elicitInput).not.toHaveBeenCalled();
     });
 
     it("does not toggle unsupported interactive probes", async () => {

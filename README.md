@@ -145,9 +145,11 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 - `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"] }` → preview the exact todo line; after confirmation, repeat with `apply: true`, then `sync`.
 - `todos { operation: "update", ref: "<opaque-ref>", completed: true }` → preview a completion or reopen change; after confirmation, repeat with `apply: true`. MCP App checkbox clicks may apply this directly, but the change still remains local until `sync`.
 - `capabilities` → run a privacy-safe client capability diagnostic (roots, sampling,
-  elicitation, MCP Apps, legacy Tasks). Legacy task cancellation is only exercised on a
-  task-augmented client: issue `action: "task_cancel"` as a task, cancel that task, then
-  call `action: "report"` (with the returned `runId`) to see the cancellation probe pass.
+  elicitation, MCP Apps, legacy Tasks). A normal scan reports advertised sampling and
+  elicitation as `advertised_only`; interactive consent probes and legacy task
+  cancellation are exercised only on a task-augmented client: issue `action: "task_cancel"`
+  as a task, cancel that task, then call `action: "report"` (with the returned `runId`)
+  to see the cancellation probe pass.
 
 ## Wake phrase
 

@@ -73,10 +73,12 @@ the client after changes. Point `OKH_HOME` at a scratch dir to isolate dev data.
 
 Build and restart the MCP server, then call `capabilities` with no arguments.
 
-- In a terminal client, verify the text table reports unsupported and
-  `not_exercised` states explicitly. If the client supports task-augmented tool
-  calls, issue `action: "task_cancel"` as a task, cancel that task from the client,
-  then call `action: "report"` (with the returned `runId`) to confirm the
+- In a terminal client, verify the text table reports unsupported,
+  `advertised_only`, and `not_exercised` states explicitly. Advertised sampling
+  and elicitation are reported `advertised_only` on a normal scan; to exercise
+  them (and legacy task cancellation) live, the client must support task-augmented
+  tool calls — issue `action: "task_cancel"` as a task, cancel that task from the
+  client, then call `action: "report"` (with the returned `runId`) to confirm the
   cancellation probe passes.
 - In an MCP Apps-capable GUI host, verify the App renders, reflects host theme,
   changes its requested size, calls back to the same server, and refreshes the

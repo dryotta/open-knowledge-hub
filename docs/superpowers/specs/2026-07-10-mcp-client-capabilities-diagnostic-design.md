@@ -287,6 +287,17 @@ Run probes sequentially to avoid overlapping consent interfaces. A probe failure
 does not abort independent later probes unless the transport or connection is no
 longer usable.
 
+### Consent probes require task augmentation
+
+Sampling and elicitation probes surface a consent interface and can block for
+minutes waiting on a human. They are exercised live only on a **task-augmented**
+scan, where each is wrapped in an `input_required` → `working` transition. On a
+**normal** scan these advertised-but-unexercised probes return immediately as
+`advertised_only`; the diagnostic never sends a consent-gated request outside a
+task so a non-interactive client (for example a CLI running unattended) cannot
+hang. Roots is a machine probe requiring no consent and always runs on both scan
+kinds.
+
 ### Roots
 
 If `roots` is absent, report `unsupported`.
@@ -296,6 +307,12 @@ Otherwise call `roots/list` and validate:
 - the response has a roots array
 - each URI parses
 - each URI uses the currently allowed `file:` scheme
+
+Roots runs while the task is `working`, so it is sent as a direct request without
+`relatedTask` metadata. Requests carrying `relatedTask` are queued by the SDK for
+delivery only when the client pulls task messages (on `input_required` or
+`tasks/result`); tagging the machine roots probe would make it hang until timeout
+during a task-augmented scan.
 
 Retain only:
 

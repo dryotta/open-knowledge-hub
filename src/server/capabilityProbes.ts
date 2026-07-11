@@ -248,13 +248,12 @@ export async function runRootsProbe(
   clientKey: object,
   runId: string,
   timeouts: CapabilityProbeTimeouts,
-  relatedTask?: RelatedTaskMetadata,
 ): Promise<void> {
   const run = runs.getRunForClient(clientKey, runId);
   if (run.report.probes.roots.status !== "pending") return;
 
   try {
-    const result = await client.listRoots(undefined, requestOptions(timeouts.machineMs, run.signal, relatedTask));
+    const result = await client.listRoots(undefined, requestOptions(timeouts.machineMs, run.signal));
     const validation = validateRootsResult(result);
 
     if (!validation.valid) {
@@ -747,6 +746,16 @@ export interface CapabilityTaskProbeContext {
   setWorking(): Promise<void>;
 }
 
+const INTERACTIVE_ADVERTISED_ONLY: Record<
+  "samplingBasic" | "samplingTools" | "elicitationForm" | "elicitationUrl",
+  { code: string; label: string }
+> = {
+  samplingBasic: { code: "sampling.basic_advertised_only", label: "Basic sampling" },
+  samplingTools: { code: "sampling.tools_advertised_only", label: "Sampling with tools" },
+  elicitationForm: { code: "elicitation.form_advertised_only", label: "Form elicitation" },
+  elicitationUrl: { code: "elicitation.url_advertised_only", label: "URL elicitation" },
+};
+
 async function runInteractiveProbe(
   runs: CapabilityRunStore,
   clientKey: object,
@@ -757,7 +766,17 @@ async function runInteractiveProbe(
 ): Promise<void> {
   if (runs.getRunForClient(clientKey, runId).report.probes[key].status !== "pending") return;
   if (task === undefined) {
-    await execute();
+    const { code, label } = INTERACTIVE_ADVERTISED_ONLY[key];
+    runs.updateProbe(
+      clientKey,
+      runId,
+      key,
+      probe(
+        "advertised_only",
+        code,
+        `${label} is advertised; run a task-augmented capabilities scan to exercise it interactively.`,
+      ),
+    );
     return;
   }
 
@@ -778,7 +797,12 @@ export async function runCapabilityProbes(
   task?: CapabilityTaskProbeContext,
 ): Promise<void> {
   const relatedTask = task === undefined ? undefined : { taskId: task.taskId };
-  await runRootsProbe(client, runs, clientKey, runId, timeouts, relatedTask);
+  // Roots is a machine probe that runs while the task is "working". Requests carrying
+  // relatedTask are queued by the SDK for delivery only when the client pulls task
+  // messages (on input_required or tasks/result), so a machine probe must never be
+  // task-tagged or it would hang until timeout during a task-augmented scan. This is
+  // enforced by runRootsProbe not accepting a relatedTask argument at all.
+  await runRootsProbe(client, runs, clientKey, runId, timeouts);
   await runInteractiveProbe(runs, clientKey, runId, "samplingBasic", task, () =>
     runBasicSamplingProbe(client, runs, clientKey, runId, timeouts, relatedTask),
   );
