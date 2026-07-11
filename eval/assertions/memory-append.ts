@@ -169,4 +169,3 @@ function findContiguousMatch(lines: string[], target: string[]): number {
   }
   return -1;
 }
-
