@@ -213,6 +213,13 @@ describe("MCP server surface", () => {
     expect(updateTodo?.title).toBe("Update one todo");
   });
 
+  it("update_todo metadata preserves the todo-skill and sync workflow", async () => {
+    const { client } = await connect();
+    const updateTodo = (await client.listTools()).tools.find((t) => t.name === "update_todo");
+    expect(updateTodo?.description).toContain('first call `run { container, module, skill: "todo", input? }`');
+    expect(updateTodo?.description).toContain("call `sync` after a successful write");
+  });
+
   it("publishes the todos MCP App metadata and bundled resource", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools;

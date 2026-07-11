@@ -69,7 +69,8 @@ describe("prompt builders", () => {
     const text = await buildInstructions({ wakePhrase: "sam" });
     expect(text).toContain("show, review, filter, or check todo lists");
     expect(text).toContain("call `todos`");
-    expect(text).toContain("`todo` skill");
+    expect(text).toContain("first call `run { container, module, skill: \"todo\", input? }`");
+    expect(text).toContain("follow its returned discipline");
   });
   it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;

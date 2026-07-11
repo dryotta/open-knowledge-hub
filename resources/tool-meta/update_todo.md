@@ -13,4 +13,4 @@ args:
   due: "Set a YYYY-MM-DD due date, clear it with null on patch, or omit to leave it unchanged."
   priority: "Set a todo priority, clear it with null on patch, or omit to leave it unchanged."
 ---
-Create or safely update one todo in a memory module. Never guess stale or ambiguous refs; always use the exact ref returned by todos.
+Create or safely update one todo in a memory module. For a natural-language user request, first call `run { container, module, skill: "todo", input? }` and follow its returned discipline; call `sync` after a successful write. Never guess stale or ambiguous refs; always use the exact ref returned by `todos`.
