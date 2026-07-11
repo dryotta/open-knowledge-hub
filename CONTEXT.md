@@ -30,7 +30,7 @@ Each module folder carries a manifest with `type`, `name`, `description` (option
 and `config` (optional). The hub auto-discovers modules by scanning the container
 for these manifests — a folder is a module iff it has `.okh/module.yaml`.
 Built-in types ship vendored skills (`knowledge` → `learn`, `initialize`; `memory` →
-`remember`, `reflect`). Module-local skills are discovered from `.okh/skills/` and
+`remember`, `reflect`, `todo`). Module-local skills are discovered from `.okh/skills/` and
 common external roots like `.claude/skills/`. Shared, module-less skills (`grilling`,
 `okf-writer`) live under `resources/shared/skills/` and run via `run { skill }` with
 no container/module. `.okh/` is reserved for OKH state.
@@ -49,16 +49,24 @@ and conformance.
 
 ### Cognitive flows
 `ask` (query), `context` (assemble a working set), `onboard` (guided setup), `run`
-(invoke a named skill on a module). `learn`, `remember`, `reflect` are **skills**,
-not standalone tools — invoke them via `run { container, module, skill, input? }`.
+(invoke a named skill on a module). `learn`, `remember`, `reflect`, and `todo` are
+**skills**, not standalone tools — invoke them via
+`run { container, module, skill, input? }`; `todo` handles natural-language memory
+todo changes. `todos` is the direct operational tool for deterministic reads.
 Each flow returns discipline text (instructions the agent follows); a flow never
 reads or writes itself — the agent does. Exposed as both MCP prompts and
 prompt-tools (identical content).
 
 ## Runtime & surface
-- TypeScript on `@modelcontextprotocol/sdk`, `zod`, `yaml`; run via `npx`. Requires
-  `git`; `gh` only for `pr`-mode containers. See ADR-0001, 0002, 0004.
-- Operational tools (act on state): `inspect`, `add_container`, `add_module`, `sync`, `config`.
+- TypeScript on `@modelcontextprotocol/sdk`, `@modelcontextprotocol/ext-apps`,
+  `zod`, `yaml`; `ext-apps` provides MCP App registration and the host bridge.
+  `esbuild` is the build-time browser bundler. Run via `npx` on Node.js >= 18.
+  Requires `git`; `gh` only for `pr`-mode containers. See ADR-0001, 0002, 0004.
+- Operational tools (act on state): `inspect`, `add_container`, `add_module`, `sync`,
+  `config`, `todos`, `update_todo`.
 - Flows (return discipline/instructions, never act): `ask`, `context`, `onboard`,
   `run`. Each is exposed as a prompt-tool and as an MCP prompt with identical
   content.
+- App resource: `ui://open-knowledge-hub/todos` renders the unified todo list and
+  filters in app-capable hosts; other hosts receive a text fallback. App and tool
+  mutations remain local/dirty until an explicit `sync`.
