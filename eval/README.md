@@ -328,8 +328,8 @@ session wired to that built server, and **deletes the temp home when you exit**.
 no cleanup step, and it never touches the shared run-state file.
 
 ```powershell
-npm run manual                       # empty env (default), rebuilt + entered, auto-cleaned on exit
-npm run manual -- local-and-git      # pick an environment
+npm run manual                       # local-and-git env (default): registered local + git hubs, rebuilt + entered, auto-cleaned on exit
+npm run manual -- empty              # pick an environment (e.g. cold-start onboarding)
 npm run manual -- git --model claude-sonnet-4.5   # env + model override
 ```
 

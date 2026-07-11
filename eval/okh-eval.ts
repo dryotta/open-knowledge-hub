@@ -230,7 +230,7 @@ export async function main(argv: string[]): Promise<number> {
     const mi = rest.indexOf("--model");
     const model = mi >= 0 ? rest[mi + 1] : undefined;
     const envArg = rest.find((a, i) => !a.startsWith("--") && rest[i - 1] !== "--model");
-    const env = envArg ?? "empty";
+    const env = envArg ?? "local-and-git";
     if (!isEnvName(env)) throw new Error(`usage: okh-eval manual [env] [--model <m>]   — env one of: ${listEnvironments().join(", ")}`);
     return runManualSession(env, {
       model,
