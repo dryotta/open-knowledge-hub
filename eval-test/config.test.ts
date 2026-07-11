@@ -584,8 +584,9 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
     expect(text, "must reference issued at login (kb-hub fact)").toMatch(/issued at login/i);
     expect(text, "must reference 24-hour expiry (kb-hub fact)").toMatch(/24.hour/i);
     expect(text, "must reference rotate on use (kb-hub fact)").toMatch(/rotate on use/i);
-    // Must name memory evidence
+    // Must name memory evidence with the fixture-backed >60-second threshold
     expect(text, "must reference clock skew or drift (memory evidence)").toMatch(/clock skew|clock drift/i);
+    expect(text, "must name fixture-backed >60-second drift threshold").toMatch(/greater than 60/i);
 
     // Must explicitly allow coverage-gap statements
     expect(text, "must explicitly allow coverage-gap statements").toMatch(/coverage.gap/i);
@@ -594,6 +595,10 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
 
     // Must state that unsupported details presented as source-backed facts should fail
     expect(text, "must reject unsupported technical details presented as known facts").toMatch(/unsupported/i);
+    // Must state that specific technical details remain disallowed even when labeled as inference/synthesis
+    expect(text, "must state specific technical details disallowed even when labeled as inference/synthesis").toMatch(
+      /even when labeled/i,
+    );
 
     // Criterion must remain required (not required:false)
     expect(crit!.required, "no-fabrication must not be required:false").not.toBe(false);
