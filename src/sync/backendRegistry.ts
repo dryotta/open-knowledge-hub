@@ -1,6 +1,10 @@
 import { OkhError } from "../errors.js";
+import { Git } from "../git/git.js";
+import { Gh } from "../git/gh.js";
 import type { BackendType, ContainerEntry } from "../registry/schema.js";
 import type { SyncBackend, SyncSelection, ResolveSyncContext } from "./types.js";
+import { GitBackend } from "./gitBackend.js";
+import { PassiveBackend } from "./passiveBackend.js";
 
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);
@@ -120,4 +124,16 @@ export class BackendRegistry {
       await this.validateEntry(entry);
     }
   }
+}
+
+/**
+ * Create the default BackendRegistry used by ContainerService.
+ * Registers GitBackend and PassiveBackend (local + onedrive).
+ */
+export function createBackendRegistry(git: Git = new Git(), gh: Gh = new Gh()): BackendRegistry {
+  return new BackendRegistry([
+    new GitBackend(git, gh),
+    new PassiveBackend("local"),
+    new PassiveBackend("onedrive"),
+  ]);
 }

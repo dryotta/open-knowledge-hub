@@ -33,7 +33,7 @@ function formatInspect(r: InspectResult): string {
     return r.containers
       .map((c) => {
         const head =
-          `- ${c.name} [${c.backend}] sync=${c.sync ?? "?"} modules=${c.moduleCount}` +
+          `- ${c.name} [${c.backend}] sync=${c.sync?.mode ?? "?"} modules=${c.moduleCount}` +
           `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`;
         const mods = c.modules.length
           ? c.modules.map((m) => `    · ${m.type} · ${m.name} (${m.path})`).join("\n")
@@ -46,7 +46,7 @@ function formatInspect(r: InspectResult): string {
     const s = r.status;
     const lines = [
       `Container: ${s.name} [${s.backend}]`,
-      `Sync: ${s.sync ?? "?"}`,
+      `Sync: ${s.sync?.mode ?? "?"}`,
       `Path: ${s.localPath}`,
       `Manifest valid: ${s.manifestValid}${s.manifestError ? ` (${s.manifestError})` : ""}`,
       "Modules:",
@@ -95,7 +95,7 @@ function formatContainerPlan(plan: AddContainerPlan): string {
   if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.target}`);
   if (plan.actions.includes("clone"))
     lines.push(`- Clone ${plan.source} → ${plan.target}`);
-  lines.push(`- Register container "${plan.name}" [${plan.backend}]`);
+  lines.push(`- Register container "${plan.name}" [${plan.backend.type}]`);
   return lines.join("\n");
 }
 
@@ -105,7 +105,7 @@ function formatSync(rs: SyncResult[]): string {
     .map((r) => {
       const v = r.validation.ok ? "valid" : `INVALID: ${r.validation.issues.join("; ")}`;
       const extra = r.prUrl ? ` PR: ${r.prUrl}` : "";
-      return `- ${r.name} [${r.backend}] ${r.action} (${v})${extra}`;
+      return `- ${r.name} [${r.backend}] ${r.outcome} (${v})${extra}`;
     })
     .join("\n");
 }

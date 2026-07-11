@@ -19,8 +19,9 @@ const legacyContainerSchema = z.object({
 /**
  * One-time migration: if `<root>/.okh/okh.yaml` exists, write a per-module
  * `<module>/.okh/module.yaml` for each listed module (unless one already exists),
- * delete the legacy file, and return the raw legacy sync string. Idempotent: no-op
- * when the legacy file is absent.
+ * and return the raw legacy sync string. The legacy file is NOT removed by this
+ * function — call `removeLegacyContainerManifest` after persisting the new registry
+ * entry. Idempotent: no-op when the legacy file is absent.
  */
 export async function migrateLegacyContainerManifest(root: string): Promise<LegacySyncMode | undefined> {
   const legacyPath = join(root, LEGACY_REL);
@@ -50,6 +51,13 @@ export async function migrateLegacyContainerManifest(root: string): Promise<Lega
       });
     }
   }
-  await rm(legacyPath, { force: true });
   return parsed.data.sync;
+}
+
+/**
+ * Remove the legacy `.okh/okh.yaml` manifest. Call this after the new registry
+ * entry has been successfully persisted. No-op when the file is already absent.
+ */
+export async function removeLegacyContainerManifest(root: string): Promise<void> {
+  await rm(join(root, LEGACY_REL), { force: true });
 }
