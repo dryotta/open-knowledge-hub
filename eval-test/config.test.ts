@@ -27,6 +27,7 @@ const EXPECTED_COUNTS: Record<string, number> = {
   write: 1,
   todo: 1,
   todos: 1,
+  capabilities: 1,
 };
 
 /** Every scenario config file (verb/<name>.yaml), skipping the shared/ folder. */
@@ -66,9 +67,9 @@ describe("promptfooconfig.yaml (single default)", () => {
 });
 
 describe("scenario configs", () => {
-  it("provides 28 scenario files across the expected verb folders", async () => {
+  it("provides 29 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
-    expect(files.length).toBe(28);
+    expect(files.length).toBe(29);
     const counts: Record<string, number> = {};
     for (const f of files) {
       const verb = f.split("/")[0];
@@ -77,7 +78,7 @@ describe("scenario configs", () => {
     expect(counts).toEqual(EXPECTED_COUNTS);
   });
 
-  it("every file is a one-element scenario list: config.vars(prompt+env), a test with asserts, judge criteria, eval-relative assertion paths", async () => {
+  it("every file is a one-element scenario list: config.vars(prompt+env), a test with asserts, a judge or deterministic assertion, eval-relative assertion paths", async () => {
     const seenDescriptions = new Set<string>();
     for (const file of await scenarioFiles()) {
       const doc = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
@@ -117,17 +118,29 @@ describe("scenario configs", () => {
       expect(test.prompts, `${file}: no prompt filter`).toBeUndefined();
       expect(Array.isArray(test.assert)).toBe(true);
 
-      // judge criteria present and well-formed
+      // grading: either a judge (well-formed criteria) or, for a deterministic-only
+      // scenario, at least one deterministic tools-called/transcript assertion
       const judges = test.assert.filter(
         (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
       );
-      expect(judges.length).toBeGreaterThanOrEqual(1);
-      const criteria = judges[0].config?.criteria;
-      expect(Array.isArray(criteria)).toBe(true);
-      expect(criteria.length).toBeGreaterThanOrEqual(1);
-      for (const c of criteria) {
-        expect(typeof c.id).toBe("string");
-        expect(typeof c.text).toBe("string");
+      if (judges.length >= 1) {
+        const criteria = judges[0].config?.criteria;
+        expect(Array.isArray(criteria)).toBe(true);
+        expect(criteria.length).toBeGreaterThanOrEqual(1);
+        for (const c of criteria) {
+          expect(typeof c.id).toBe("string");
+          expect(typeof c.text).toBe("string");
+        }
+      } else {
+        const deterministic = test.assert.filter(
+          (a: { type: string; value?: string }) =>
+            a.type === "javascript" &&
+            (String(a.value).endsWith("tools-called.ts") || String(a.value).endsWith("transcript.ts")),
+        );
+        expect(
+          deterministic.length,
+          `${file}: no judge, so needs a deterministic tools-called/transcript assertion`,
+        ).toBeGreaterThanOrEqual(1);
       }
 
       // every javascript assertion path is eval-relative and exists

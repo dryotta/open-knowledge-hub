@@ -1,0 +1,24 @@
+# capabilities tool — terminal clients get the full report as text (no MCP App render).
+- config:
+    - vars:
+        env: empty
+        prompt: |
+          Use the open-knowledge-hub MCP capabilities tool to test this MCP client.
+          Summarize the normalized result in a terminal-friendly table. Do not assume
+          a graphical MCP App is available.
+  tests:
+    - description: Capabilities - terminal fallback - reports explicit support states
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [capabilities] }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            mustContain:
+              - roots
+              - sampling
+              - elicitation
+              - MCP Apps|mcpApps
+              - Tasks|legacyTask
+              - unsupported|not_exercised|passed|failed

@@ -21,7 +21,7 @@ npm test           # vitest (real git against temp repos)
 npm run dev        # run from source via tsx
 ```
 
-## Eval (live, optional)
+## Eval (live)
 
 The `eval/` harness runs the built server in Copilot CLI, so **rebuild before
 evaluating**.
@@ -68,6 +68,24 @@ Build, then point your client at the local `dist/index.js`:
 
 Use an absolute path (Windows: `"D:\\...\\dist\\index.js"`). Rebuild and restart
 the client after changes. Point `OKH_HOME` at a scratch dir to isolate dev data.
+
+## Test client capabilities
+
+Build and restart the MCP server, then call `capabilities` with no arguments.
+
+- In a terminal client, verify the text table reports unsupported and
+  `not_exercised` states explicitly. If the client supports task-augmented tool
+  calls, issue `action: "task_cancel"` as a task, cancel that task from the client,
+  then call `action: "report"` (with the returned `runId`) to confirm the
+  cancellation probe passes.
+- In an MCP Apps-capable GUI host, verify the App renders, reflects host theme,
+  changes its requested size, calls back to the same server, and refreshes the
+  normalized report.
+- The diagnostic must never print root paths, generated sampling text, elicited
+  values, or sampling tool inputs.
+
+Use `npm run inspect` for resource/tool metadata checks. Inspector does not
+replace validation in an actual MCP Apps host.
 
 ## Architecture
 

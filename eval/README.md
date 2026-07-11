@@ -4,7 +4,7 @@ End-to-end tests that exercise the **real** Open Knowledge Hub MCP server **insi
 GitHub Copilot CLI** against real fixture containers. There is **no external grader
 key** — both the agent and the judge run through Copilot CLI.
 
-The same 28 scenarios run two ways:
+The same 29 scenarios run two ways:
 
 - **Automated** — [promptfoo](https://promptfoo.dev) drives a custom Copilot-CLI
   provider, applies deterministic `javascript` assertions plus a Copilot-CLI **judge**,
@@ -130,7 +130,7 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 | env | placement | hubs | used for |
 |-----|-----------|------|----------|
 | `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git-auto) | `ask/*`, `context/*`, `remember/*`, `reflect/*`, `learn/trivial-fact` |
-| `empty` | workspace | `notes` (unregistered folder in the cwd) | `onboard/*`, `run/shared-grilling` |
+| `empty` | workspace | `notes` (unregistered folder in the cwd) | `onboard/*`, `run/shared-grilling`, `capabilities/terminal-fallback` |
 | `wiki` | registered | `wiki-hub` (local) | `initialize/llmwiki`, `ask/llmwiki-compounding`, `write/*` |
 | `custom` | registered | `custom-hub` (local) | `inspect/custom-module`, `run/custom-skill` |
 | `health` | registered | `health-hub` (local); `workspaceDir` = `fixtures/health-source` | `ingest/into-existing-module`, `lint/*` |
@@ -142,6 +142,9 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 - **`workspace`** copies the hub into the working directory as an **unregistered** folder
   (empty registry) — the starting point for "add my existing folder", "create a new hub",
   or "add from a URL".
+- **`capabilities/terminal-fallback`** runs in `empty` and intentionally validates the
+  **text** fallback: Copilot CLI does not render the MCP App resource, so the diagnostic
+  must still report every capability as a text table and `structuredContent`.
 
 To add or change an environment, edit `environments.ts`; scenarios only reference it by
 name.
@@ -245,7 +248,7 @@ side-effects — no model needed:
 
 ### The judge
 
-`assertions/judge.ts` grades each scenario against a list of **binary criteria** (not a
+`assertions/judge.ts` grades most scenarios against a list of **binary criteria** (not a
 0–1 score), through Copilot CLI. For robustness it uses **self-consistency**: the agent
 runs once, then the judge grades that transcript **`k` times** (default 3; override with
 `config.k` per assertion or the `OKH_JUDGE_K` env var) and each criterion is decided by

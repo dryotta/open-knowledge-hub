@@ -81,6 +81,7 @@ These read state or change containers directly.
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 | `todos` | `operation?`, `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?`, `text?`, `entrySummary?`, `observation?`, `ref?`, `completed?`, `due?`, `priority?`, `apply?` | Unified todo API: `list` reads across memory modules, `create` previews or adds one todo, and `update` previews or mutates one todo by opaque `ref`. Writes stay local until `sync`. |
+| `capabilities` | `action?`, `runId?`, `app?` | Test client roots, sampling, elicitation, MCP Apps, and legacy Tasks; returns App-enhanced or terminal output. |
 
 ### Flows (return instructions — they do not act)
 
@@ -103,7 +104,10 @@ exactly. `container`/`module` are optional filters: omit them to span every
 registered container (the whole hub).
 
 **Resources:** `ui://open-knowledge-hub/todos` provides the interactive unified
-memory-todo list for MCP App-capable hosts.
+memory-todo list for MCP App-capable hosts. A second self-contained MCP App at
+`ui://open-knowledge-hub/capabilities` reports client capabilities: MCP
+Apps-capable hosts render the interactive report; terminal clients receive the
+same report as text and `structuredContent`.
 
 ## Prerequisites
 
@@ -140,6 +144,10 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 - `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback).
 - `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"] }` → preview the exact todo line; after confirmation, repeat with `apply: true`, then `sync`.
 - `todos { operation: "update", ref: "<opaque-ref>", completed: true }` → preview a completion or reopen change; after confirmation, repeat with `apply: true`. MCP App checkbox clicks may apply this directly, but the change still remains local until `sync`.
+- `capabilities` → run a privacy-safe client capability diagnostic (roots, sampling,
+  elicitation, MCP Apps, legacy Tasks). Legacy task cancellation is only exercised on a
+  task-augmented client: issue `action: "task_cancel"` as a task, cancel that task, then
+  call `action: "report"` (with the returned `runId`) to see the cancellation probe pass.
 
 ## Wake phrase
 
