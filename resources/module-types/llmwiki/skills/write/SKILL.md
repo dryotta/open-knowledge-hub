@@ -52,13 +52,16 @@ Decide:
 
 ## Stage 5 — Re-check health
 
-Run `inspect { container, module }` and clear what its **Wiki health** block reports: no orphans, no
-dangling links (create the missing page or fix the link), every page cataloged and carrying a
-`type`.
+Run `inspect { container, module }` and fix everything its **Wiki health** block reports: resolve all
+orphans (add inbound links), fix all dangling links (create the missing page or correct the link),
+catalog every uncataloged page in `index.md`, and ensure every page carries a valid `type`.
+This includes pre-existing health issues — they must be fixed, not deferred. Repeat `inspect` after
+fixes until every health array is empty (orphans, dangling, uncataloged, missingType).
 
 ## Completion criterion
 
 - Every admitted piece of material is filed into OKF pages within scope, cross-linked both ways, and
   grounded or flagged.
 - `index.md` and `log.md` are current.
-- `inspect` wiki-health is clean, or the remaining items are intentional and noted in the log.
+- `inspect` wiki-health is clean: all four health arrays (orphans, dangling, uncataloged, missingType)
+  are empty.

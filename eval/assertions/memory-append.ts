@@ -34,7 +34,7 @@ export default async function memoryAppend(_output: string, context: Ctx) {
     return { pass: false, score: 0, reason: `removed Markdown file(s): ${removedMd.join(", ")}` };
   }
 
-  // Reject changed files whose after content does not start with prior content
+  // Reject changed files whose after content does not start with prior content (raw bytes)
   const changedMd = d.changed.filter((f) => f.endsWith(".md"));
   for (const f of changedMd) {
     const priorContent = before.get(f)!;
@@ -65,6 +65,10 @@ export default async function memoryAppend(_output: string, context: Ctx) {
     appended = afterContent.slice(before.get(target)!.length);
   }
 
+  // Normalize line endings (CRLF / lone CR → LF) for semantic checks
+  appended = normalizeLF(appended);
+  const normalizedObservation = normalizeLF(observation);
+
   // Require exactly one ISO timestamp heading
   const lines = appended.split("\n");
   const timestampLines = lines.filter((l) => ISO_TIMESTAMP_RE.test(l));
@@ -76,7 +80,7 @@ export default async function memoryAppend(_output: string, context: Ctx) {
   }
 
   // Require the exact observation preserved verbatim and appearing exactly once
-  const occurrences = countExact(appended, observation);
+  const occurrences = countExact(appended, normalizedObservation);
   if (occurrences === 0) {
     return { pass: false, score: 0, reason: "observation not found verbatim in appended content" };
   }
@@ -86,7 +90,7 @@ export default async function memoryAppend(_output: string, context: Ctx) {
 
   // Validate no extra non-empty lines beyond: timestamp heading, observation lines, blank lines,
   // and an optional file-date heading for a newly added file (e.g. "# 2026-07-02")
-  const violations = findExtraLines(lines, timestampLines[0], observation, addedMd.includes(target));
+  const violations = findExtraLines(lines, timestampLines[0], normalizedObservation, addedMd.includes(target));
   if (violations.length > 0) {
     return { pass: false, score: 0, reason: `extra non-empty line(s): ${violations.map((v) => JSON.stringify(v)).join("; ")}` };
   }
@@ -104,6 +108,11 @@ function countExact(haystack: string, needle: string): number {
     idx += needle.length;
   }
   return count;
+}
+
+/** Normalize CRLF and lone CR to LF */
+function normalizeLF(s: string): string {
+  return s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 function findExtraLines(

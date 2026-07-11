@@ -50,7 +50,6 @@
               and show me a diff summary.
           - id: sync-confirmed
             after: scope-confirmed
-            when: "ready to sync|shall i sync|want me to sync|sync now\\?"
             send: "Yes, sync those changes now."
         terminal:
           after: sync-confirmed

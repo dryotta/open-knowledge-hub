@@ -331,6 +331,25 @@ describe("memory-append", () => {
     expect(r.pass).toBe(true);
   });
 
+  it("passes when file uses CRLF line endings (Windows)", async () => {
+    const { fx, c } = await pair();
+    // Simulate a valid memory append written with CRLF (Windows git autocrlf)
+    const crlfContent = "## 2026-07-02T14:05:00Z\r\n\r\n" + observation + "\r\n";
+    await writeFile(join(c, "mem", "2026-07-02.md"), crlfContent, "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(true);
+  });
+
+  it("passes when multiline observation uses CRLF in the file but LF in config", async () => {
+    const { fx, c } = await pair();
+    const multiObs = "Line one of observation.\nLine two with detail.\nLine three final.";
+    // File has CRLF but observation config uses LF
+    const crlfContent = "## 2026-07-02T14:05:00Z\r\n\r\nLine one of observation.\r\nLine two with detail.\r\nLine three final.\r\n";
+    await writeFile(join(c, "mem", "2026-07-02.md"), crlfContent, "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation: multiObs }));
+    expect(r.pass).toBe(true);
+  });
+
   it("fails when no markdown file was added or changed", async () => {
     const { fx, c } = await pair();
     const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));

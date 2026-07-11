@@ -95,4 +95,21 @@ describe("llmwiki skill body contracts", () => {
     // final inspect
     expect(s.body).toMatch(/inspect/i);
   });
+
+  it("write skill requires repeated inspect until all health arrays are empty before completion", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    const s = await svc.resolveSkill("h", "wiki", "write");
+    // Must require fixing all four health categories
+    expect(s.body).toMatch(/orphan/i);
+    expect(s.body).toMatch(/dangling/i);
+    expect(s.body).toMatch(/uncataloged/i);
+    expect(s.body).toMatch(/type/i);
+    // Must require repeating inspect until health is fully empty
+    expect(s.body).toMatch(/repeat.*inspect|re-?run.*inspect|inspect.*again|inspect.*until/i);
+    // Must NOT allow logging remaining health debt as a completion alternative
+    expect(s.body).not.toMatch(/remaining.*intentional.*noted|intentional.*noted.*log|or.*intentional/i);
+    // Completion must require clean health unconditionally
+    expect(s.body).toMatch(/clean/i);
+  });
 });
