@@ -225,4 +225,62 @@ describe("launchCopilot", () => {
     expect(process.listenerCount("SIGINT")).toBe(sigintCount);
     expect(process.listenerCount("SIGTERM")).toBe(sigtermCount);
   });
+
+  it("rejects when the child emits error and restores listener counts", async () => {
+    const child = new FakeChildProcess();
+    let spawnCall:
+      | {
+          command: string;
+          args: readonly string[] | undefined;
+          options: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: unknown; shell?: boolean } | undefined;
+        }
+      | undefined;
+    const sigintCount = process.listenerCount("SIGINT");
+    const sigtermCount = process.listenerCount("SIGTERM");
+
+    const spawnChild = ((command: string, args?: readonly string[], options?: {
+      cwd?: string;
+      env?: NodeJS.ProcessEnv;
+      stdio?: unknown;
+      shell?: boolean;
+    }) => {
+      spawnCall = { command, args, options };
+      return child as never;
+    }) as unknown as NonNullable<Parameters<typeof launchCopilot>[1]>;
+
+    const launch = launchCopilot(
+      {
+        command: "copilot",
+        args: ["--allow-all"],
+        cwd: provisioned.workspace,
+        env: { COPILOT_HOME: provisioned.copilotHome },
+      },
+      spawnChild,
+    );
+
+    const error = new Error("spawn failed");
+
+    try {
+      expect(spawnCall).toMatchObject({
+        command: "copilot",
+        args: ["--allow-all"],
+        options: {
+          cwd: provisioned.workspace,
+          stdio: "inherit",
+          shell: false,
+        },
+      });
+      expect(process.listenerCount("SIGINT")).toBe(sigintCount + 1);
+      expect(process.listenerCount("SIGTERM")).toBe(sigtermCount + 1);
+
+      child.emit("error", error);
+
+      await expect(launch).rejects.toBe(error);
+      expect(process.listenerCount("SIGINT")).toBe(sigintCount);
+      expect(process.listenerCount("SIGTERM")).toBe(sigtermCount);
+    } finally {
+      child.emit("close", null, "SIGINT");
+      child.removeAllListeners();
+    }
+  });
 });
