@@ -103,7 +103,7 @@ export interface TodoLinePatch {
   priority?: TodoPriority | null;
 }
 
-export type TodoUpdateInput =
+export type TodoMutationInput =
   | {
       operation: "create";
       container: string;
@@ -114,7 +114,40 @@ export type TodoUpdateInput =
       labels?: string[];
       due?: string;
       priority?: TodoPriority;
+      apply?: boolean;
     }
+  | {
+      operation: "update";
+      ref: string;
+      completed?: boolean;
+      labels?: string[];
+      due?: string | null;
+      priority?: TodoPriority | null;
+      apply?: boolean;
+    };
+
+export interface TodoMutationPreview {
+  line: string;
+  source: TodoSource;
+  todo: TodoRecord;
+}
+
+export type TodoMutationResult =
+  | {
+      operation: TodoMutationInput["operation"];
+      applied: false;
+      preview: TodoMutationPreview;
+      needsConfirmation: true;
+    }
+  | {
+      operation: TodoMutationInput["operation"];
+      applied: true;
+      todo: TodoRecord;
+      dirtyContainer: string;
+    };
+
+export type TodoUpdateInput =
+  | Extract<TodoMutationInput, { operation: "create" }>
   | {
       operation: "patch";
       ref: string;
@@ -122,9 +155,7 @@ export type TodoUpdateInput =
       labels?: string[];
       due?: string | null;
       priority?: TodoPriority | null;
+      apply?: boolean;
     };
 
-export interface TodoUpdateResult {
-  todo: TodoRecord;
-  dirtyContainer: string;
-}
+export type TodoUpdateResult = Extract<TodoMutationResult, { applied: true }>;

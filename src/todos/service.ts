@@ -13,6 +13,9 @@ import type {
   TodoLinePatch,
   TodoListResult,
   TodoLocator,
+  TodoMutationInput,
+  TodoMutationResult,
+  TodoMutationPreview,
   TodoPriority,
   TodoQuery,
   TodoRecord,
@@ -21,6 +24,12 @@ import type {
   TodoUpdateResult,
   TodoWarning,
 } from "./types.js";
+
+type PreparedTodoMutation = {
+  operation: TodoMutationInput["operation"];
+  preview: TodoMutationPreview;
+  apply: () => Promise<{ todo: TodoRecord; dirtyContainer: string }>;
+};
 
 function isIsoCalendarDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -265,8 +274,30 @@ export class TodoService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  async mutate(input: TodoMutationInput): Promise<TodoMutationResult> {
+    return this.mutex.run(() => this.executeMutation(input));
+  }
+
   async update(input: TodoUpdateInput): Promise<TodoUpdateResult> {
-    return this.mutex.run(() => input.operation === "create" ? this.create(input) : this.patch(input));
+    return this.mutex.run(async () => {
+      const result = await this.executeMutation(
+        input.operation === "create"
+          ? { ...input, apply: true }
+          : {
+              operation: "update",
+              ref: input.ref,
+              ...(input.completed === undefined ? {} : { completed: input.completed }),
+              ...(input.labels === undefined ? {} : { labels: input.labels }),
+              ...(input.due === undefined ? {} : { due: input.due }),
+              ...(input.priority === undefined ? {} : { priority: input.priority }),
+              apply: true,
+            },
+      );
+      if (!result.applied) {
+        throw new OkhError("CONFLICT", "Legacy todo update unexpectedly produced a preview.");
+      }
+      return result;
+    });
   }
 
   async list(query: TodoQuery = {}): Promise<TodoListResult> {
@@ -334,7 +365,29 @@ export class TodoService {
     return { container, module };
   }
 
-  private async create(input: Extract<TodoUpdateInput, { operation: "create" }>): Promise<TodoUpdateResult> {
+  private async executeMutation(input: TodoMutationInput): Promise<TodoMutationResult> {
+    const prepared = input.operation === "create"
+      ? await this.prepareCreate(input)
+      : await this.prepareUpdate(input);
+
+    if (input.apply !== true) {
+      return {
+        operation: prepared.operation,
+        applied: false,
+        preview: prepared.preview,
+        needsConfirmation: true,
+      };
+    }
+
+    const applied = await prepared.apply();
+    return {
+      operation: prepared.operation,
+      applied: true,
+      ...applied,
+    };
+  }
+
+  private async prepareCreate(input: Extract<TodoMutationInput, { operation: "create" }>): Promise<PreparedTodoMutation> {
     const containerName = assertNonEmptyString(input.container, "container");
     const modulePath = assertNonEmptyString(input.module, "module");
     const text = typeof input.text === "string" ? input.text.trim() : "";
@@ -389,21 +442,31 @@ export class TodoService {
       nextFinalNewline = finalNewline;
     }
 
-    await mkdir(module.absPath, { recursive: true });
-    await atomicWrite(targetPath, joinLines(nextLines, newline, nextFinalNewline));
-
     const parsed = parseTodoLine(todoLine);
     if (!parsed) {
       throw new OkhError("INVALID_ARGUMENT", "Failed to create todo.");
     }
 
+    const todo = toTodoRecord(container.name, module.path, `${today}.md`, createdLine, todoLine, parsed);
     return {
-      todo: toTodoRecord(container.name, module.path, `${today}.md`, createdLine, todoLine, parsed),
-      dirtyContainer: container.name,
+      operation: "create",
+      preview: {
+        line: todoLine,
+        source: todo.source,
+        todo,
+      },
+      apply: async () => {
+        await mkdir(module.absPath, { recursive: true });
+        await atomicWrite(targetPath, joinLines(nextLines, newline, nextFinalNewline));
+        return {
+          todo,
+          dirtyContainer: container.name,
+        };
+      },
     };
   }
 
-  private async patch(input: Extract<TodoUpdateInput, { operation: "patch" }>): Promise<TodoUpdateResult> {
+  private async prepareUpdate(input: Extract<TodoMutationInput, { operation: "update" }>): Promise<PreparedTodoMutation> {
     const locator = decodeTodoRef(input.ref);
     const { container, module } = await this.resolveMemoryModule(locator.container, locator.module);
     const { absPath, relativePath } = resolveTodoFile(module.absPath, locator.path);
@@ -436,9 +499,9 @@ export class TodoService {
         : [];
     });
 
-    const target = this.resolvePatchTarget(locator, lines, physicalTodos);
+    const target = this.resolveUpdateTarget(locator, lines, physicalTodos);
     if (target.parsed.readOnly) {
-      throw new OkhError("INVALID_ARGUMENT", "Cannot patch read-only todo statuses.");
+      throw new OkhError("INVALID_ARGUMENT", "Cannot update read-only todo statuses.");
     }
 
     const patch: TodoLinePatch = {};
@@ -467,7 +530,7 @@ export class TodoService {
       patch.priority = input.priority === null ? null : assertTodoPriority(input.priority, "priority");
     }
     if (Object.keys(patch).length === 0) {
-      throw new OkhError("INVALID_ARGUMENT", "Todo patch cannot be empty.");
+      throw new OkhError("INVALID_ARGUMENT", "Todo update cannot be empty.");
     }
 
     const today = utcToday(this.now());
@@ -476,24 +539,36 @@ export class TodoService {
       nextRaw = patchTodoLine(target.parsed, patch, today);
     } catch (err) {
       if (err instanceof OkhError) throw err;
-      throw new OkhError("INVALID_ARGUMENT", err instanceof Error ? err.message : "Invalid todo patch.");
+      throw new OkhError("INVALID_ARGUMENT", err instanceof Error ? err.message : "Invalid todo update.");
     }
-
-    lines[target.index] = nextRaw;
-    await atomicWrite(absPath, joinLines(lines, newline, finalNewline));
 
     const parsed = parseTodoLine(nextRaw);
     if (!parsed) {
-      throw new OkhError("CONFLICT", "Patched todo could not be reparsed.");
+      throw new OkhError("CONFLICT", "Updated todo could not be reparsed.");
     }
 
+    const nextLines = [...lines];
+    nextLines[target.index] = nextRaw;
+    const todo = toTodoRecord(container.name, module.path, relativePath, target.line, nextRaw, parsed);
+
     return {
-      todo: toTodoRecord(container.name, module.path, relativePath, target.line, nextRaw, parsed),
-      dirtyContainer: container.name,
+      operation: "update",
+      preview: {
+        line: nextRaw,
+        source: todo.source,
+        todo,
+      },
+      apply: async () => {
+        await atomicWrite(absPath, joinLines(nextLines, newline, finalNewline));
+        return {
+          todo,
+          dirtyContainer: container.name,
+        };
+      },
     };
   }
 
-  private resolvePatchTarget(
+  private resolveUpdateTarget(
     locator: TodoLocator,
     lines: string[],
     todos: Array<{ line: number; index: number; raw: string; parsed: ParsedTodoLine; fingerprint: string }>,

@@ -9,8 +9,8 @@ import { makePaths, makeTempDir, writeModule } from "./helpers.js";
 
 const cleanups: string[] = [];
 
-type UpdateCapableTodoService = TodoService & {
-  update(input: unknown): Promise<unknown>;
+type MutationCapableTodoService = TodoService & {
+  mutate(input: unknown): Promise<unknown>;
 };
 
 function decodeRef(ref: string) {
@@ -29,8 +29,8 @@ function encodeRef(locator: unknown): string {
   return Buffer.from(JSON.stringify(locator), "utf8").toString("base64url");
 }
 
-async function updateTodo(service: TodoService, input: unknown) {
-  return (service as UpdateCapableTodoService).update(input);
+async function mutateTodo(service: TodoService, input: unknown) {
+  return (service as MutationCapableTodoService).mutate(input);
 }
 
 async function setupTodoServiceFixture() {
@@ -146,11 +146,108 @@ describe("TodoService.list", () => {
   });
 });
 
-describe("TodoService.update", () => {
+describe("TodoService.mutate", () => {
+  it("previews a create without writing and applies the same create when confirmed", async () => {
+    const { service, containerRoot } = await setupTodoServiceFixture();
+    const target = join(containerRoot, "memory", "2026-07-10.md");
+
+    const input = {
+      operation: "create" as const,
+      container: "alpha",
+      module: "memory",
+      text: "Preview me",
+      labels: ["work"],
+    };
+
+    const preview = await mutateTodo(service, input) as {
+      operation: string;
+      applied: boolean;
+      needsConfirmation?: boolean;
+      preview: {
+        line: string;
+        source: { container: string; module: string; path: string; line: number };
+        todo: {
+          text: string;
+          labels: string[];
+          priority: string;
+          created?: string;
+          source: { container: string; module: string; path: string; line: number };
+        };
+      };
+    };
+
+    expect(preview).toMatchObject({
+      operation: "create",
+      applied: false,
+      needsConfirmation: true,
+      preview: {
+        line: "- [ ] Preview me #todo #work ➕ 2026-07-10",
+        source: {
+          container: "alpha",
+          module: "memory",
+          path: "2026-07-10.md",
+          line: 3,
+        },
+        todo: {
+          text: "Preview me",
+          labels: ["work"],
+          priority: "normal",
+          created: "2026-07-10",
+          source: {
+            container: "alpha",
+            module: "memory",
+            path: "2026-07-10.md",
+            line: 3,
+          },
+        },
+      },
+    });
+    await expect(readFile(target, "utf8")).rejects.toHaveProperty("code", "ENOENT");
+
+    const applied = await mutateTodo(service, { ...input, apply: true }) as {
+      operation: string;
+      applied: boolean;
+      todo: {
+        text: string;
+        labels: string[];
+        priority: string;
+        created?: string;
+        source: { container: string; module: string; path: string; line: number };
+      };
+      dirtyContainer: string;
+    };
+
+    expect(applied).toMatchObject({
+      operation: "create",
+      applied: true,
+      dirtyContainer: "alpha",
+      todo: {
+        text: "Preview me",
+        labels: ["work"],
+        priority: "normal",
+        created: "2026-07-10",
+        source: {
+          container: "alpha",
+          module: "memory",
+          path: "2026-07-10.md",
+          line: 3,
+        },
+      },
+    });
+    expect(await readFile(target, "utf8")).toBe(
+      [
+        "### 2026-07-10T08:00:00.000Z — Todo",
+        "",
+        "- [ ] Preview me #todo #work ➕ 2026-07-10",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("creates a dated memory entry with trimmed text, default general label, and canonical metadata", async () => {
     const { service, containerRoot } = await setupTodoServiceFixture();
 
-    const result = await updateTodo(service, {
+    const result = await mutateTodo(service, {
       operation: "create",
       container: "alpha",
       module: "memory",
@@ -159,7 +256,10 @@ describe("TodoService.update", () => {
       observation: "  Needs to happen today.  ",
       due: "2026-07-11",
       priority: "high",
+      apply: true,
     }) as {
+      operation: string;
+      applied: boolean;
       dirtyContainer: string;
       todo: {
         ref: string;
@@ -173,6 +273,8 @@ describe("TodoService.update", () => {
       };
     };
 
+    expect(result.operation).toBe("create");
+    expect(result.applied).toBe(true);
     expect(result.dirtyContainer).toBe("alpha");
     expect(result.todo).toMatchObject({
       text: "Buy milk",
@@ -223,11 +325,12 @@ describe("TodoService.update", () => {
       "utf8",
     );
 
-    await updateTodo(service, {
+    await mutateTodo(service, {
       operation: "create",
       container: "alpha",
       module: "memory",
       text: "New task",
+      apply: true,
     });
 
     expect(await readFile(target, "utf8")).toBe(
@@ -257,12 +360,13 @@ describe("TodoService.update", () => {
       "utf8",
     );
 
-    await updateTodo(service, {
+    await mutateTodo(service, {
       operation: "create",
       container: "alpha",
       module: "memory",
       text: "New task",
       labels: ["home"],
+      apply: true,
     });
 
     expect(await readFile(target, "utf8")).toBe(
@@ -279,7 +383,7 @@ describe("TodoService.update", () => {
     );
   });
 
-  it("patches a moved no-id task by fingerprint and then treats the old ref as stale", async () => {
+  it("previews an update without writing and reapplies it against current state", async () => {
     const { service, containerRoot } = await setupTodoServiceFixture();
     const target = join(containerRoot, "memory", "moved.md");
     await writeFile(
@@ -292,10 +396,48 @@ describe("TodoService.update", () => {
       ].join("\n"),
       "utf8",
     );
+    const beforePreview = await readFile(target, "utf8");
 
     const listed = await service.list();
     const original = listed.tasks.find((task) => task.source.path === "moved.md" && task.text === "Move me");
     expect(original).toBeDefined();
+
+    const preview = await mutateTodo(service, {
+      operation: "update",
+      ref: original!.ref,
+      completed: true,
+    }) as {
+      operation: string;
+      applied: boolean;
+      needsConfirmation?: boolean;
+      preview: {
+        line: string;
+        source: { path: string; line: number };
+        todo: { completed?: string; status: string; source: { path: string; line: number } };
+      };
+    };
+
+    expect(preview).toMatchObject({
+      operation: "update",
+      applied: false,
+      needsConfirmation: true,
+      preview: {
+        line: "- [x] Move me #todo #ops ➕ 2026-07-09 ✅ 2026-07-10",
+        source: {
+          path: "moved.md",
+          line: 2,
+        },
+        todo: {
+          status: "completed",
+          completed: "2026-07-10",
+          source: {
+            path: "moved.md",
+            line: 2,
+          },
+        },
+      },
+    });
+    expect(await readFile(target, "utf8")).toBe(beforePreview);
 
     await writeFile(
       target,
@@ -309,14 +451,19 @@ describe("TodoService.update", () => {
       "utf8",
     );
 
-    const updated = await updateTodo(service, {
-      operation: "patch",
+    const updated = await mutateTodo(service, {
+      operation: "update",
       ref: original!.ref,
       completed: true,
+      apply: true,
     }) as {
+      operation: string;
+      applied: boolean;
       todo: { source: { path: string; line: number }; completed?: string; status: string };
     };
 
+    expect(updated.operation).toBe("update");
+    expect(updated.applied).toBe(true);
     expect(updated.todo).toMatchObject({
       status: "completed",
       completed: "2026-07-10",
@@ -325,8 +472,8 @@ describe("TodoService.update", () => {
         line: 4,
       },
     });
-    await expect(updateTodo(service, {
-      operation: "patch",
+    await expect(mutateTodo(service, {
+      operation: "update",
       ref: original!.ref,
       completed: false,
     })).rejects.toMatchObject<Partial<OkhError>>({
@@ -354,10 +501,11 @@ describe("TodoService.update", () => {
       "utf8",
     );
 
-    const updated = await updateTodo(service, {
-      operation: "patch",
+    const updated = await mutateTodo(service, {
+      operation: "update",
       ref: original!.ref,
       labels: ["errands"],
+      apply: true,
     }) as {
       todo: { text: string; labels: string[]; source: { path: string; line: number }; id?: string };
     };
@@ -403,8 +551,8 @@ describe("TodoService.update", () => {
     expect(duplicateIdTask).toBeDefined();
     expect(fingerprintTask).toBeDefined();
 
-    await expect(updateTodo(service, {
-      operation: "patch",
+    await expect(mutateTodo(service, {
+      operation: "update",
       ref: duplicateIdTask!.ref,
       completed: true,
     })).rejects.toMatchObject<Partial<OkhError>>({
@@ -423,8 +571,8 @@ describe("TodoService.update", () => {
       "utf8",
     );
 
-    await expect(updateTodo(service, {
-      operation: "patch",
+    await expect(mutateTodo(service, {
+      operation: "update",
       ref: fingerprintTask!.ref,
       completed: true,
     })).rejects.toMatchObject<Partial<OkhError>>({
@@ -432,7 +580,7 @@ describe("TodoService.update", () => {
     });
   });
 
-  it("patches by exact original line fingerprint when the target line still matches", async () => {
+  it("updates by exact original line fingerprint when the target line still matches", async () => {
     const { service, containerRoot } = await setupTodoServiceFixture();
     const target = join(containerRoot, "memory", "exact-line.md");
     await writeFile(target, "- [ ] Exact line #todo #home ➕ 2026-07-09\n", "utf8");
@@ -441,10 +589,11 @@ describe("TodoService.update", () => {
     const task = listed.tasks.find((todo) => todo.source.path === "exact-line.md");
     expect(task).toBeDefined();
 
-    const result = await updateTodo(service, {
-      operation: "patch",
+    const result = await mutateTodo(service, {
+      operation: "update",
       ref: task!.ref,
       due: "2026-07-20",
+      apply: true,
     }) as {
       todo: { due?: string; source: { path: string; line: number } };
     };
@@ -473,8 +622,8 @@ describe("TodoService.update", () => {
     const custom = listed.tasks.find((task) => task.source.path === "custom.md" && task.status === "custom");
     expect(custom).toBeDefined();
 
-    await expect(updateTodo(service, {
-      operation: "patch",
+    await expect(mutateTodo(service, {
+      operation: "update",
       ref: custom!.ref,
       completed: true,
     })).rejects.toMatchObject<Partial<OkhError>>({
@@ -483,7 +632,7 @@ describe("TodoService.update", () => {
     expect(await readFile(target)).toEqual(before);
   });
 
-  it("preserves CRLF and final-newline state on successful patch", async () => {
+  it("preserves CRLF and final-newline state on successful update", async () => {
     const { service, containerRoot } = await setupTodoServiceFixture();
     const target = join(containerRoot, "memory", "patch-crlf.md");
     await writeFile(
@@ -499,10 +648,11 @@ describe("TodoService.update", () => {
     const first = listed.tasks.find((task) => task.source.path === "patch-crlf.md" && task.text === "First task");
     expect(first).toBeDefined();
 
-    await updateTodo(service, {
-      operation: "patch",
+    await mutateTodo(service, {
+      operation: "update",
       ref: first!.ref,
       completed: true,
+      apply: true,
     });
 
     expect(await readFile(target, "utf8")).toBe(
@@ -536,8 +686,8 @@ describe("TodoService.update", () => {
     ];
 
     for (const ref of invalidRefs) {
-      await expect(updateTodo(service, {
-        operation: "patch",
+      await expect(mutateTodo(service, {
+        operation: "update",
         ref,
         completed: true,
       })).rejects.toMatchObject<Partial<OkhError>>({
@@ -551,7 +701,7 @@ describe("TodoService.update", () => {
   it("rejects missing or non-memory modules", async () => {
     const { service } = await setupTodoServiceFixture();
 
-    await expect(updateTodo(service, {
+    await expect(mutateTodo(service, {
       operation: "create",
       container: "alpha",
       module: "missing",
@@ -560,7 +710,7 @@ describe("TodoService.update", () => {
       code: "NOT_FOUND",
     });
 
-    await expect(updateTodo(service, {
+    await expect(mutateTodo(service, {
       operation: "create",
       container: "alpha",
       module: "knowledge",
@@ -570,7 +720,7 @@ describe("TodoService.update", () => {
     });
   });
 
-  it("rejects invalid create and patch inputs with INVALID_ARGUMENT and no writes", async () => {
+  it("rejects invalid create and update inputs with INVALID_ARGUMENT and no writes", async () => {
     const { service, containerRoot } = await setupTodoServiceFixture();
     const notesPath = join(containerRoot, "memory", "notes.md");
     const dateFile = join(containerRoot, "memory", "2026-07-10.md");
@@ -608,28 +758,28 @@ describe("TodoService.update", () => {
         priority: "urgent",
       },
       {
-        operation: "patch",
+        operation: "update",
         ref: buyMilk!.ref,
       },
       {
-        operation: "patch",
+        operation: "update",
         ref: buyMilk!.ref,
         labels: ["bad label"],
       },
       {
-        operation: "patch",
+        operation: "update",
         ref: buyMilk!.ref,
         due: "2026-02-30",
       },
       {
-        operation: "patch",
+        operation: "update",
         ref: buyMilk!.ref,
         priority: "urgent",
       },
     ];
 
     for (const input of invalidCases) {
-      await expect(updateTodo(service, input)).rejects.toMatchObject<Partial<OkhError>>({
+      await expect(mutateTodo(service, input)).rejects.toMatchObject<Partial<OkhError>>({
         code: "INVALID_ARGUMENT",
       });
     }
