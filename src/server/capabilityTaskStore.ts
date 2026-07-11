@@ -29,6 +29,12 @@ type TaskBinding = CapabilityTaskContext & {
   taskAugmented: boolean;
 };
 
+const DEFAULT_MAX_BINDINGS = 128;
+
+export type CapabilityTaskStoreOptions = {
+  maxBindings?: number;
+};
+
 const TASK_PROBES = {
   createPassed: {
     status: "passed",
@@ -131,8 +137,17 @@ function sanitizedCreateTaskOptions(
   }
 
   if (!("context" in options)) return options;
+  if (!isRecord(options.context) || options.context.kind !== "capabilities") return options;
+
   const { context: _context, ...sanitizedOptions } = options;
   return sanitizedOptions;
+}
+
+function validateMaxBindings(value: number): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new RangeError("Capability task maxBindings must be a positive integer.");
+  }
+  return value;
 }
 
 function isExpectedRunAccessError(error: unknown): boolean {
@@ -154,13 +169,17 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 export class CapabilityTaskStore implements TaskStore {
   private readonly bindings = new Map<string, TaskBinding>();
   private readonly cancellationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly maxBindings: number;
   private delegateCleanedUp = false;
 
   constructor(
     private readonly delegate: TaskStore,
     private readonly runs: CapabilityRunStore,
     private readonly renderResult: (runId: string, clientKey: object) => Result,
-  ) {}
+    options: CapabilityTaskStoreOptions = {},
+  ) {
+    this.maxBindings = validateMaxBindings(options.maxBindings ?? DEFAULT_MAX_BINDINGS);
+  }
 
   async createTask(
     options: CreateTaskOptions,
@@ -177,7 +196,7 @@ export class CapabilityTaskStore implements TaskStore {
       ...context,
       taskAugmented: parsedRequest.success && parsedRequest.data.params.task !== undefined,
     };
-    this.bindings.set(task.taskId, binding);
+    this.bindTask(task.taskId, binding);
 
     if (!binding.taskAugmented) return task;
     if (binding.action === "scan") {
@@ -252,6 +271,7 @@ export class CapabilityTaskStore implements TaskStore {
         this.runs.replaceProbe(binding.clientKey, binding.runId, "tasksCancel", TASK_PROBES.cancelPassed);
         this.runs.abortRun(binding.clientKey, binding.runId);
       });
+      this.bindings.delete(taskId);
     }
   }
 
@@ -326,6 +346,22 @@ export class CapabilityTaskStore implements TaskStore {
       clearTimeout(timer);
     }
     this.cancellationTimers.delete(taskId);
+  }
+
+  private bindTask(taskId: string, binding: TaskBinding): void {
+    this.clearCancellationTimer(taskId);
+    this.bindings.delete(taskId);
+    this.bindings.set(taskId, binding);
+    this.evictOverflowBindings();
+  }
+
+  private evictOverflowBindings(): void {
+    while (this.bindings.size > this.maxBindings) {
+      const oldestTaskId = this.bindings.keys().next().value;
+      if (oldestTaskId === undefined) return;
+      this.clearCancellationTimer(oldestTaskId);
+      this.bindings.delete(oldestTaskId);
+    }
   }
 
   private observeRun<T>(observation: () => T): T | undefined {

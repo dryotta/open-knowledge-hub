@@ -30,11 +30,18 @@ function createRun(
   );
 }
 
-function createStore(runs: CapabilityRunStore, delegate = new InMemoryTaskStore()) {
+function createStore(
+  runs: CapabilityRunStore,
+  delegate = new InMemoryTaskStore(),
+  options?: { maxBindings?: number },
+) {
   return {
     delegate,
-    store: new CapabilityTaskStore(delegate, runs, (runId, clientKey) =>
-      toCapabilityToolResult(runs.getSnapshotForClient(clientKey, runId).report),
+    store: new CapabilityTaskStore(
+      delegate,
+      runs,
+      (runId, clientKey) => toCapabilityToolResult(runs.getSnapshotForClient(clientKey, runId).report),
+      options,
     ),
   };
 }
@@ -228,6 +235,22 @@ describe("CapabilityTaskStore", () => {
     expect(serialized).not.toContain("delegate-payload");
     expect(serialized).not.toContain("delegate-secret");
     expect(serialized).not.toContain("must-not-serialize");
+
+    runs.replaceProbe(clientKey, run.id, "roots", {
+      status: "passed",
+      code: "roots.list",
+      message: "Fresh roots observation after task completion.",
+    });
+    const rerenderedResult = store.markResultRequested(task.taskId);
+    expect(rerenderedResult).toMatchObject({
+      structuredContent: {
+        runId: run.id,
+        probes: {
+          roots: { status: "passed", message: "Fresh roots observation after task completion." },
+          tasksResult: { status: "passed" },
+        },
+      },
+    });
     store.cleanup();
   });
 
@@ -496,6 +519,131 @@ describe("CapabilityTaskStore", () => {
     expect(runs.getSnapshotForClient(clientKey, run.id).report.probes.tasksCancel.status).toBe("pending");
   });
 
+  it("evicts the oldest binding over capacity without changing newer bindings", async () => {
+    const oldClientKey = {};
+    const middleClientKey = {};
+    const newestClientKey = {};
+    const runs = new CapabilityRunStore();
+    const oldRun = createRun(runs, oldClientKey);
+    const middleRun = createRun(runs, middleClientKey);
+    const newestRun = createRun(runs, newestClientKey);
+    const { store } = createStore(runs, new InMemoryTaskStore(), { maxBindings: 2 });
+
+    const oldTask = await store.createTask(
+      { ttl: null, context: context(oldClientKey, oldRun.id, "scan") },
+      1,
+      request(true),
+    );
+    const middleTask = await store.createTask(
+      { ttl: null, context: context(middleClientKey, middleRun.id, "scan") },
+      2,
+      request(true),
+    );
+    const newestTask = await store.createTask(
+      { ttl: null, context: context(newestClientKey, newestRun.id, "scan") },
+      3,
+      request(true),
+    );
+
+    expect(store.isTaskAugmented(oldTask.taskId)).toBe(false);
+    expect(store.markResultRequested(oldTask.taskId)).toBeUndefined();
+    store.markPolled(oldTask.taskId);
+    expect(runs.getSnapshotForClient(oldClientKey, oldRun.id).report.probes.tasksPoll.status).toBe("pending");
+
+    expect(store.isTaskAugmented(middleTask.taskId)).toBe(true);
+    expect(store.isTaskAugmented(newestTask.taskId)).toBe(true);
+    store.markPolled(middleTask.taskId);
+    store.markPolled(newestTask.taskId);
+    expect(runs.getSnapshotForClient(middleClientKey, middleRun.id).report.probes.tasksPoll.status).toBe("passed");
+    expect(runs.getSnapshotForClient(newestClientKey, newestRun.id).report.probes.tasksPoll.status).toBe("passed");
+    store.cleanup();
+  });
+
+  it("clears cancellation timers when capacity eviction removes their binding", async () => {
+    vi.useFakeTimers();
+    const cancelledClientKey = {};
+    const scanClientKey = {};
+    const runs = new CapabilityRunStore();
+    const cancelledRun = createRun(runs, cancelledClientKey);
+    const scanRun = createRun(runs, scanClientKey);
+    const { store } = createStore(runs, new InMemoryTaskStore(), { maxBindings: 1 });
+    const cancelledTask = await store.createTask(
+      { ttl: null, context: context(cancelledClientKey, cancelledRun.id, "task_cancel") },
+      1,
+      request(true),
+    );
+    store.armCancellationTimeout(cancelledTask.taskId, 10);
+
+    const scanTask = await store.createTask(
+      { ttl: null, context: context(scanClientKey, scanRun.id, "scan") },
+      2,
+      request(true),
+    );
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(store.isTaskAugmented(cancelledTask.taskId)).toBe(false);
+    expect(runs.getSnapshotForClient(cancelledClientKey, cancelledRun.id).report.probes.tasksCancel.status).toBe(
+      "pending",
+    );
+    expect(store.isTaskAugmented(scanTask.taskId)).toBe(true);
+    store.cleanup();
+  });
+
+  it("retains recent scan bindings after task completion until bounded eviction", async () => {
+    const clientKey = {};
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const { store } = createStore(runs, new InMemoryTaskStore(), { maxBindings: 1 });
+    const task = await store.createTask(
+      { ttl: null, context: context(clientKey, run.id, "scan") },
+      1,
+      request(true),
+    );
+    await store.storeTaskResult(task.taskId, "completed", { stale: "delegate-payload" });
+
+    const firstResult = store.markResultRequested(task.taskId);
+    runs.replaceProbe(clientKey, run.id, "roots", {
+      status: "passed",
+      code: "roots.list",
+      message: "Fresh roots observation after task completion.",
+    });
+    const secondResult = store.markResultRequested(task.taskId);
+
+    expect(firstResult).toMatchObject({
+      structuredContent: {
+        probes: {
+          tasksResult: { status: "passed" },
+        },
+      },
+    });
+    expect(secondResult).toMatchObject({
+      structuredContent: {
+        probes: {
+          roots: { status: "passed", message: "Fresh roots observation after task completion." },
+          tasksResult: { status: "passed" },
+        },
+      },
+    });
+    store.cleanup();
+  });
+
+  it("validates max binding retention as a positive integer", () => {
+    const runs = new CapabilityRunStore();
+    const renderResult = (runId: string, clientKey: object): Result =>
+      toCapabilityToolResult(runs.getSnapshotForClient(clientKey, runId).report);
+
+    expect(() => new CapabilityTaskStore(new InMemoryTaskStore(), runs, renderResult, { maxBindings: 0 })).toThrow(
+      RangeError,
+    );
+    expect(() => new CapabilityTaskStore(new InMemoryTaskStore(), runs, renderResult, { maxBindings: -1 })).toThrow(
+      RangeError,
+    );
+    expect(() => new CapabilityTaskStore(new InMemoryTaskStore(), runs, renderResult, { maxBindings: 1.5 })).toThrow(
+      RangeError,
+    );
+    expect(() => new CapabilityTaskStore(new InMemoryTaskStore(), runs, renderResult, { maxBindings: 1 })).not.toThrow();
+  });
+
   it("ignores malformed and non-capability contexts without mutating a run", async () => {
     const clientKey = {};
     const runs = new CapabilityRunStore();
@@ -531,6 +679,57 @@ describe("CapabilityTaskStore", () => {
       expect(store.isTaskAugmented(task.taskId)).toBe(false);
     }
     expect(runs.getSnapshotForClient(clientKey, run.id)).toEqual(before);
+    store.cleanup();
+  });
+
+  it("passes absent, non-record, and foreign task context to the delegate unchanged", async () => {
+    const runs = new CapabilityRunStore();
+    const delegate = new RecordingTaskStore();
+    const { store } = createStore(runs, delegate);
+    const absentOptions = { ttl: null } satisfies CreateTaskOptions;
+    const nonRecordOptions = { ttl: null, context: "foreign-context" } satisfies CreateTaskOptions;
+    const foreignContext = {
+      kind: "other-tool",
+      domain: "foreign",
+      privateContext: { mustSurvive: true },
+    };
+    const foreignOptions = { ttl: null, context: foreignContext } satisfies CreateTaskOptions;
+
+    await store.createTask(absentOptions, 1, request(true));
+    await store.createTask(nonRecordOptions, 2, request(true));
+    await store.createTask(foreignOptions, 3, request(true));
+
+    expect(delegate.createTaskOptions).toHaveLength(3);
+    expect(delegate.createTaskOptions[0]).toBe(absentOptions);
+    expect(delegate.createTaskOptions[1]).toBe(nonRecordOptions);
+    expect(delegate.createTaskOptions[2]).toBe(foreignOptions);
+    expect(delegate.createTaskOptions[2].context).toBe(foreignContext);
+    store.cleanup();
+  });
+
+  it("contains malformed capability context instead of forwarding private fields", async () => {
+    const runs = new CapabilityRunStore();
+    const delegate = new RecordingTaskStore();
+    const { store } = createStore(runs, delegate);
+
+    await store.createTask(
+      {
+        ttl: null,
+        context: {
+          kind: "capabilities",
+          runId: 42,
+          action: "scan",
+          clientKey: { privateClientKey: "must-not-reach-delegate" },
+          privateContext: "must-not-reach-delegate",
+        },
+      },
+      1,
+      request(true),
+    );
+
+    expect(delegate.createTaskOptions).toHaveLength(1);
+    expect(delegate.createTaskOptions[0]).not.toHaveProperty("context");
+    expect(JSON.stringify(delegate.createTaskOptions[0])).not.toContain("must-not-reach-delegate");
     store.cleanup();
   });
 
