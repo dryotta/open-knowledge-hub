@@ -198,7 +198,7 @@ describe("capabilities registration", () => {
     expect(tool?.description).toContain("Actively test roots, sampling, elicitation, MCP Apps, and legacy Tasks");
   });
 
-  it("lists and reads the packaged bootstrap MCP App resource", async () => {
+  it("lists and reads the packaged MCP App resource", async () => {
     const { client } = await connect({ capabilities: appCapabilities() });
 
     const listed = await client.listResources();
@@ -219,8 +219,14 @@ describe("capabilities registration", () => {
     });
     const html = "text" in read.contents[0]! ? read.contents[0].text : "";
     expect(html).toMatch(/^<!doctype html>/i);
-    expect(html).toContain("Loading MCP client capabilities");
-    expect(html).not.toContain("<script");
+    expect(html).toContain("ui/initialize");
+    expect(html).toContain("ui/notifications/initialized");
+    expect(html).toContain("ui/notifications/size-changed");
+    expect(html).toContain("ui/notifications/tool-result");
+    expect(html).toContain('"tools/call"');
+    expect(html).toContain("app_report");
+    expect(html).toContain("event.source");
+    expect(html).not.toMatch(/https?:\/\//);
   });
 
   it("keeps metadata keys, schema keys, strict App input, and packaged resources aligned", async () => {
@@ -243,7 +249,8 @@ describe("capabilities registration", () => {
 
     const html = await readFile(new URL("../resources/apps/capabilities.html", import.meta.url), "utf8");
     const markdown = await readFile(new URL("../resources/tool-meta/capabilities.md", import.meta.url), "utf8");
-    expect(html).toContain("Loading MCP client capabilities");
+    expect(html).toContain("ui/initialize");
+    expect(html).toContain("app_report");
     expect(markdown).toContain("title: Test MCP client capabilities");
   });
 });

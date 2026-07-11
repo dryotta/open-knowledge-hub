@@ -2,9 +2,168 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>MCP Client Capabilities</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 12px; background: var(--color-background-primary, Canvas); color: var(--color-text-primary, CanvasText); }
+    h1 { margin: 0 0 8px; font-size: 16px; }
+    #status { margin-bottom: 8px; font-size: 13px; }
+    pre { margin: 0; padding: 10px; overflow: auto; border: 1px solid var(--color-border-primary, GrayText); border-radius: 6px; white-space: pre-wrap; }
+    #resize-probe { height: 1px; }
+  </style>
 </head>
 <body>
-  <p>Loading MCP client capabilities...</p>
+  <h1>MCP Client Capabilities</h1>
+  <div id="status">Connecting to host...</div>
+  <pre id="report">Waiting for the tool result.</pre>
+  <div id="resize-probe" aria-hidden="true"></div>
+  <script>
+    (() => {
+      "use strict";
+      const target = window.parent;
+      const pending = new Map();
+      const status = document.getElementById("status");
+      const report = document.getElementById("report");
+      const resizeProbe = document.getElementById("resize-probe");
+      let nextId = 1;
+      let hostContext = {};
+      let initialized = false;
+      let toolResult;
+      let submitted = false;
+      let resize = "unobserved";
+
+      function post(message) {
+        target.postMessage(message, "*");
+      }
+
+      function request(method, params, timeoutMs = 10000) {
+        const id = nextId++;
+        post({ jsonrpc: "2.0", id, method, params });
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            pending.delete(id);
+            reject(new Error(method + " timed out"));
+          }, timeoutMs);
+          pending.set(id, { resolve, reject, timer });
+        });
+      }
+
+      function notify(method, params = {}) {
+        post({ jsonrpc: "2.0", method, params });
+      }
+
+      function textOf(result) {
+        if (!result || !Array.isArray(result.content)) return "";
+        return result.content
+          .filter((item) => item && item.type === "text" && typeof item.text === "string")
+          .map((item) => item.text)
+          .join("\n");
+      }
+
+      function render(result) {
+        const text = textOf(result);
+        report.textContent = text || JSON.stringify(result && result.structuredContent || {}, null, 2);
+      }
+
+      function fixedContainer(context) {
+        const dimensions = context && context.containerDimensions;
+        return Boolean(
+          dimensions &&
+          (typeof dimensions.width === "number" || typeof dimensions.height === "number")
+        );
+      }
+
+      async function submitAppReport() {
+        if (!initialized || !toolResult || submitted) return;
+        const structured = toolResult.structuredContent;
+        const runId = structured && typeof structured.runId === "string"
+          ? structured.runId
+          : undefined;
+        if (!runId) {
+          status.textContent = "Rendered, but the tool result contained no run ID.";
+          return;
+        }
+        submitted = true;
+        status.textContent = "Submitting App observations...";
+        try {
+          const result = await request("tools/call", {
+            name: "capabilities",
+            arguments: {
+              action: "app_report",
+              runId,
+              app: {
+                initialized: true,
+                theme: typeof hostContext.theme === "string" ? "provided" : "absent",
+                resize,
+              },
+            },
+          });
+          render(result);
+          status.textContent = "App probe complete.";
+        } catch (error) {
+          submitted = false;
+          status.textContent = "App rendered, but app-to-server calling failed: " +
+            (error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.source !== target) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== "2.0") return;
+        if (Object.prototype.hasOwnProperty.call(message, "id") && !message.method) {
+          const waiter = pending.get(message.id);
+          if (!waiter) return;
+          pending.delete(message.id);
+          clearTimeout(waiter.timer);
+          if (message.error) {
+            waiter.reject(new Error(message.error.message || "JSON-RPC error"));
+          } else {
+            waiter.resolve(message.result);
+          }
+          return;
+        }
+        if (message.method === "ui/notifications/tool-result") {
+          toolResult = message.params;
+          render(toolResult);
+          void submitAppReport();
+        }
+        if (message.method === "ui/notifications/host-context-changed") {
+          hostContext = Object.assign({}, hostContext, message.params || {});
+        }
+      });
+
+      async function main() {
+        const before = { width: window.innerWidth, height: window.innerHeight };
+        const init = await request("ui/initialize", {
+          appInfo: { name: "open-knowledge-hub-capabilities", version: "1.0.0" },
+          appCapabilities: {},
+          protocolVersion: "2026-01-26",
+        });
+        hostContext = init && init.hostContext || {};
+        notify("ui/notifications/initialized");
+        initialized = true;
+        status.textContent = "App initialized; testing resize...";
+        resizeProbe.style.height = "320px";
+        notify("ui/notifications/size-changed", {
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        resize = fixedContainer(hostContext)
+          ? "fixed_container"
+          : (window.innerWidth !== before.width || window.innerHeight !== before.height)
+            ? "observed"
+            : "unobserved";
+        await submitAppReport();
+      }
+
+      void main().catch((error) => {
+        status.textContent = "MCP App initialization failed: " +
+          (error instanceof Error ? error.message : String(error));
+      });
+    })();
+  </script>
 </body>
 </html>
