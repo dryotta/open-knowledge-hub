@@ -125,7 +125,7 @@ function fakeRunner(
 ): CopilotTurnRunner {
   return async (opts): Promise<CopilotTurnResult> => {
     seen.push(opts.prompt);
-    const hit = script.find((s) => opts.prompt.includes(s.match)) ?? { agent: "", cost: 0, code: 0 };
+    const hit = script.find((s) => opts.prompt.includes(s.match)) ?? { agent: "", toolEvents: [] as ToolEvent[], cost: 0, code: 0 };
     const messages = hit.agent ? [hit.agent] : [];
     const toolEvents = (hit.toolEvents ?? []).map((e) => ({ ...e, turn: opts.turn ?? e.turn }));
     const tools = [
