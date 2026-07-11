@@ -15,8 +15,12 @@ sets up the contract and structure.
 
 ## Stage 1 — Grill the scope and structure
 
-Run the shared **grilling** skill (`run { skill: "grilling" }`), then record the agreed **scope
-contract** in the module's root `index.md` (its skeleton lays out these sections):
+You **must invoke** the shared `grilling` skill with `run { skill: "grilling" }`; do not emulate or
+summarize its discipline yourself. After agreement, perform Stage 2 in this run. Reporting "next
+steps" without writing the contract and group indexes is not completion.
+
+Record the agreed **scope contract** in the module's root `index.md` (its skeleton lays out these
+sections):
 
 - **Purpose & Goals** — one line on what the wiki is for; who reads it (humans and/or agents) and
   what they need. Goals are the yardstick for every later decision.

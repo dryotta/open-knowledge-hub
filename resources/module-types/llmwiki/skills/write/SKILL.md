@@ -8,13 +8,16 @@ description: Integrate new material into this llmwiki — author OKF pages, touc
 Fold new material into this wiki as OKF concept pages, keeping the graph connected and the index
 current. A single source or insight typically **touches several pages** — that is expected. Author
 all pages with the shared **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and
-citation rules. Run these stages in order.
+citation rules — invoke it with only `skill` and `input`, omitting `container` and `module` because
+it is a shared skill. The `input` must contain: target path, declared type, source context, and
+affected cross-links. Run these stages in order.
 
 ## Stage 1 — Load the scope contract
 
-Read the module's `index.md` and recover its **scope contract**: goals, in-scope, out-of-scope.
-Restate it in one line. Do not run this on an uninitialized module — if there is no contract, run
-`initialize` first. A wiki with zero pages but a written contract is initialized; do not
+Read the module's root `index.md` and recover its **scope contract**: goals, in-scope, out-of-scope,
+declared group folders, and exact type vocabulary. Choose the target path and declared type from
+this schema before authoring. Do not run this on an uninitialized module — if there is no contract,
+run `initialize` first. A wiki with zero pages but a written contract is initialized; do not
 re-initialize it.
 
 ## Stage 2 — The scope gate (coverage within scope)
@@ -49,13 +52,16 @@ Decide:
 
 ## Stage 5 — Re-check health
 
-Run `inspect { container, module }` and clear what its **Wiki health** block reports: no orphans, no
-dangling links (create the missing page or fix the link), every page cataloged and carrying a
-`type`.
+Run `inspect { container, module }` and fix everything its **Wiki health** block reports: resolve all
+orphans (add inbound links), fix all dangling links (create the missing page or correct the link),
+catalog every uncataloged page in `index.md`, and ensure every page carries a valid `type`.
+This includes pre-existing health issues — they must be fixed, not deferred. Repeat `inspect` after
+fixes until every health array is empty (orphans, dangling, uncataloged, missingType).
 
 ## Completion criterion
 
 - Every admitted piece of material is filed into OKF pages within scope, cross-linked both ways, and
   grounded or flagged.
 - `index.md` and `log.md` are current.
-- `inspect` wiki-health is clean, or the remaining items are intentional and noted in the log.
+- `inspect` wiki-health is clean: all four health arrays (orphans, dangling, uncataloged, missingType)
+  are empty.

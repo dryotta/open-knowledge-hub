@@ -1,51 +1,73 @@
 # initialize skill — grill scope, offer templates, and build an empty llmwiki contract/structure.
+# All turns are unguarded (no `when`); `after` state drives the linear conversation.
 - config:
     - vars:
         env: wiki
         prompt: |
           Use the open-knowledge-hub MCP tools. In container "wiki-hub", run module
-          "new-wiki"'s `initialize` skill, including its required shared `grilling`
-          skill. Guide me one decision at a time in this order: purpose and goals
-          together, scope boundaries together, template choice after showing the full
-          menu, tags, source retention, then final confirmation. After we agree, build
-          the empty wiki structure and sync it.
+          "new-wiki"'s `initialize` skill and guide me through setting up the wiki.
         turns:
-          - when: "purpose|goal|audience|who.*read"
+          - id: purpose
+            after: start
             send: |
               This is an engineering handbook for backend developers and coding agents.
               It should help them understand our systems and make safe changes.
-          - when: "specific goals|outcomes.*achieve|what.*achieve"
+          - id: goals
+            after: purpose
             send: |
               The complete goal is for backend developers and coding agents to understand
               our systems and make safe changes. Continue to the scope boundaries.
-          - when: "scope|in.?scope|out.?of.?scope|topics"
+          - id: scope
+            after: goals
             send: |
               In scope: backend components, request flows, architecture decisions, and
               engineering terminology. Out of scope: product roadmaps and customer data.
-          - when: "structure|template|encyclopedia|di.taxis|topic tree|codebase|custom"
+          - id: template
+            after: scope
             send: |
               Use the Encyclopedia template: concepts, entities, summaries, and
               syntheses. Use matching singular OKF concept types.
-          - when: "tag|tagging"
+          - id: tags
+            after: template
             send: "Skip tags; the group structure and links are enough."
-          - when: "source|retain|copies"
+          - id: sources
+            after: tags
             send: "Do not retain source copies."
-          - when: "agree with this scope|do you agree|confirm.*(?:scope|decisions)|if yes.*(?:build|create)|proceed.*(?:build|create)|build.*sync|next steps"
+          - id: scope-confirmed
+            after: sources
             send: |
               These decisions are final: build an engineering handbook for backend
               developers and coding agents; cover backend components, request flows,
               architecture decisions, and terminology; exclude product roadmaps and
               customer data; use the Encyclopedia groups and matching singular types;
-              use no tags and retain no source copies. Build the empty structure and invoke
-              sync in this turn without asking for another confirmation.
-          - when: "ready to sync|shall i sync|want me to sync|sync now\\?"
-            send: "Yes. Invoke sync now."
+              use no tags and retain no source copies. Build the empty structure locally
+              and show me a diff summary.
+          - id: sync-confirmed
+            after: scope-confirmed
+            send: "Yes, sync those changes now."
+        terminal:
+          after: sync-confirmed
+          requiredTools: [run, sync]
   tests:
     - description: Initialize - llmwiki - grills scope and builds template structure
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run, sync] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: wiki-hub, module: new-wiki, skill: initialize }
+              - name: run
+                arguments: { skill: grilling }
+              - name: sync
+        - type: javascript
+          value: file://assertions/llmwiki-state.ts
+          config:
+            module: new-wiki
+            requiredIndexText: [backend developers, product roadmaps, concept, synthesis]
+            requiredGroupIndexes: [concepts/index.md, entities/index.md, summaries/index.md, syntheses/index.md]
+            noContentPages: true
         - type: javascript
           value: file://assertions/judge.ts
           config:
@@ -53,14 +75,10 @@
             criteria:
               - id: ran-initialize
                 text: The agent invoked the new-wiki module's initialize skill.
-                check:
-                  kind: transcript-contains
-                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"new-wiki")(?=[^\r\n]*"skill"\s*:\s*"initialize")'
+                required: false
               - id: used-grilling
                 text: The agent invoked the shared grilling skill and gathered decisions one at a time.
-                check:
-                  kind: transcript-contains
-                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"skill"\s*:\s*"grilling")'
+                required: false
               - id: offered-template-menu
                 text: The agent offered multiple structure templates before the user selected Encyclopedia.
               - id: wrote-scope-contract
@@ -69,4 +87,4 @@
                 text: The resulting module has group index files for concepts, entities, summaries, and syntheses, without invented concept content.
               - id: persisted-via-sync
                 text: The initialized wiki was persisted via the sync tool.
-                check: { kind: tool, name: sync }
+                required: false

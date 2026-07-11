@@ -3,9 +3,21 @@ import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
 import { evaluateCheck } from "../eval/assertions/checks.js";
+import type { ToolEvent } from "../eval/copilot.js";
 
 const cleanups: string[] = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true }))); });
+
+const mkEvent = (overrides: Partial<ToolEvent> = {}): ToolEvent => ({
+  turn: 1,
+  callId: "c1",
+  server: "open-knowledge-hub",
+  tool: "run",
+  arguments: {},
+  completed: true,
+  success: true,
+  ...overrides,
+});
 
 async function okhHomeWith(name: string, module?: string): Promise<string> {
   const home = await makeTempDir(); cleanups.push(home);
@@ -20,8 +32,27 @@ async function okhHomeWith(name: string, module?: string): Promise<string> {
 }
 
 describe("evaluateCheck", () => {
-  it("tool: passes when the tool was called", async () => {
-    expect((await evaluateCheck({ kind: "tool", name: "add" }, { toolCalls: ["add", "inspect"], transcript: "" })).pass).toBe(true);
+  it("tool: passes when the tool was called with matching event", async () => {
+    const events = [mkEvent({ tool: "add" }), mkEvent({ tool: "inspect", callId: "c2" })];
+    expect((await evaluateCheck({ kind: "tool", name: "add" }, { toolCalls: ["add", "inspect"], toolEvents: events, transcript: "" })).pass).toBe(true);
+    expect((await evaluateCheck({ kind: "tool", name: "sync" }, { toolCalls: ["add"], toolEvents: events, transcript: "" })).pass).toBe(false);
+  });
+  it("tool: fails when tool event has success:false", async () => {
+    const events = [mkEvent({ tool: "run", success: false })];
+    expect((await evaluateCheck({ kind: "tool", name: "run" }, { toolEvents: events, transcript: "" })).pass).toBe(false);
+  });
+  it("tool: matches with arguments subset", async () => {
+    const events = [mkEvent({ tool: "run", arguments: { module: "wiki", skill: "write" } })];
+    expect((await evaluateCheck({ kind: "tool", name: "run", arguments: { module: "wiki" } }, { toolEvents: events, transcript: "" })).pass).toBe(true);
+    expect((await evaluateCheck({ kind: "tool", name: "run", arguments: { module: "other" } }, { toolEvents: events, transcript: "" })).pass).toBe(false);
+  });
+  it("tool: matches with turn constraint", async () => {
+    const events = [mkEvent({ tool: "run", turn: 2 })];
+    expect((await evaluateCheck({ kind: "tool", name: "run", turn: 2 }, { toolEvents: events, transcript: "" })).pass).toBe(true);
+    expect((await evaluateCheck({ kind: "tool", name: "run", turn: 1 }, { toolEvents: events, transcript: "" })).pass).toBe(false);
+  });
+  it("tool: falls back to toolCalls when no toolEvents provided", async () => {
+    expect((await evaluateCheck({ kind: "tool", name: "add" }, { toolCalls: ["add"], transcript: "" })).pass).toBe(true);
     expect((await evaluateCheck({ kind: "tool", name: "sync" }, { toolCalls: ["add"], transcript: "" })).pass).toBe(false);
   });
   it("container: passes for a registered container + module", async () => {

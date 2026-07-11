@@ -52,8 +52,8 @@ describe("judge assertion", () => {
     expect(r.pass).toBe(true);
   });
 
-  it("fails and flags a judge/deterministic disagreement", async () => {
-    const okhHome = await okhHomeWith("other"); // "my-notes" NOT registered
+  it("required checked criterion: det=FAIL overrides judge=PASS", async () => {
+    const okhHome = await okhHomeWith("other"); // "my-notes" NOT registered → det=FAIL
     const r = await judge(
       "t",
       {
@@ -63,33 +63,25 @@ describe("judge assertion", () => {
       fakeJudge([{ id: "created", verdict: "PASS" }]),
     );
     expect(r.pass).toBe(false);
-    expect(r.reason).toMatch(/DISAGREE/);
+    expect(r.reason).toMatch(/det=FAIL.*judge=PASS/);
   });
 
-  it("fails when a checked required criterion is UNRELIABLE even if deterministic check passes", async () => {
-    const okhHome = await okhHomeWith("my-notes");
-    let checkReads = 0;
-    const check = new Proxy({ kind: "container" as const, name: "my-notes" }, {
-      get(target, prop, receiver) {
-        if (prop === "kind" || prop === "name") checkReads++;
-        return Reflect.get(target, prop, receiver);
-      },
-    });
+  it("required checked criterion: det=PASS wins over judge=UNRELIABLE", async () => {
+    const okhHome = await okhHomeWith("my-notes"); // "my-notes" IS registered → det=PASS
     const r = await judge(
       "t",
       {
-        config: { criteria: [{ id: "created", text: "created", check }] },
+        config: { criteria: [{ id: "created", text: "created", check: { kind: "container", name: "my-notes" } }] },
         providerResponse: { metadata: { okhHome, toolCalls: [] } },
       },
       fakeJudge([{ id: "created", verdict: "UNRELIABLE", passVotes: 1, failVotes: 0, validVotes: 1 }]),
     );
-    expect(r.pass).toBe(false);
-    expect(r.reason).toMatch(/unreliable/);
-    expect(checkReads).toBe(0);
+    expect(r.pass).toBe(true);
+    expect(r.reason).toMatch(/det=PASS.*judge=UNRELIABLE/);
   });
 
-  it("fails and flags a reverse judge/deterministic disagreement", async () => {
-    const okhHome = await okhHomeWith("my-notes");
+  it("required checked criterion: det=PASS wins over judge=FAIL", async () => {
+    const okhHome = await okhHomeWith("my-notes"); // "my-notes" IS registered → det=PASS
     const r = await judge(
       "t",
       {
@@ -98,8 +90,22 @@ describe("judge assertion", () => {
       },
       fakeJudge([{ id: "created", verdict: "FAIL" }]),
     );
-    expect(r.pass).toBe(false);
-    expect(r.reason).toMatch(/DISAGREE/);
+    expect(r.pass).toBe(true);
+    expect(r.reason).toMatch(/det=PASS.*judge=FAIL/);
+  });
+
+  it("required checked criterion: det=PASS wins even when judge result is absent (MISSING)", async () => {
+    const okhHome = await okhHomeWith("my-notes"); // "my-notes" IS registered → det=PASS
+    const r = await judge(
+      "t",
+      {
+        config: { criteria: [{ id: "created", text: "created", check: { kind: "container", name: "my-notes" } }] },
+        providerResponse: { metadata: { okhHome, toolCalls: [] } },
+      },
+      fakeJudge([]), // judge omits "created"
+    );
+    expect(r.pass).toBe(true);
+    expect(r.reason).toMatch(/det=PASS.*judge=MISSING/);
   });
 
   it("fails when a required criterion is UNRELIABLE", async () => {
@@ -134,8 +140,8 @@ describe("judge assertion", () => {
     expect(r.reason).toMatch(/advisory/);
   });
 
-  it("advisory checked criterion gates on judge/deterministic disagreement", async () => {
-    const okhHome = await okhHomeWith("other"); // "my-notes" NOT registered
+  it("advisory checked criterion never gates overall pass", async () => {
+    const okhHome = await okhHomeWith("other"); // "my-notes" NOT registered → det=FAIL
     const r = await judge(
       "t",
       {
@@ -144,8 +150,9 @@ describe("judge assertion", () => {
       },
       fakeJudge([{ id: "created", verdict: "PASS" }]),
     );
-    expect(r.pass).toBe(false);
-    expect(r.reason).toMatch(/DISAGREE/);
+    expect(r.pass).toBe(true);
+    expect(r.reason).toMatch(/det=FAIL.*judge=PASS/);
+    expect(r.reason).toMatch(/advisory/);
   });
 
   it("annotates a borderline (split-vote) pass", async () => {

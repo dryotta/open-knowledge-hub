@@ -59,6 +59,13 @@ describe("runJudgeCriteria", () => {
     expect(b.verdict).toBe("FAIL"); // 1 PASS / 2 FAIL
   });
 
+  it("rejects when judge process exits non-zero", async () => {
+    const runner: CopilotRunner = async () => ({ transcript: "", code: 1 });
+    await expect(
+      runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner }),
+    ).rejects.toThrow(/judge.*exit code 1/i);
+  });
+
   it("excludes unparseable runs from the vote", async () => {
     const runs = [
       '[{"id":"a","verdict":"PASS"}]',

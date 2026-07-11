@@ -49,11 +49,22 @@ export const spawnCopilot: CopilotRunner = (opts) =>
 
 const OKH_SERVER = "open-knowledge-hub";
 
+export interface ToolEvent {
+  turn: number;
+  callId: string;
+  server: string;
+  tool: string;
+  arguments: unknown;
+  completed: boolean;
+  success: boolean;
+}
+
 export interface ParsedTurn {
   /** Assistant spoken messages this turn (no tool lines) — used for guard matching. */
   messages: string[];
   lastMessage: string;
   tools: string[];
+  toolEvents: ToolEvent[];
   cost: number;
   sessionId: string | null;
   code: number | null;
@@ -89,17 +100,18 @@ interface CopilotEvent {
 
 /**
  * Parse Copilot CLI `--output-format json` (JSONL) from one turn: assistant
- * message contents, OKH MCP tool names (from `toolRequests[]` and
- * `tool.execution_start`, keyed on `mcpServerName === "open-knowledge-hub"`),
+ * message contents, OKH MCP tool names (from completed+successful
+ * `tool.execution_complete` events keyed on `mcpServerName === "open-knowledge-hub"`),
  * the final `result` event's sessionId / exitCode / cumulative cost, and a
  * human-readable `render` interleaving messages with tool calls + results (in
  * event order) so the judge sees what the agent *did*, not just what it said.
  */
-export function parseCopilotEvents(jsonl: string): ParsedTurn {
+export function parseCopilotEvents(jsonl: string, turn = 1): ParsedTurn {
   const messages: string[] = [];
-  const tools = new Set<string>();
   const parts: string[] = [];
   const toolLabel = new Map<string, string>();
+  const toolEventMap = new Map<string, ToolEvent>();
+  const toolEvents: ToolEvent[] = [];
   let cost = 0;
   let sessionId: string | null = null;
   let code: number | null = null;
@@ -122,21 +134,30 @@ export function parseCopilotEvents(jsonl: string): ParsedTurn {
           messages.push(d.content);
           parts.push(d.content);
         }
-        for (const r of d.toolRequests ?? []) {
-          if (r?.mcpServerName === OKH_SERVER && typeof r.mcpToolName === "string") tools.add(r.mcpToolName);
-        }
         break;
       }
       case "tool.execution_start": {
-        const label = d.mcpServerName ? `${d.mcpServerName}:${d.mcpToolName}` : (d.toolName ?? "tool");
+        const server = d.mcpServerName ?? "";
+        const tool = d.mcpToolName ?? d.toolName ?? "tool";
+        const label = server ? `${server}:${tool}` : tool;
+        const callId = d.toolCallId ?? `synthetic-${toolEvents.length}`;
         if (d.toolCallId) toolLabel.set(d.toolCallId, label);
-        if (d.mcpServerName === OKH_SERVER && typeof d.mcpToolName === "string") tools.add(d.mcpToolName);
+        const ev: ToolEvent = { turn, callId, server, tool, arguments: d.arguments, completed: false, success: false };
+        toolEvents.push(ev);
+        if (d.toolCallId) toolEventMap.set(d.toolCallId, ev);
         const args = d.arguments !== undefined ? truncate(JSON.stringify(d.arguments), 200) : "";
         parts.push(`→ tool: ${label}${args && args !== "{}" ? ` ${args}` : ""}`);
         break;
       }
       case "tool.execution_complete": {
         const label = (d.toolCallId && toolLabel.get(d.toolCallId)) || "tool";
+        if (d.toolCallId) {
+          const ev = toolEventMap.get(d.toolCallId);
+          if (ev) {
+            ev.completed = true;
+            ev.success = d.success === true;
+          }
+        }
         const res = typeof d.result?.content === "string" ? d.result.content : d.result?.detailedContent ?? "";
         parts.push(`← ${label}${d.success === false ? " [error]" : ""}: ${truncate(res.replace(/\s+/g, " "), 300)}`);
         break;
@@ -151,10 +172,20 @@ export function parseCopilotEvents(jsonl: string): ParsedTurn {
       }
     }
   }
+
+  const tools = [
+    ...new Set(
+      toolEvents
+        .filter((ev) => ev.completed && ev.success && ev.server === OKH_SERVER)
+        .map((ev) => ev.tool),
+    ),
+  ].sort();
+
   return {
     messages,
     lastMessage: messages.at(-1) ?? "",
-    tools: [...tools].sort(),
+    tools,
+    toolEvents,
     cost,
     sessionId,
     code,
@@ -175,6 +206,8 @@ export interface CopilotTurnOptions {
   timeoutMs?: number;
   /** Extra env merged over process.env (e.g. tokens). */
   extraEnv?: NodeJS.ProcessEnv;
+  /** 1-based turn index within the conversation; set by runConversation. */
+  turn?: number;
 }
 
 export interface CopilotTurnResult extends ParsedTurn {
@@ -204,28 +237,41 @@ export const spawnCopilotTurn: CopilotTurnRunner = (opts) =>
     const timer = opts.timeoutMs ? setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs) : undefined;
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      const parsed = parseCopilotEvents(out);
+      const parsed = parseCopilotEvents(out, opts.turn ?? 1);
       resolve({ ...parsed, raw: out, code: parsed.code ?? code });
     });
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
-      const parsed = parseCopilotEvents(out);
+      const parsed = parseCopilotEvents(out, opts.turn ?? 1);
       resolve({ ...parsed, raw: `${out}\n[spawn error] ${(err as Error).message}`, code: null });
     });
   });
 
 export interface Turn {
+  /** Unique identifier for this turn (becomes the state after selection). */
+  id: string;
+  /** Predecessor state(s) from which this turn is eligible. */
+  after: string | string[];
   /** The user message to send. */
   send: string;
-  /** Optional case-insensitive regex matched against the agent's last message. */
+  /** Optional case-insensitive regex matched against the latest agent message. */
   when?: string;
+}
+
+export interface ConversationTerminal {
+  /** The state after which the conversation is considered complete. */
+  after: string;
+  /** OKH tools that must have been successfully called before completion. */
+  requiredTools?: string[];
 }
 
 export interface ConversationScript {
   /** Turn 1 user message (the promptfoo `{{prompt}}`). */
   initial: string;
-  /** Guarded follow-up user messages. */
+  /** Guarded follow-up user messages with state machine annotations. */
   responses: Turn[];
+  /** Terminal condition for conversation completion. */
+  terminal?: ConversationTerminal;
   /** Safety cap on total turns. Default: responses.length + 2. */
   maxTurns?: number;
 }
@@ -234,6 +280,7 @@ export interface ConversationTurn {
   user: string;
   agent: string;
   tools: string[];
+  toolEvents: ToolEvent[];
 }
 
 export interface ConversationResult {
@@ -242,10 +289,13 @@ export interface ConversationResult {
   /** Union of OKH tools called across all turns, sorted. */
   toolCalls: string[];
   turns: ConversationTurn[];
+  toolEvents: ToolEvent[];
   /** Last turn's cumulative premiumRequests (== whole-conversation cost). */
   cost: number;
   /** Last turn's exit code. */
   code: number | null;
+  /** If set, the conversation ended in a state-machine failure. */
+  failure?: string;
 }
 
 export interface RunConversationCtx {
@@ -265,24 +315,34 @@ function safeMatch(pattern: string, text: string): boolean {
   }
 }
 
-/** Choose the next unsent response: a guard that matches the agent wins; else the first unguarded; else -1. */
-function selectNext(responses: Turn[], sent: boolean[], lastAgent: string): number {
+/** Check if a turn's `after` includes the given state. */
+function isEligible(turn: Turn, state: string): boolean {
+  const afters = Array.isArray(turn.after) ? turn.after : [turn.after];
+  return afters.includes(state);
+}
+
+/** Choose the next unsent response using the state machine: only turns whose `after` includes `state` are eligible. */
+function selectNext(responses: Turn[], sent: boolean[], state: string, lastAgent: string): number {
+  // First pass: guarded turns eligible from current state whose `when` matches
   for (let i = 0; i < responses.length; i++) {
     if (sent[i]) continue;
+    if (!isEligible(responses[i]!, state)) continue;
     const w = responses[i]!.when;
     if (w && safeMatch(w, lastAgent)) return i;
   }
+  // Second pass: unguarded turns (no `when`) eligible from current state
   for (let i = 0; i < responses.length; i++) {
-    if (!sent[i] && !responses[i]!.when) return i;
+    if (sent[i]) continue;
+    if (!isEligible(responses[i]!, state)) continue;
+    if (!responses[i]!.when) return i;
   }
   return -1;
 }
 
 /**
- * Drive a multi-turn Copilot CLI conversation over one resumed session. Turn 1
- * sends `initial`; after each turn the next scripted user message is picked by
- * guard match (falling back to declared order), until no response is eligible,
- * a turn errors, or `maxTurns` is reached.
+ * Drive a multi-turn Copilot CLI conversation over one resumed session.
+ * Uses a state machine: initial state is "start"; selecting a turn advances
+ * state to turn.id. Terminal condition checked after each agent turn.
  */
 export async function runConversation(script: ConversationScript, ctx: RunConversationCtx): Promise<ConversationResult> {
   const sessionId = randomUUID();
@@ -290,9 +350,12 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
   const maxTurns = script.maxTurns ?? responses.length + 2;
   const sent = responses.map(() => false);
   const turns: ConversationTurn[] = [];
+  const allToolEvents: ToolEvent[] = [];
   const toolSet = new Set<string>();
   let cost = 0;
   let code: number | null = null;
+  let state = "start";
+  let failure: string | undefined;
 
   const runTurn = async (user: string, resume: boolean): Promise<CopilotTurnResult> => {
     const r = await ctx.runner({
@@ -304,26 +367,74 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       cwd: ctx.cwd,
       timeoutMs: ctx.timeoutMs,
       extraEnv: ctx.extraEnv,
+      turn: turns.length + 1,
     });
-    turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools });
-    for (const t of r.tools) toolSet.add(t);
+    turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools, toolEvents: r.toolEvents });
+    for (const ev of r.toolEvents) {
+      allToolEvents.push(ev);
+      if (ev.completed && ev.success && ev.server === OKH_SERVER) toolSet.add(ev.tool);
+    }
     if (r.cost) cost = r.cost;
     code = r.code;
     return r;
   };
 
+  const buildResult = (): ConversationResult => {
+    const transcript = turns
+      .map((t, i) => `=== USER (turn ${i + 1}) ===\n${t.user}\n\n=== AGENT (turn ${i + 1}) ===\n${t.agent}`)
+      .join("\n\n");
+    return { transcript, toolCalls: [...toolSet].sort(), turns, toolEvents: allToolEvents, cost, code, ...(failure ? { failure } : {}) };
+  };
+
+  // Check terminal readiness
+  const checkTerminal = (): boolean => {
+    if (!script.terminal) return false;
+    if (state !== script.terminal.after) return false;
+    if (script.terminal.requiredTools) {
+      const missing = script.terminal.requiredTools.filter((t) => !toolSet.has(t));
+      if (missing.length > 0) {
+        failure = `terminal state "${state}" reached but required tools missing: ${missing.join(", ")}`;
+        return true; // stop the loop (failure is set)
+      }
+    }
+    return true; // terminal reached successfully
+  };
+
   let last = await runTurn(script.initial, false);
+
+  // Single-turn scripts with no responses: complete after turn 1
+  if (responses.length === 0) return buildResult();
+
   while (turns.length < maxTurns) {
     if (last.code !== 0) break;
-    const idx = selectNext(responses, sent, last.lastMessage);
-    if (idx < 0) break;
+
+    // Check terminal after each agent turn
+    if (checkTerminal()) break;
+
+    // Select next turn based on state machine
+    const idx = selectNext(responses, sent, state, last.lastMessage);
+    if (idx < 0) {
+      // No eligible guard matches — explicit failure
+      const snippet = last.lastMessage ? last.lastMessage.slice(0, 120) : "(no agent message)";
+      failure = `unmatched conversation state "${state}": ${snippet}`;
+      break;
+    }
     sent[idx] = true;
+    state = responses[idx]!.id;
     last = await runTurn(responses[idx]!.send, true);
   }
 
-  const transcript = turns
-    .map((t, i) => `=== USER (turn ${i + 1}) ===\n${t.user}\n\n=== AGENT (turn ${i + 1}) ===\n${t.agent}`)
-    .join("\n\n");
+  // After loop: check if we stopped due to maxTurns without reaching terminal
+  if (!failure && last.code === 0 && script.terminal && state !== script.terminal.after) {
+    failure = `max turns (${maxTurns}) exhausted without reaching terminal state "${script.terminal.after}"`;
+  }
+  // Check terminal tool requirements at the end if we reached terminal state
+  if (!failure && last.code === 0 && script.terminal && state === script.terminal.after && script.terminal.requiredTools) {
+    const missing = script.terminal.requiredTools.filter((t) => !toolSet.has(t));
+    if (missing.length > 0) {
+      failure = `terminal state "${state}" reached but required tools missing: ${missing.join(", ")}`;
+    }
+  }
 
-  return { transcript, toolCalls: [...toolSet].sort(), turns, cost, code };
+  return buildResult();
 }

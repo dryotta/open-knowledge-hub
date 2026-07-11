@@ -74,3 +74,42 @@ describe("shared skills", () => {
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
   });
 });
+
+describe("llmwiki skill body contracts", () => {
+  it("initialize skill body requires invoking shared grilling and states next-steps is not completion", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    const s = await svc.resolveSkill("h", "wiki", "initialize");
+    expect(s.body).toMatch(/must invoke.*grilling/i);
+    expect(s.body).toMatch(/next\s+steps.*not completion/is);
+  });
+
+  it("write skill body requires shared okf-writer invocation omitting container/module, declared type, and final inspect", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    const s = await svc.resolveSkill("h", "wiki", "write");
+    // shared okf-writer invocation omits container/module because it's shared
+    expect(s.body).toMatch(/omit.*container.*module|omitting.*container.*module/i);
+    // use declared type vocabulary
+    expect(s.body).toMatch(/declared.*type/i);
+    // final inspect
+    expect(s.body).toMatch(/inspect/i);
+  });
+
+  it("write skill requires repeated inspect until all health arrays are empty before completion", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    const s = await svc.resolveSkill("h", "wiki", "write");
+    // Must require fixing all four health categories
+    expect(s.body).toMatch(/orphan/i);
+    expect(s.body).toMatch(/dangling/i);
+    expect(s.body).toMatch(/uncataloged/i);
+    expect(s.body).toMatch(/type/i);
+    // Must require repeating inspect until health is fully empty
+    expect(s.body).toMatch(/repeat.*inspect|re-?run.*inspect|inspect.*again|inspect.*until/i);
+    // Must NOT allow logging remaining health debt as a completion alternative
+    expect(s.body).not.toMatch(/remaining.*intentional.*noted|intentional.*noted.*log|or.*intentional/i);
+    // Completion must require clean health unconditionally
+    expect(s.body).toMatch(/clean/i);
+  });
+});

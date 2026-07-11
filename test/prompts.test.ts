@@ -53,6 +53,11 @@ describe("prompt builders", () => {
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
   });
+  it("context discipline explicitly omits irrelevant/rejected candidates from the final brief", async () => {
+    const text = await buildContext(targets, "Debug CSV import");
+    // The discipline must explicitly forbid listing rejected candidates, not just omit them silently
+    expect(text).toMatch(/omit.{0,120}(irrelevant|rejected)/is);
+  });
   it("onboard includes staged guidance, the wake phrase, and config routing", async () => {
     const text = await buildOnboard(targets, { wakePhrase: "sam" });
     expect(text).toContain("sam");

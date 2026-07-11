@@ -13,7 +13,9 @@
           config: { expect: [run] }
         - type: javascript
           value: file://assertions/memory-append.ts
-          config: { module: mem, baselineFileCount: 2 }
+          config:
+            module: mem
+            observation: "Test suite run #42 finished in 13s with 88 passing."
         - type: javascript
           value: file://assertions/judge.ts
           config:
@@ -21,5 +23,7 @@
             criteria:
               - id: raw-fact-only
                 text: The memory entry (see ON-DISK ARTIFACTS) records the raw fact/result only — a timestamped observation.
+                required: false
               - id: no-conclusions
                 text: The entry does NOT synthesize conclusions, lessons, recommendations, or root-cause analysis.
+                required: false

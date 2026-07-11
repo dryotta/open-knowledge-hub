@@ -3,18 +3,32 @@
     - vars:
         env: wiki
         prompt: |
-          Use the open-knowledge-hub MCP tools. Ask module "wiki" in container
-          "wiki-hub" how Attention fits within a Transformer. Then run that module's
-          `write` skill to file the durable explanation at
-          `/syntheses/attention-in-transformers.md` with required OKF
-          `type: synthesis` frontmatter. Cross-link it, update the root index and log,
-          and sync.
+          Use the open-knowledge-hub MCP tools. Ask module "wiki" in container "wiki-hub"
+          how Attention fits within a Transformer, then file the durable answer back into
+          that wiki and sync it.
   tests:
     - description: Ask - llmwiki compounding - answers then files durable synthesis
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [ask, run, sync] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: wiki-hub, module: wiki, skill: write }
+              - name: run
+                arguments: { skill: okf-writer }
+              - name: inspect
+                arguments: { container: wiki-hub, module: wiki }
+              - name: sync
+                arguments: { container: wiki-hub }
+        - type: javascript
+          value: file://assertions/llmwiki-state.ts
+          config:
+            module: wiki
+            expectedNewPage: { folder: syntheses, type: synthesis, terms: [attention, transformer] }
+            requireIndexAndLogChanged: true
+            requireCleanHealth: true
         - type: javascript
           value: file://assertions/okf-valid.ts
           config: { module: wiki, requireChanged: true }
@@ -25,16 +39,13 @@
             criteria:
               - id: answered-from-wiki
                 text: The agent answered how Attention fits within a Transformer using the existing wiki pages.
-                check: { kind: tool, name: ask }
               - id: ran-write
                 text: The agent invoked the wiki module's write skill to persist the durable answer.
-                check:
-                  kind: transcript-contains
-                  pattern: 'tool:\s*open-knowledge-hub:run\s+\{(?=[^\r\n]*"container"\s*:\s*"wiki-hub")(?=[^\r\n]*"module"\s*:\s*"wiki")(?=[^\r\n]*"skill"\s*:\s*"write")'
+                required: false
               - id: filed-synthesis
                 text: The on-disk changes include a new OKF synthesis page explaining the Attention-to-Transformer relationship.
               - id: maintained-wiki
                 text: The synthesis is cross-linked and the root index.md catalog and log.md were updated.
               - id: persisted-via-sync
                 text: The wiki changes were persisted via the sync tool.
-                check: { kind: tool, name: sync }
+                required: false
