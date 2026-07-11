@@ -45,6 +45,173 @@ const CRITERIA = [
 ];
 
 describe("runJudgeCriteria", () => {
+  it("uses GPT-5.6 Luna as the default judge model", async () => {
+    const prev = process.env.OKH_JUDGE_MODEL;
+    delete process.env.OKH_JUDGE_MODEL;
+    try {
+      let model: string | undefined;
+      const runner: CopilotRunner = async (opts) => {
+        model = opts.model;
+        return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      };
+
+      await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner });
+
+      expect(model).toBe("gpt-5.6-luna");
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_MODEL;
+      else process.env.OKH_JUDGE_MODEL = prev;
+    }
+  });
+
+  it("uses OKH_JUDGE_MODEL unless an explicit model is provided", async () => {
+    const prev = process.env.OKH_JUDGE_MODEL;
+    process.env.OKH_JUDGE_MODEL = "claude-haiku-4.5";
+    try {
+      const models: Array<string | undefined> = [];
+      const runner: CopilotRunner = async (opts) => {
+        models.push(opts.model);
+        return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      };
+
+      await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner });
+      await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, model: "claude-sonnet-4.5", runner });
+
+      expect(models).toEqual(["claude-haiku-4.5", "claude-sonnet-4.5"]);
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_MODEL;
+      else process.env.OKH_JUDGE_MODEL = prev;
+    }
+  });
+
+  it("runs all judge votes concurrently by default", async () => {
+    const prev = process.env.OKH_JUDGE_CONCURRENCY;
+    delete process.env.OKH_JUDGE_CONCURRENCY;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const runner: CopilotRunner = async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active--;
+      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+    };
+    try {
+      const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      release();
+      await pending;
+
+      expect(maxActive).toBe(3);
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
+      else process.env.OKH_JUDGE_CONCURRENCY = prev;
+    }
+  });
+
+  it("caps parallel judge votes with OKH_JUDGE_CONCURRENCY", async () => {
+    const prev = process.env.OKH_JUDGE_CONCURRENCY;
+    process.env.OKH_JUDGE_CONCURRENCY = "2";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const runner: CopilotRunner = async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active--;
+      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+    };
+    try {
+      const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      release();
+      await pending;
+
+      expect(maxActive).toBe(2);
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
+      else process.env.OKH_JUDGE_CONCURRENCY = prev;
+    }
+  });
+
+  it("falls back to k when OKH_JUDGE_CONCURRENCY is fractional", async () => {
+    const prev = process.env.OKH_JUDGE_CONCURRENCY;
+    process.env.OKH_JUDGE_CONCURRENCY = "1.5";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const runner: CopilotRunner = async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active--;
+      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+    };
+    try {
+      const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      release();
+      await pending;
+
+      expect(maxActive).toBe(3);
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
+      else process.env.OKH_JUDGE_CONCURRENCY = prev;
+    }
+  });
+
+  it("clamps OKH_JUDGE_CONCURRENCY to k", async () => {
+    const prev = process.env.OKH_JUDGE_CONCURRENCY;
+    process.env.OKH_JUDGE_CONCURRENCY = "10";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const runner: CopilotRunner = async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active--;
+      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+    };
+    try {
+      const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      release();
+      await pending;
+
+      expect(maxActive).toBe(3);
+    } finally {
+      if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
+      else process.env.OKH_JUDGE_CONCURRENCY = prev;
+    }
+  });
+
+  it("waits for concurrent judge calls to settle before propagating a failure", async () => {
+    let calls = 0;
+    let slowSettled = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const runner: CopilotRunner = async () => {
+      calls++;
+      if (calls === 1) return { transcript: "", code: 1 };
+      await gate;
+      slowSettled = true;
+      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+    };
+
+    const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 2, runner });
+    setTimeout(release, 20);
+
+    await expect(pending).rejects.toThrow(/judge.*exit code 1/i);
+    expect(slowSettled).toBe(true);
+  });
+
   it("majority-votes each criterion across k runs", async () => {
     const runs = [
       '[{"id":"a","verdict":"PASS"},{"id":"b","verdict":"FAIL"}]',

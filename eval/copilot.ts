@@ -23,10 +23,26 @@ export type CopilotRunner = (opts: CopilotRunOptions) => Promise<CopilotResult>;
  * Default single-shot runner: spawns `copilot -p ... --allow-all [--model M]`,
  * captures stdout+stderr as text. Used by the judge for grading calls.
  */
+export function buildJudgeCopilotArgs(prompt: string, model?: string): string[] {
+  const args = [
+    "-p",
+    prompt,
+    "--allow-all",
+    "--available-tools=",
+    "--silent",
+    "--no-color",
+    "--no-custom-instructions",
+    "--disable-builtin-mcps",
+    "--no-remote-export",
+    "--no-auto-update",
+  ];
+  if (model) args.push("--model", model);
+  return args;
+}
+
 export const spawnCopilot: CopilotRunner = (opts) =>
   new Promise((resolve) => {
-    const args = ["-p", opts.prompt, "--allow-all"];
-    if (opts.model) args.push("--model", opts.model);
+    const args = buildJudgeCopilotArgs(opts.prompt, opts.model);
     const child = spawn("copilot", args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.extraEnv, COPILOT_HOME: opts.copilotHome },
