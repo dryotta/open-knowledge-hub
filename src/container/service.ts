@@ -108,6 +108,11 @@ function withOpenedPrCheckoutFailure(prUrl: string, checkout: unknown, base: str
 export interface AddContainerInput {
   source: string;
   name?: string;
+  /**
+   * Sync mode for the container. `"pr"` is a backward-compatible input alias that
+   * maps to the persisted value `"shared"` for git backends; Tasks 5-6 will replace
+   * this flat union with a structured `{ mode, config }` input.
+   */
   sync?: "auto" | "pr";
   /** Only meaningful for path sources; distinguishes onedrive from plain local. */
   backend?: "local" | "onedrive";
@@ -655,9 +660,9 @@ export class ContainerService {
     const legacyMode = await migrateLegacyContainerManifest(plan.target).catch(() => undefined);
     const effectiveMode: SyncMode = plan.syncExplicit
       ? plan.sync
-      : legacyMode === "pr"
-        ? (plan.backend === "git" ? "shared" : "auto")
-        : (legacyMode === "auto" ? "auto" : plan.sync);
+      : legacyMode === "pr" && plan.backend === "git"
+        ? "shared"
+        : "auto";
     const entry: ContainerEntry = {
       name: plan.name,
       backend: { type: plan.backend, config: plan.backend === "git" ? { origin: origin! } : {} },
