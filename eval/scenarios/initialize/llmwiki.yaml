@@ -40,7 +40,6 @@
             send: "Do not retain source copies."
           - id: scope-confirmed
             after: sources
-            when: "agree with this scope|do you agree|confirm.*(?:scope|decisions)|if yes.*(?:build|create)|proceed.*(?:build|create)|build.*sync|next steps"
             send: |
               These decisions are final: build an engineering handbook for backend
               developers and coding agents; cover backend components, request flows,

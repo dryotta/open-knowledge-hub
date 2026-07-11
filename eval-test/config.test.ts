@@ -250,6 +250,21 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.noContentPages).toBe(true);
   });
 
+  it("initialize/llmwiki.yaml scope-confirmed turn has after:sources, no when guard, and agreement/build send text", async () => {
+    const sc = await loadScenario("initialize/llmwiki.yaml");
+    const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; send: string; when?: string }>;
+    const scopeTurn = turns.find((t) => t.id === "scope-confirmed");
+    expect(scopeTurn, "scope-confirmed turn must exist").toBeDefined();
+    // Must be unguarded — no `when` property
+    expect(scopeTurn!.when, "scope-confirmed must not have a when guard").toBeUndefined();
+    // Must follow exactly sources
+    const after = Array.isArray(scopeTurn!.after) ? scopeTurn!.after : [scopeTurn!.after];
+    expect(after).toEqual(["sources"]);
+    // Send text must contain the agreement and build instruction
+    expect(scopeTurn!.send).toMatch(/decisions are final/i);
+    expect(scopeTurn!.send).toMatch(/build.*empty structure|empty structure.*build/i);
+  });
+
   it("initialize/llmwiki.yaml sync-confirmed turn is unguarded and follows scope-confirmed with correct send text", async () => {
     const sc = await loadScenario("initialize/llmwiki.yaml");
     const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; send: string; when?: string }>;
