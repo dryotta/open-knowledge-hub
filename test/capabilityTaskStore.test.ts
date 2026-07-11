@@ -1,5 +1,6 @@
 import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js";
 import type { CallToolRequest, ClientCapabilities, Result } from "@modelcontextprotocol/sdk/types.js";
+import type { CreateTaskOptions } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toCapabilityToolResult } from "../src/server/capabilityReport.js";
 import { createInitialCapabilityReport } from "../src/server/capabilityProbes.js";
@@ -36,6 +37,15 @@ function createStore(runs: CapabilityRunStore, delegate = new InMemoryTaskStore(
       toCapabilityToolResult(runs.getSnapshotForClient(clientKey, runId).report),
     ),
   };
+}
+
+class RecordingTaskStore extends InMemoryTaskStore {
+  readonly createTaskOptions: CreateTaskOptions[] = [];
+
+  override createTask(...args: Parameters<InMemoryTaskStore["createTask"]>): ReturnType<InMemoryTaskStore["createTask"]> {
+    this.createTaskOptions.push(args[0]);
+    return super.createTask(...args);
+  }
 }
 
 function context(clientKey: object, runId: string, action: "scan" | "app_report" | "task_cancel" | "report") {
@@ -218,6 +228,53 @@ describe("CapabilityTaskStore", () => {
     expect(serialized).not.toContain("delegate-payload");
     expect(serialized).not.toContain("delegate-secret");
     expect(serialized).not.toContain("must-not-serialize");
+    store.cleanup();
+  });
+
+  it("delegates only public capability context and keeps private context out of task output", async () => {
+    const clientKey = { privateClientKey: "must-not-reach-delegate" };
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const delegate = new RecordingTaskStore();
+    const { store } = createStore(runs, delegate);
+
+    const task = await store.createTask(
+      {
+        ttl: null,
+        context: {
+          ...context(clientKey, run.id, "scan"),
+          privateContext: "must-not-reach-delegate",
+          nestedPrivate: { secret: "must-not-reach-delegate" },
+        },
+      },
+      1,
+      request(true),
+    );
+    store.markPolled(task.taskId);
+    const result = store.markResultRequested(task.taskId);
+
+    expect(delegate.createTaskOptions).toHaveLength(1);
+    expect(delegate.createTaskOptions[0].context).toEqual({
+      kind: "capabilities",
+      runId: run.id,
+      action: "scan",
+    });
+    const serializedDelegateOptions = JSON.stringify(delegate.createTaskOptions[0]);
+    expect(serializedDelegateOptions).not.toContain("clientKey");
+    expect(serializedDelegateOptions).not.toContain("privateContext");
+    expect(serializedDelegateOptions).not.toContain("nestedPrivate");
+    expect(serializedDelegateOptions).not.toContain("must-not-reach-delegate");
+
+    const serializedTaskOutput = JSON.stringify({
+      task,
+      storedTask: await store.getTask(task.taskId),
+      result,
+    });
+    expect(serializedTaskOutput).not.toContain("clientKey");
+    expect(serializedTaskOutput).not.toContain("privateContext");
+    expect(serializedTaskOutput).not.toContain("nestedPrivate");
+    expect(serializedTaskOutput).not.toContain("must-not-reach-delegate");
+    expect(runs.getSnapshotForClient(clientKey, run.id).taskId).toBe(task.taskId);
     store.cleanup();
   });
 
@@ -404,6 +461,38 @@ describe("CapabilityTaskStore", () => {
 
     expect(store.isTaskAugmented(task.taskId)).toBe(false);
     expect(await delegate.getTask(task.taskId)).toBeNull();
+    expect(runs.getSnapshotForClient(clientKey, run.id).report.probes.tasksCancel.status).toBe("pending");
+  });
+
+  it("calls non-idempotent delegate cleanup exactly once while local cleanup remains repeatable", async () => {
+    vi.useFakeTimers();
+    const clientKey = {};
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const { delegate, store } = createStore(runs);
+    let cleanupCalls = 0;
+    const cleanup = vi.fn(() => {
+      cleanupCalls += 1;
+      if (cleanupCalls > 1) {
+        throw new Error("delegate cleanup called more than once");
+      }
+    });
+    delegate.cleanup = cleanup;
+    const task = await store.createTask(
+      { ttl: null, context: context(clientKey, run.id, "task_cancel") },
+      1,
+      request(true),
+    );
+    store.armCancellationTimeout(task.taskId, 10);
+
+    expect(() => {
+      store.cleanup();
+      store.cleanup();
+    }).not.toThrow();
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(store.isTaskAugmented(task.taskId)).toBe(false);
     expect(runs.getSnapshotForClient(clientKey, run.id).report.probes.tasksCancel.status).toBe("pending");
   });
 

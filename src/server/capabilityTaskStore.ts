@@ -23,6 +23,8 @@ type CapabilityTaskContext = {
   clientKey: object;
 };
 
+type PublicCapabilityTaskContext = Omit<CapabilityTaskContext, "clientKey">;
+
 type TaskBinding = CapabilityTaskContext & {
   taskAugmented: boolean;
 };
@@ -109,6 +111,30 @@ function capabilityContext(value: unknown): CapabilityTaskContext | undefined {
   };
 }
 
+function publicCapabilityContext(context: CapabilityTaskContext): PublicCapabilityTaskContext {
+  return {
+    kind: "capabilities",
+    runId: context.runId,
+    action: context.action,
+  };
+}
+
+function sanitizedCreateTaskOptions(
+  options: CreateTaskOptions,
+  context: CapabilityTaskContext | undefined,
+): CreateTaskOptions {
+  if (context !== undefined) {
+    return {
+      ...options,
+      context: publicCapabilityContext(context),
+    };
+  }
+
+  if (!("context" in options)) return options;
+  const { context: _context, ...sanitizedOptions } = options;
+  return sanitizedOptions;
+}
+
 function isExpectedRunAccessError(error: unknown): boolean {
   return (
     error instanceof CapabilityRunStoreError &&
@@ -128,6 +154,7 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 export class CapabilityTaskStore implements TaskStore {
   private readonly bindings = new Map<string, TaskBinding>();
   private readonly cancellationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private delegateCleanedUp = false;
 
   constructor(
     private readonly delegate: TaskStore,
@@ -141,8 +168,8 @@ export class CapabilityTaskStore implements TaskStore {
     request: Request,
     sessionId?: string,
   ): Promise<Task> {
-    const task = await this.delegate.createTask(options, requestId, request, sessionId);
     const context = capabilityContext(options.context);
+    const task = await this.delegate.createTask(sanitizedCreateTaskOptions(options, context), requestId, request, sessionId);
     if (context === undefined) return task;
 
     const parsedRequest = CallToolRequestSchema.safeParse(request);
@@ -284,9 +311,11 @@ export class CapabilityTaskStore implements TaskStore {
     this.bindings.clear();
 
     const candidate: unknown = this.delegate;
+    if (this.delegateCleanedUp) return;
     if (typeof candidate !== "object" || candidate === null || !("cleanup" in candidate)) return;
     const cleanup = candidate.cleanup;
     if (typeof cleanup === "function") {
+      this.delegateCleanedUp = true;
       cleanup.call(candidate);
     }
   }
