@@ -232,14 +232,14 @@ export class GitBackend implements SyncBackend {
     const headAfter = await this.git.currentCommit(root);
     const headChanged = headBefore !== headAfter;
 
-    await this.git.pushForceWithLease(root, "origin", branch);
+    const needsPush = isNew || committed || headChanged;
+    if (needsPush) await this.git.pushForceWithLease(root, "origin", branch);
 
     if (action !== "publish-pr") {
-      const outcome = isNew || committed || headChanged ? "synced" : "up-to-date";
-      return { mode: "shared", outcome, committed, pushed: true, branch };
+      return { mode: "shared", outcome: needsPush ? "synced" : "up-to-date", committed, pushed: needsPush, branch };
     }
 
-    // publish-pr: find existing or create new PR
+    // publish-pr: find existing or create new PR (branch already on remote from prior push)
     const existingPr = await this.gh.findOpenPr({ cwd: root, base: "main", head: branch });
     let prUrl: string;
     if (existingPr) {
@@ -259,7 +259,7 @@ export class GitBackend implements SyncBackend {
       requestedAction: "publish-pr",
       outcome: "published",
       committed,
-      pushed: true,
+      pushed: needsPush,
       branch,
       prUrl,
     };

@@ -230,6 +230,7 @@ export interface ResolvedContainer {
  */
 export class ContainerService {
   private readonly mutex = new Mutex();
+  private readonly migrationMutex = new Mutex();
   private readonly backends: BackendRegistry;
   private readonly gh: Gh;
 
@@ -273,42 +274,44 @@ export class ContainerService {
    * from paths already inside the outer mutex).
    */
   private async migrateAndPersistSync(name: string, root: string): Promise<void> {
-    const legacyMode = await migrateLegacyContainerManifest(root).catch(() => undefined);
-    if (legacyMode === undefined) return;
+    return this.migrationMutex.run(async () => {
+      const legacyMode = await migrateLegacyContainerManifest(root).catch(() => undefined);
+      if (legacyMode === undefined) return;
 
-    const reg = await this.loadRegistryData();
-    const entry = findContainer(reg, name);
-    if (!entry) return;
+      const reg = await this.loadRegistryData();
+      const entry = findContainer(reg, name);
+      if (!entry) return;
 
-    let mode: SyncMode;
-    let syncConfig: Record<string, unknown> = {};
+      let mode: SyncMode;
+      let syncConfig: Record<string, unknown> = {};
 
-    if (entry.backend.type === "git" && legacyMode === "pr") {
-      mode = "shared";
-      try {
-        const resolved = await this.backends.resolveSync(
-          "git",
-          { mode: "shared", config: {} },
-          { containerName: name },
-        );
-        syncConfig = resolved.config;
-      } catch {
-        // Cannot resolve (e.g. gh login unavailable) — preserve legacy file and old entry.
-        return;
+      if (entry.backend.type === "git" && legacyMode === "pr") {
+        mode = "shared";
+        try {
+          const resolved = await this.backends.resolveSync(
+            "git",
+            { mode: "shared", config: {} },
+            { containerName: name },
+          );
+          syncConfig = resolved.config;
+        } catch {
+          // Cannot resolve (e.g. gh login unavailable) — preserve legacy file and old entry.
+          return;
+        }
+      } else {
+        mode = "auto";
       }
-    } else {
-      mode = "auto";
-    }
 
-    try {
-      await saveRegistry(
-        this.paths,
-        withContainerUpdated(reg, name, (e) => ({ ...e, sync: { mode, config: syncConfig } })),
-      );
-      await removeLegacyContainerManifest(root);
-    } catch {
-      // On save failure, preserve legacy file and old registry entry.
-    }
+      try {
+        await saveRegistry(
+          this.paths,
+          withContainerUpdated(reg, name, (e) => ({ ...e, sync: { mode, config: syncConfig } })),
+        );
+        await removeLegacyContainerManifest(root);
+      } catch {
+        // On save failure, preserve legacy file and old registry entry.
+      }
+    });
   }
 
   async status(name: string): Promise<ContainerStatus> {
@@ -570,11 +573,6 @@ export class ContainerService {
     }
     const backendType: BackendType = input.backend ?? "local";
     const syncSelection = this.normalizeSyncInput(input.sync, false);
-    // Reject shared sync on non-git backends early (before any filesystem side effects).
-    if (syncSelection.mode !== "auto") {
-      // resolveSync will throw with a useful message about unsupported mode.
-      await this.backends.resolveSync(backendType, syncSelection, { containerName: name });
-    }
     const backendConfig = this.backends.resolveBackendConfig(backendType, {});
     const resolvedSync = await this.backends.resolveSync(backendType, syncSelection, { containerName: name });
     const target = resolve(input.source);

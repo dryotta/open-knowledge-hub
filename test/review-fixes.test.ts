@@ -107,6 +107,26 @@ describe("legacy sync is persisted to the registry on read", () => {
     }
   });
 
+  it("concurrent status() calls on the same legacy container both succeed; file removed exactly once", async () => {
+    const { paths, root, svc } = await setup();
+    try {
+      await registerLegacy(paths, root, "pr");
+      // Two concurrent status() calls must not race: both should succeed, the
+      // migrationMutex ensures the second becomes a no-op after the first removes the
+      // legacy file, and the registry remains in a valid state.
+      const [st1, st2] = await Promise.all([svc.status("legacy"), svc.status("legacy")]);
+      expect(st1.sync?.mode).toBe("auto");
+      expect(st2.sync?.mode).toBe("auto");
+      // Legacy file must be gone — not left behind by a racing second caller.
+      await expect(stat(join(root, ".okh", "okh.yaml"))).rejects.toThrow();
+      const entry = findContainer(await loadRegistry(paths), "legacy");
+      expect(entry!.sync.mode).toBe("auto");
+    } finally {
+      await rm(paths.home, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("legacy git pr .okh migration preserves file on login failure", async () => {
     const origin = await makeOrigin({ "README.md": "# origin\n" });
     const root = await mkdtemp(join(tmpdir(), "okh-git-c-"));

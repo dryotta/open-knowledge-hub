@@ -68,6 +68,15 @@ class AbortFailingGit {
   async isValidBranchName(): Promise<boolean> { return true; }
 }
 
+/** Wraps a real Git instance and counts `pushForceWithLease` invocations. */
+class PushRecordingGit extends Git {
+  pushForceCalls = 0;
+  override async pushForceWithLease(...args: Parameters<Git["pushForceWithLease"]>): Promise<void> {
+    this.pushForceCalls++;
+    return super.pushForceWithLease(...args);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -417,7 +426,8 @@ describe("GitBackend — shared sync", () => {
     const entry = makeEntry(root, "shared", { branch });
     const result = await backend.sync({ entry, validation: { ok: true, issues: [] } });
 
-    expect(result.pushed).toBe(true);
+    // Branch already exists on origin with no local changes → nothing to push
+    expect(result.pushed).toBe(false);
 
     // Local should have the file from the remote branch
     const existingFileExists = await stat(join(root, "existing.md")).then(() => true, () => false);
@@ -467,10 +477,30 @@ describe("GitBackend — shared sync", () => {
     // Second sync with no changes: branch exists locally, rebase is no-op → "up-to-date"
     const result = await backend.sync({ entry, validation: { ok: true, issues: [] } });
 
-    expect(result.pushed).toBe(true);
+    expect(result.pushed).toBe(false);
     expect(result.outcome).toBe("up-to-date");
     const git = new Git(testRun);
     expect(await git.currentBranch(root)).toBe(branch);
+  });
+
+  it("does not call pushForceWithLease on a no-op shared sync", async () => {
+    const origin = await makeTrackedOrigin();
+    const root = await cloneOrigin(origin);
+    const branch = "user/test/hub";
+
+    // First sync: establishes the branch on origin
+    const backend = new GitBackend(new Git(testRun), new FakeGh() as unknown as Gh);
+    const entry = makeEntry(root, "shared", { branch });
+    await backend.sync({ entry, validation: { ok: true, issues: [] } });
+
+    // Second sync via recording Git: nothing changed → push must be skipped
+    const recordingGit = new PushRecordingGit(testRun);
+    const backend2 = new GitBackend(recordingGit, new FakeGh() as unknown as Gh);
+    const result = await backend2.sync({ entry, validation: { ok: true, issues: [] } });
+
+    expect(result.pushed).toBe(false);
+    expect(result.outcome).toBe("up-to-date");
+    expect(recordingGit.pushForceCalls).toBe(0);
   });
 
   it("pushForceWithLease succeeds after rebase rewrites shared branch history", async () => {
