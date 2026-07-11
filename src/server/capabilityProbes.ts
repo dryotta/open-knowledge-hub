@@ -193,7 +193,12 @@ function errorText(error: unknown): string {
 }
 
 function isInteractiveDecline(error: unknown): boolean {
-  return /abort|cancel|declin|deni|reject|not approved/i.test(errorText(error));
+  const text = errorText(error);
+  const decision = String.raw`(?:cancel(?:led|ed|lation)?|declin(?:ed)?|deni(?:ed|al)?|reject(?:ed|ion)?|not approved)`;
+  return new RegExp(
+    String.raw`(?:\buser\b.{0,40}\b${decision}\b|\b${decision}\b.{0,40}\bby (?:the )?user\b)`,
+    "i",
+  ).test(text);
 }
 
 function isAbortError(error: unknown): boolean {
@@ -349,4 +354,375 @@ export async function runBasicSamplingProbe(
             : probe("failed", "sampling.request_failed", "Basic sampling failed.");
     runs.updateProbe(clientKey, runId, "samplingBasic", result);
   }
+}
+
+const CAPABILITY_ECHO_TOOL = {
+  name: "capability_echo",
+  description: "Echo one object to verify sampling tool use.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      value: { type: "string" },
+    },
+    required: ["value"],
+    additionalProperties: false,
+  },
+};
+
+const SAMPLING_TOOLS_USER_MESSAGE = {
+  role: "user" as const,
+  content: {
+    type: "text" as const,
+    text: "Call capability_echo exactly once with an object containing value, then summarize success.",
+  },
+};
+
+type InteractiveErrorMessages = {
+  timeout: CapabilityProbe;
+  notImplemented: CapabilityProbe;
+  aborted: CapabilityProbe;
+  notCompleted: CapabilityProbe;
+  failed: CapabilityProbe;
+};
+
+function classifyInteractiveError(error: unknown, messages: InteractiveErrorMessages): CapabilityProbe {
+  const code = errorCode(error);
+  if (code === ErrorCode.RequestTimeout) return messages.timeout;
+  if (code === ErrorCode.MethodNotFound) return messages.notImplemented;
+  if (isAbortError(error)) return messages.aborted;
+  if (isInteractiveDecline(error)) return messages.notCompleted;
+  return messages.failed;
+}
+
+type ToolUseValidation =
+  | { valid: true; id: string; assistantContent: CreateMessageResultWithTools["content"] }
+  | { valid: false; result: CapabilityProbe };
+
+function validateToolUseResult(result: unknown): ToolUseValidation {
+  if (!isRecord(result) || result.role !== "assistant") {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_missing_tool_use", "Sampling did not return a tool use."),
+    };
+  }
+
+  const assistantContent = result.content;
+  const blocks = Array.isArray(assistantContent) ? assistantContent : [assistantContent];
+  const toolUses = blocks.filter((block) => isRecord(block) && block.type === "tool_use");
+
+  if (toolUses.length === 0) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_missing_tool_use", "Sampling did not return a tool use."),
+    };
+  }
+
+  const ids = toolUses
+    .map((block) => (typeof block.id === "string" && block.id.trim().length > 0 ? block.id : undefined))
+    .filter((id): id is string => id !== undefined);
+  if (new Set(ids).size !== ids.length) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_duplicate_id", "Sampling returned duplicate tool-use IDs."),
+    };
+  }
+  if (toolUses.length !== 1) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_multiple_tool_uses", "Sampling returned more than one tool use."),
+    };
+  }
+
+  const toolUse = toolUses[0]!;
+  if (typeof toolUse.id !== "string" || toolUse.id.trim().length === 0) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_invalid_id", "Sampling returned an invalid tool-use ID."),
+    };
+  }
+  if (toolUse.name !== CAPABILITY_ECHO_TOOL.name) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_unknown_tool", "Sampling returned an unknown tool name."),
+    };
+  }
+  if (
+    !isRecord(toolUse.input) ||
+    typeof toolUse.input.value !== "string" ||
+    Object.keys(toolUse.input).length !== 1
+  ) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_invalid_input", "Sampling returned invalid tool input."),
+    };
+  }
+
+  return {
+    valid: true,
+    id: toolUse.id,
+    assistantContent: assistantContent as CreateMessageResultWithTools["content"],
+  };
+}
+
+export async function runSamplingToolsProbe(
+  client: CapabilityProbeClient,
+  runs: CapabilityRunStore,
+  clientKey: object,
+  runId: string,
+  timeouts: CapabilityProbeTimeouts,
+  relatedTask?: RelatedTaskMetadata,
+): Promise<void> {
+  const run = runs.getRunForClient(clientKey, runId);
+  if (run.report.probes.samplingTools.status !== "pending") return;
+
+  try {
+    const options = requestOptions(timeouts.samplingMs, run.signal, relatedTask);
+    const firstResult = await client.createMessage(
+      {
+        messages: [SAMPLING_TOOLS_USER_MESSAGE],
+        includeContext: "none",
+        maxTokens: 64,
+        tools: [CAPABILITY_ECHO_TOOL],
+        toolChoice: { mode: "required" },
+      },
+      options,
+    );
+    const toolUse = validateToolUseResult(firstResult);
+    if (!toolUse.valid) {
+      runs.updateProbe(clientKey, runId, "samplingTools", toolUse.result);
+      return;
+    }
+
+    const finalResult = await client.createMessage(
+      {
+        messages: [
+          SAMPLING_TOOLS_USER_MESSAGE,
+          {
+            role: "assistant",
+            content: toolUse.assistantContent,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                toolUseId: toolUse.id,
+                content: [{ type: "text", text: "capability_echo completed" }],
+              },
+            ],
+          },
+        ],
+        includeContext: "none",
+        maxTokens: 64,
+        tools: [CAPABILITY_ECHO_TOOL],
+        toolChoice: { mode: "none" },
+      },
+      options,
+    );
+
+    runs.updateProbe(
+      clientKey,
+      runId,
+      "samplingTools",
+      hasAssistantText(finalResult)
+        ? {
+            status: "passed",
+            code: "sampling.tools_passed",
+            message: "Sampling completed one synthetic tool call.",
+            evidence: { kind: "count", value: 1 },
+          }
+        : probe("failed", "sampling.tools_invalid_final", "Sampling returned an invalid final response."),
+    );
+  } catch (error) {
+    runs.updateProbe(
+      clientKey,
+      runId,
+      "samplingTools",
+      classifyInteractiveError(error, {
+        timeout: probe("failed", "sampling.tools_timeout", "Sampling with tools timed out."),
+        notImplemented: probe(
+          "failed",
+          "sampling.tools_not_implemented",
+          "Sampling with tools was advertised but is not implemented.",
+        ),
+        aborted: probe("failed", "sampling.tools_aborted", "Sampling with tools was aborted."),
+        notCompleted: probe(
+          "supported_not_completed",
+          "sampling.tools_not_completed",
+          "Sampling with tools was supported but not completed by the user.",
+        ),
+        failed: probe("failed", "sampling.tools_request_failed", "Sampling with tools failed."),
+      }),
+    );
+  }
+}
+
+type ElicitationKind = "form" | "url";
+
+function elicitationErrorProbe(kind: ElicitationKind, error: unknown): CapabilityProbe {
+  const label = kind === "form" ? "Form elicitation" : "URL elicitation";
+  return classifyInteractiveError(error, {
+    timeout: probe("failed", `elicitation.${kind}_timeout`, `${label} timed out.`),
+    notImplemented: probe(
+      "failed",
+      `elicitation.${kind}_not_implemented`,
+      `${label} was advertised but is not implemented.`,
+    ),
+    aborted: probe("failed", `elicitation.${kind}_aborted`, `${label} was aborted.`),
+    notCompleted: probe(
+      "supported_not_completed",
+      `elicitation.${kind}_not_completed`,
+      `${label} was supported but not completed by the user.`,
+    ),
+    failed: probe("failed", `elicitation.${kind}_request_failed`, `${label} failed.`),
+  });
+}
+
+function elicitationAction(result: unknown): "accept" | "decline" | "cancel" | undefined {
+  if (!isRecord(result)) return undefined;
+  return result.action === "accept" || result.action === "decline" || result.action === "cancel"
+    ? result.action
+    : undefined;
+}
+
+export async function runFormElicitationProbe(
+  client: CapabilityProbeClient,
+  runs: CapabilityRunStore,
+  clientKey: object,
+  runId: string,
+  timeouts: CapabilityProbeTimeouts,
+  relatedTask?: RelatedTaskMetadata,
+): Promise<void> {
+  const run = runs.getRunForClient(clientKey, runId);
+  if (run.report.probes.elicitationForm.status !== "pending") return;
+
+  try {
+    const result = await client.elicitInput(
+      {
+        mode: "form",
+        message: "Confirm this MCP client capability test.",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            confirmed: { type: "boolean", title: "Confirm capability test" },
+          },
+          required: ["confirmed"],
+        },
+      },
+      requestOptions(timeouts.elicitationMs, run.signal, relatedTask),
+    );
+    const action = elicitationAction(result);
+    let next: CapabilityProbe;
+    if (action === "accept") {
+      next =
+        isRecord(result) && isRecord(result.content) && typeof result.content.confirmed === "boolean"
+          ? probe("passed", "elicitation.form_passed", "Form elicitation returned valid confirmation.")
+          : probe(
+              "failed",
+              "elicitation.form_invalid_content",
+              "Form elicitation accepted without valid confirmation.",
+            );
+    } else if (action === "decline" || action === "cancel") {
+      next = probe(
+        "supported_not_completed",
+        "elicitation.form_not_completed",
+        "Form elicitation was supported but not completed by the user.",
+      );
+    } else {
+      next = probe("failed", "elicitation.form_invalid_result", "Form elicitation returned an invalid result.");
+    }
+    runs.updateProbe(clientKey, runId, "elicitationForm", next);
+  } catch (error) {
+    runs.updateProbe(clientKey, runId, "elicitationForm", elicitationErrorProbe("form", error));
+  }
+}
+
+export async function runUrlElicitationProbe(
+  client: CapabilityProbeClient,
+  runs: CapabilityRunStore,
+  clientKey: object,
+  runId: string,
+  timeouts: CapabilityProbeTimeouts,
+  relatedTask?: RelatedTaskMetadata,
+): Promise<void> {
+  const run = runs.getRunForClient(clientKey, runId);
+  if (run.report.probes.elicitationUrl.status !== "pending") return;
+
+  try {
+    const result = await client.elicitInput(
+      {
+        mode: "url",
+        message: "Open this reserved URL to confirm URL elicitation support.",
+        elicitationId: `capabilities-${runId}`,
+        url: `https://example.invalid/open-knowledge-hub/capabilities/${encodeURIComponent(runId)}`,
+      },
+      requestOptions(timeouts.elicitationMs, run.signal, relatedTask),
+    );
+    const action = elicitationAction(result);
+    const next =
+      action === "accept"
+        ? probe("passed", "elicitation.url_passed", "URL elicitation was accepted.")
+        : action === "decline" || action === "cancel"
+          ? probe(
+              "supported_not_completed",
+              "elicitation.url_not_completed",
+              "URL elicitation was supported but not completed by the user.",
+            )
+          : probe("failed", "elicitation.url_invalid_result", "URL elicitation returned an invalid result.");
+    runs.updateProbe(clientKey, runId, "elicitationUrl", next);
+  } catch (error) {
+    runs.updateProbe(clientKey, runId, "elicitationUrl", elicitationErrorProbe("url", error));
+  }
+}
+
+export interface CapabilityTaskProbeContext {
+  taskId: string;
+  setInputRequired(): Promise<void>;
+  setWorking(): Promise<void>;
+}
+
+async function runInteractiveProbe(
+  runs: CapabilityRunStore,
+  clientKey: object,
+  runId: string,
+  key: "samplingBasic" | "samplingTools" | "elicitationForm" | "elicitationUrl",
+  task: CapabilityTaskProbeContext | undefined,
+  execute: () => Promise<void>,
+): Promise<void> {
+  if (runs.getRunForClient(clientKey, runId).report.probes[key].status !== "pending") return;
+  if (task === undefined) {
+    await execute();
+    return;
+  }
+
+  await task.setInputRequired();
+  try {
+    await execute();
+  } finally {
+    await task.setWorking();
+  }
+}
+
+export async function runCapabilityProbes(
+  client: CapabilityProbeClient,
+  runs: CapabilityRunStore,
+  clientKey: object,
+  runId: string,
+  timeouts: CapabilityProbeTimeouts,
+  task?: CapabilityTaskProbeContext,
+): Promise<void> {
+  const relatedTask = task === undefined ? undefined : { taskId: task.taskId };
+  await runRootsProbe(client, runs, clientKey, runId, timeouts, relatedTask);
+  await runInteractiveProbe(runs, clientKey, runId, "samplingBasic", task, () =>
+    runBasicSamplingProbe(client, runs, clientKey, runId, timeouts, relatedTask),
+  );
+  await runInteractiveProbe(runs, clientKey, runId, "samplingTools", task, () =>
+    runSamplingToolsProbe(client, runs, clientKey, runId, timeouts, relatedTask),
+  );
+  await runInteractiveProbe(runs, clientKey, runId, "elicitationForm", task, () =>
+    runFormElicitationProbe(client, runs, clientKey, runId, timeouts, relatedTask),
+  );
+  await runInteractiveProbe(runs, clientKey, runId, "elicitationUrl", task, () =>
+    runUrlElicitationProbe(client, runs, clientKey, runId, timeouts, relatedTask),
+  );
 }
