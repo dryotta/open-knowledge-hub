@@ -3,6 +3,34 @@ import { z } from "zod";
 const container = z.string().optional();
 const moduleArg = z.string().optional();
 const todoPriority = z.enum(["lowest", "low", "normal", "medium", "high", "highest"]);
+const CAPABILITY_APP_ERROR = "Invalid MCP App observations.";
+const capabilityThemes = ["provided", "absent"] as const;
+const capabilityResizeOutcomes = ["observed", "fixed_container", "unobserved"] as const;
+
+function isCapabilityAppInput(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const input = value as Record<string, unknown>;
+  const keys = Object.keys(input).sort();
+  return (
+    keys.length === 3 &&
+    keys[0] === "initialized" &&
+    keys[1] === "resize" &&
+    keys[2] === "theme" &&
+    input.initialized === true &&
+    capabilityThemes.includes(input.theme as (typeof capabilityThemes)[number]) &&
+    capabilityResizeOutcomes.includes(input.resize as (typeof capabilityResizeOutcomes)[number])
+  );
+}
+
+// Replace malformed input before strict parsing so validation never reflects App fields.
+const capabilityApp = z.preprocess(
+  (value) => isCapabilityAppInput(value) ? value : null,
+  z.object({
+    initialized: z.literal(true),
+    theme: z.enum(capabilityThemes),
+    resize: z.enum(capabilityResizeOutcomes),
+  }, { error: CAPABILITY_APP_ERROR }).strict(),
+);
 
 /** Bare Zod arg shapes for every tool; descriptions come from resources/tool-meta/<name>.md. */
 export const toolShapes = {
@@ -49,6 +77,11 @@ export const toolShapes = {
     due: z.string().nullable().optional(),
     priority: todoPriority.nullable().optional(),
     apply: z.boolean().optional(),
+  },
+  capabilities: {
+    action: z.enum(["scan", "app_report", "task_cancel", "report"]).optional(),
+    runId: z.string().min(16).optional(),
+    app: capabilityApp.optional(),
   },
 };
 

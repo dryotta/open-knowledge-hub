@@ -69,13 +69,14 @@ function normalizedWhitespace(text: string | undefined): string {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 10 tools and no prompts", async () => {
+  it("exposes exactly the 11 tools, capability surfaces, and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([
       "add_container",
       "add_module",
       "ask",
+      "capabilities",
       "config",
       "context",
       "inspect",
@@ -84,7 +85,17 @@ describe("MCP server surface", () => {
       "sync",
       "todos",
     ]);
-    expect(client.getServerCapabilities()?.prompts).toBeUndefined();
+    const capabilities = client.getServerCapabilities();
+    expect(capabilities?.prompts).toBeUndefined();
+    expect(capabilities?.resources).toBeDefined();
+    expect(capabilities?.tasks).toEqual({
+      list: {},
+      cancel: {},
+      requests: { tools: { call: {} } },
+    });
+    expect(capabilities?.extensions?.["io.modelcontextprotocol/ui"]).toEqual({
+      mimeTypes: ["text/html;profile=mcp-app"],
+    });
   });
 
   it("tool titles/descriptions load from resources", async () => {
