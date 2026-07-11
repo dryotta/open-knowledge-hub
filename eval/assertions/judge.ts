@@ -64,7 +64,7 @@ interface Ctx {
     artifacts?: ArtifactsConfig;
   };
   providerResponse?: {
-    metadata?: { containerPath?: string; fixtureDir?: string; okhHome?: string; toolCalls?: string[] };
+    metadata?: { containerPath?: string; fixtureDir?: string; okhHome?: string; toolCalls?: string[]; toolEvents?: import("../copilot.js").ToolEvent[] };
   };
 }
 
@@ -93,7 +93,7 @@ export default async function judge(
     ...(context.config?.graderModel ? { model: context.config.graderModel } : {}),
   });
   const byId = new Map(results.map((r) => [r.id, r]));
-  const checkCtx = { okhHome: meta.okhHome, toolCalls: meta.toolCalls ?? [], transcript: output };
+  const checkCtx = { okhHome: meta.okhHome, toolCalls: meta.toolCalls ?? [], toolEvents: meta.toolEvents, transcript: output };
 
   const parts: string[] = [];
   let pass = true;

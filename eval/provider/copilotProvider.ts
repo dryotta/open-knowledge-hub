@@ -73,6 +73,11 @@ export default class CopilotProvider {
       },
     );
 
+    if (result.code !== 0) {
+      const code = result.code === null ? "missing" : String(result.code);
+      throw new Error(`Copilot turn failed with exit code ${code}`);
+    }
+
     return {
       output: result.transcript,
       metadata: {
@@ -82,6 +87,7 @@ export default class CopilotProvider {
         fixtureDir: prov.fixtureDir,
         originPath: prov.originPath,
         toolCalls: result.toolCalls,
+        toolEvents: result.toolEvents,
         turns: result.turns,
         cost: result.cost,
         exitCode: result.code,

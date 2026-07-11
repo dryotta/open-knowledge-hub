@@ -2,9 +2,11 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadRegistry, findContainer } from "../../src/registry/registry.js";
 import { discoverModules } from "../../src/modules/discovery.js";
+import type { ToolEvent } from "../copilot.js";
+import { matchesTool } from "./tool-events.js";
 
 export type Check =
-  | { kind: "tool"; name: string }
+  | { kind: "tool"; name: string; arguments?: Record<string, unknown>; turn?: number }
   | { kind: "container"; name: string; backend?: string; module?: string }
   | { kind: "manifest"; name: string }
   | { kind: "wake-phrase"; default?: string }
@@ -14,6 +16,7 @@ export type Check =
 export interface CheckContext {
   okhHome?: string;
   toolCalls?: string[];
+  toolEvents?: ToolEvent[];
   transcript: string;
 }
 
@@ -74,6 +77,13 @@ export async function checkWakePhrase(okhHome: string | undefined, def = "hub"):
 export async function evaluateCheck(check: Check, ctx: CheckContext): Promise<CheckResult> {
   switch (check.kind) {
     case "tool": {
+      const events = ctx.toolEvents;
+      if (events && events.length > 0) {
+        const exp = { name: check.name, arguments: check.arguments, turn: check.turn };
+        const matched = events.some((ev) => matchesTool(ev, exp));
+        return { pass: matched, reason: `tool ${check.name} ${matched ? "called" : "not called"}` };
+      }
+      // Fallback to legacy toolCalls string list when no events
       const called = (ctx.toolCalls ?? []).includes(check.name);
       return { pass: called, reason: `tool ${check.name} ${called ? "called" : "not called"}` };
     }

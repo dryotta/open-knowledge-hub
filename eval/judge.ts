@@ -123,6 +123,10 @@ async function judgeOnce(
       cwd: workspace,
       timeoutMs: opts.timeoutMs ?? 180_000,
     });
+    if (res.code !== 0) {
+      const code = res.code === null ? "missing" : String(res.code);
+      throw new Error(`Judge process failed with exit code ${code}`);
+    }
     return res.transcript;
   } finally {
     await rm(root, { recursive: true, force: true });

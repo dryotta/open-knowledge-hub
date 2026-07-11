@@ -57,7 +57,18 @@ describe("CopilotProvider", () => {
 
     expect(res.output).toContain("done");
     expect(res.metadata.toolCalls).toContain("ask");
+    expect(res.metadata.toolEvents).toBeInstanceOf(Array);
+    expect(res.metadata.toolEvents.length).toBeGreaterThan(0);
     expect(await exists(join(res.metadata.containerPath, "kb", ".okh", "module.yaml"))).toBe(true);
+  });
+
+  it("rejects when a conversation turn exits non-zero", async () => {
+    const fake: CopilotTurnRunner = async () =>
+      turn({ code: 1, messages: ["error"], lastMessage: "error" });
+    const provider = new CopilotProvider({ config: { runner: fake } });
+    await expect(
+      provider.callApi("do something", { vars: { env: "empty" } }),
+    ).rejects.toThrow(/Copilot turn.*exit code 1/);
   });
 
   it("drives guarded follow-up turns and aggregates tool calls across turns", async () => {

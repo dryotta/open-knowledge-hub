@@ -11,6 +11,8 @@ import moduleUnchanged from "../eval/assertions/module-unchanged.js";
 import containerRegistered from "../eval/assertions/container-registered.js";
 import manifestInitialized from "../eval/assertions/manifest-initialized.js";
 import wakePhraseSet from "../eval/assertions/wake-phrase-set.js";
+import { isDeepSubset, matchesTool, missingTools } from "../eval/assertions/tool-events.js";
+import type { ToolEvent } from "../eval/copilot.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -19,10 +21,174 @@ afterEach(async () => {
 const ctx = (metadata: Record<string, unknown>, config: Record<string, unknown> = {}) =>
   ({ providerResponse: { metadata }, config });
 
+const mkEvent = (overrides: Partial<ToolEvent> = {}): ToolEvent => ({
+  turn: 1,
+  callId: "c1",
+  server: "open-knowledge-hub",
+  tool: "run",
+  arguments: {},
+  completed: true,
+  success: true,
+  ...overrides,
+});
+
+describe("isDeepSubset", () => {
+  it("matches primitives with Object.is", () => {
+    expect(isDeepSubset(42, 42)).toBe(true);
+    expect(isDeepSubset("a", "a")).toBe(true);
+    expect(isDeepSubset(42, 43)).toBe(false);
+  });
+  it("matches nested object subsets recursively", () => {
+    expect(isDeepSubset({ a: 1, b: { c: 2, d: 3 } }, { b: { c: 2 } })).toBe(true);
+    expect(isDeepSubset({ a: 1, b: { c: 2 } }, { b: { c: 99 } })).toBe(false);
+  });
+  it("arrays are not treated as object subsets — must match exactly", () => {
+    expect(isDeepSubset([1, 2, 3], [1, 2, 3])).toBe(true);
+    expect(isDeepSubset([1, 2, 3], [1, 2])).toBe(false);
+  });
+  it("null handling", () => {
+    expect(isDeepSubset(null, null)).toBe(true);
+    expect(isDeepSubset(null, {})).toBe(false);
+    expect(isDeepSubset({}, null)).toBe(false);
+  });
+});
+
+describe("matchesTool", () => {
+  it("matches a successful completed event with matching tool and server", () => {
+    const ev = mkEvent({ tool: "run", arguments: { module: "wiki", skill: "write" } });
+    expect(matchesTool(ev, { name: "run", arguments: { module: "wiki", skill: "write" } })).toBe(true);
+  });
+  it("rejects when completed is false", () => {
+    expect(matchesTool(mkEvent({ completed: false }), { name: "run" })).toBe(false);
+  });
+  it("rejects when success is false", () => {
+    expect(matchesTool(mkEvent({ success: false }), { name: "run" })).toBe(false);
+  });
+  it("defaults server to open-knowledge-hub", () => {
+    expect(matchesTool(mkEvent({ server: "other" }), { name: "run" })).toBe(false);
+    expect(matchesTool(mkEvent({ server: "open-knowledge-hub" }), { name: "run" })).toBe(true);
+  });
+  it("matches explicit server override", () => {
+    expect(matchesTool(mkEvent({ server: "custom" }), { name: "run", server: "custom" })).toBe(true);
+  });
+  it("matches optional turn exactly", () => {
+    expect(matchesTool(mkEvent({ turn: 2 }), { name: "run", turn: 2 })).toBe(true);
+    expect(matchesTool(mkEvent({ turn: 1 }), { name: "run", turn: 2 })).toBe(false);
+  });
+  it("matches deep argument subsets", () => {
+    const ev = mkEvent({ tool: "run", arguments: { module: "wiki", skill: "write", extra: true } });
+    expect(matchesTool(ev, { name: "run", arguments: { module: "wiki" } })).toBe(true);
+    expect(matchesTool(ev, { name: "run", arguments: { module: "other" } })).toBe(false);
+  });
+});
+
+describe("missingTools", () => {
+  const events: ToolEvent[] = [
+    mkEvent({ tool: "run", callId: "c1", arguments: { module: "wiki", skill: "write" } }),
+    mkEvent({ tool: "inspect", callId: "c2", arguments: { module: "wiki" } }),
+    mkEvent({ tool: "sync", callId: "c3", arguments: { container: "wiki-hub" } }),
+  ];
+
+  it("returns empty array when all expectations match (unordered)", () => {
+    expect(missingTools(events, [
+      { name: "run", arguments: { module: "wiki", skill: "write" } },
+      { name: "inspect", arguments: { module: "wiki" } },
+      { name: "sync", arguments: { container: "wiki-hub" } },
+    ])).toEqual([]);
+  });
+
+  it("returns missing for wrong module argument", () => {
+    const result = missingTools(events, [{ name: "run", arguments: { module: "other" } }]);
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns empty for ordered:true with correct order", () => {
+    expect(missingTools(events, [
+      { name: "run", arguments: { module: "wiki", skill: "write" } },
+      { name: "inspect", arguments: { module: "wiki" } },
+      { name: "sync", arguments: { container: "wiki-hub" } },
+    ], true)).toEqual([]);
+  });
+
+  it("returns unmatched when order is reversed with ordered:true", () => {
+    const result = missingTools(events, [
+      { name: "sync", arguments: { container: "wiki-hub" } },
+      { name: "run", arguments: { module: "wiki", skill: "write" } },
+    ], true);
+    // sync is at index 2, run is at index 0 — can't match monotonically after sync
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("skips events with success:false", () => {
+    const failedEvents: ToolEvent[] = [
+      mkEvent({ tool: "run", success: false }),
+    ];
+    expect(missingTools(failedEvents, ["run"])).toEqual(["run"]);
+  });
+
+  it("handles string expectations against successful events", () => {
+    expect(missingTools(events, ["run", "inspect", "sync"])).toEqual([]);
+    expect(missingTools(events, ["run", "missing"])).toEqual(["missing"]);
+  });
+});
+
 describe("tools-called", () => {
   it("passes when expected tools are present, fails when missing", () => {
-    expect(toolsCalled("", ctx({ toolCalls: ["ask", "sync"] }, { expect: ["ask"] })).pass).toBe(true);
-    expect(toolsCalled("", ctx({ toolCalls: ["ask"] }, { expect: ["learn"] })).pass).toBe(false);
+    const evts = [
+      mkEvent({ tool: "ask", callId: "c1" }),
+      mkEvent({ tool: "sync", callId: "c2" }),
+    ];
+    expect(toolsCalled("", ctx({ toolCalls: ["ask", "sync"], toolEvents: evts }, { expect: ["ask"] })).pass).toBe(true);
+    expect(toolsCalled("", ctx({ toolCalls: ["ask"], toolEvents: [mkEvent({ tool: "ask" })] }, { expect: ["learn"] })).pass).toBe(false);
+  });
+
+  it("passes with structured ToolExpectation and ordered:true", () => {
+    const evts: ToolEvent[] = [
+      mkEvent({ tool: "run", callId: "c1", arguments: { module: "wiki", skill: "write" } }),
+      mkEvent({ tool: "inspect", callId: "c2", arguments: { module: "wiki" } }),
+      mkEvent({ tool: "sync", callId: "c3", arguments: { container: "wiki-hub" } }),
+    ];
+    const result = toolsCalled("", ctx(
+      { toolCalls: ["inspect", "run", "sync"], toolEvents: evts },
+      {
+        expect: [
+          { name: "run", arguments: { module: "wiki", skill: "write" } },
+          { name: "inspect", arguments: { module: "wiki" } },
+          { name: "sync", arguments: { container: "wiki-hub" } },
+        ],
+        ordered: true,
+      },
+    ));
+    expect(result.pass).toBe(true);
+  });
+
+  it("fails with ordered:true when order is reversed", () => {
+    const evts: ToolEvent[] = [
+      mkEvent({ tool: "sync", callId: "c1", arguments: { container: "wiki-hub" } }),
+      mkEvent({ tool: "run", callId: "c2", arguments: { module: "wiki", skill: "write" } }),
+    ];
+    const result = toolsCalled("", ctx(
+      { toolCalls: ["run", "sync"], toolEvents: evts },
+      {
+        expect: [
+          { name: "run", arguments: { module: "wiki", skill: "write" } },
+          { name: "sync", arguments: { container: "wiki-hub" } },
+        ],
+        ordered: true,
+      },
+    ));
+    expect(result.pass).toBe(false);
+  });
+
+  it("fails when event has success:false even if tool name matches", () => {
+    const evts: ToolEvent[] = [
+      mkEvent({ tool: "run", success: false }),
+    ];
+    const result = toolsCalled("", ctx(
+      { toolCalls: [], toolEvents: evts },
+      { expect: [{ name: "run" }] },
+    ));
+    expect(result.pass).toBe(false);
   });
 });
 
