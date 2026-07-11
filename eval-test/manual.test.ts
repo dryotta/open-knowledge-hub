@@ -151,6 +151,83 @@ describe("runManual", () => {
     expect(output.at(-1)).toBe(`Cleaned ${provisioned.root}`);
   });
 
+  it("rejects the cleanup error when session work succeeds but cleanup fails", async () => {
+    const cleanupError = new Error("cleanup failed");
+    const output: string[] = [];
+
+    await expect(runManual([], {
+      provision: async () => provisioned,
+      scenarios: async () => [],
+      launch: async () => 7,
+      cleanup: async () => {
+        throw cleanupError;
+      },
+      output: (line) => {
+        output.push(line);
+      },
+    })).rejects.toBe(cleanupError);
+
+    expect(output).not.toContain(`Cleaned ${provisioned.root}`);
+  });
+
+  it("rejects an AggregateError when both session work and cleanup fail", async () => {
+    const launchError = new Error("copilot unavailable");
+    const cleanupError = new Error("cleanup failed");
+    const output: string[] = [];
+
+    try {
+      await runManual(["wiki"], {
+        provision: async () => provisioned,
+        scenarios: async () => [],
+        launch: async () => {
+          throw launchError;
+        },
+        cleanup: async () => {
+          throw cleanupError;
+        },
+        output: (line) => {
+          output.push(line);
+        },
+      });
+      throw new Error("expected runManual to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(error).toMatchObject({ message: "manual session and cleanup both failed" });
+      const aggregate = error as AggregateError;
+      expect(aggregate.errors).toHaveLength(2);
+      expect(aggregate.errors[0]).toBe(launchError);
+      expect(aggregate.errors[1]).toBe(cleanupError);
+    }
+
+    expect(output).not.toContain(`Cleaned ${provisioned.root}`);
+  });
+
+  it("aggregates cleanup failure even when session work throws undefined", async () => {
+    const cleanupError = new Error("cleanup failed");
+
+    try {
+      await runManual(["wiki"], {
+        provision: async () => provisioned,
+        scenarios: async () => [],
+        launch: async () => {
+          throw undefined;
+        },
+        cleanup: async () => {
+          throw cleanupError;
+        },
+        output: () => undefined,
+      });
+      throw new Error("expected runManual to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(error).toMatchObject({ message: "manual session and cleanup both failed" });
+      const aggregate = error as AggregateError;
+      expect(aggregate.errors).toHaveLength(2);
+      expect(aggregate.errors[0]).toBeUndefined();
+      expect(aggregate.errors[1]).toBe(cleanupError);
+    }
+  });
+
   it("rejects invalid arguments before provisioning", async () => {
     let provisionedCount = 0;
     await expect(runManual(["bad-env"], {

@@ -255,14 +255,35 @@ export async function runManual(
 ): Promise<number> {
   const options = parseManualArgs(argv);
   const environment = await dependencies.provision(options.env);
+  let exitCode!: number;
+  let sessionFailed = false;
+  let sessionError: unknown;
   try {
     const scenarios = await dependencies.scenarios(options.env);
     printSession(environment, options.env, scenarios, dependencies.output);
-    return await dependencies.launch(buildCopilotInvocation(environment, options.model));
-  } finally {
+    exitCode = await dependencies.launch(buildCopilotInvocation(environment, options.model));
+  } catch (error) {
+    sessionFailed = true;
+    sessionError = error;
+  }
+
+  try {
     await dependencies.cleanup(environment.root);
     dependencies.output(`Cleaned ${environment.root}`);
+  } catch (cleanupError) {
+    if (sessionFailed) {
+      throw new AggregateError(
+        [sessionError, cleanupError],
+        "manual session and cleanup both failed",
+      );
+    }
+    throw cleanupError;
   }
+
+  if (sessionFailed) {
+    throw sessionError;
+  }
+  return exitCode;
 }
 
 const invokedDirectly = !!process.argv[1] && resolve(process.argv[1]) === MODULE_PATH;
