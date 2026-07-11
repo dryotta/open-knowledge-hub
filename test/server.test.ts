@@ -213,6 +213,30 @@ describe("MCP server surface", () => {
     expect(updateTodo?.title).toBe("Update one todo");
   });
 
+  it("publishes the todos MCP App metadata and bundled resource", async () => {
+    const { client } = await connect();
+    const tools = (await client.listTools()).tools;
+    const todos = tools.find((tool) => tool.name === "todos");
+    const updateTodo = tools.find((tool) => tool.name === "update_todo");
+
+    expect(todos?._meta?.ui).toEqual({
+      resourceUri: "ui://open-knowledge-hub/todos",
+      visibility: ["model", "app"],
+    });
+    expect(updateTodo?._meta?.ui).toEqual({ visibility: ["model", "app"] });
+
+    const resource = await client.readResource({ uri: "ui://open-knowledge-hub/todos" });
+    const content = resource.contents[0];
+    expect(content).toMatchObject({
+      uri: "ui://open-knowledge-hub/todos",
+      mimeType: "text/html;profile=mcp-app",
+      _meta: { ui: { prefersBorder: true } },
+    });
+    expect("text" in content! ? content.text : "").toContain("<title>Open Knowledge Hub Todos</title>");
+    expect("text" in content! ? content.text : "").toContain('data-app="open-knowledge-hub-todos"');
+    expect("text" in content! ? content.text : "").not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
+  });
+
   it("update_todo and todos round-trip through the tool interface with structured results", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();

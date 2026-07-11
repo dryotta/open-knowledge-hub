@@ -1,8 +1,16 @@
+import { readFile } from "node:fs/promises";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  registerAppResource,
+  registerAppTool,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/server";
 import { OkhError } from "../errors.js";
 import { TodoService } from "../todos/service.js";
 import type { TodoPriority, TodoQuery, TodoRecord, TodoUpdateInput } from "../todos/types.js";
 import { handler, ok, toolReg } from "./toolSupport.js";
+
+export const TODO_APP_URI = "ui://open-knowledge-hub/todos";
 
 type TodosArgs = {
   container?: string;
@@ -141,9 +149,14 @@ function describeUpdate(
 }
 
 export async function registerTodoTools(server: McpServer, todos: TodoService): Promise<void> {
-  server.registerTool(
+  registerAppTool(
+    server,
     "todos",
-    { ...(await toolReg("todos")), annotations: { readOnlyHint: true, openWorldHint: false } },
+    {
+      ...(await toolReg("todos")),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      _meta: { ui: { resourceUri: TODO_APP_URI, visibility: ["model", "app"] } },
+    },
     handler(async (args: TodosArgs) => {
       const result = await todos.list(toTodoQuery(args));
       return ok(formatTodos(result.tasks, result.counts), {
@@ -154,12 +167,40 @@ export async function registerTodoTools(server: McpServer, todos: TodoService): 
     }),
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     "update_todo",
-    { ...(await toolReg("update_todo")), annotations: { readOnlyHint: false, openWorldHint: false } },
+    {
+      ...(await toolReg("update_todo")),
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      _meta: { ui: { visibility: ["model", "app"] } },
+    },
     handler(async (args: UpdateTodoArgs) => {
       const result = await todos.update(args.operation === "create" ? toCreateInput(args) : toPatchInput(args));
       return ok(describeUpdate(args, result), { todo: result.todo, dirtyContainer: result.dirtyContainer });
     }),
+  );
+
+  registerAppResource(
+    server,
+    "Open Knowledge Hub Todos",
+    TODO_APP_URI,
+    {
+      description: "Interactive filtering and completion for Open Knowledge Hub todo lists.",
+      _meta: { ui: { prefersBorder: true } },
+    },
+    async () => {
+      const html = await readFile(new URL("../../dist/apps/todos.html", import.meta.url), "utf8");
+      return {
+        contents: [
+          {
+            uri: TODO_APP_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: html,
+            _meta: { ui: { prefersBorder: true } },
+          },
+        ],
+      };
+    },
   );
 }
