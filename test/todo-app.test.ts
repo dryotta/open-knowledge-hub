@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyAppFilters, mergeRefreshedTasks, type AppFilters } from "../app/todos/model.js";
+import { applyAppFilters, canApplyUpdates, mergeRefreshedTasks, type AppFilters } from "../app/todos/model.js";
 import type { TodoRecord } from "../src/todos/types.js";
 
 const TODAY = "2026-07-10";
@@ -161,5 +161,24 @@ describe("applyAppFilters", () => {
     applyAppFilters(input, filters(), TODAY);
 
     expect(input).toEqual(before);
+  });
+});
+
+describe("canApplyUpdates", () => {
+  it("allows updates when the host advertises serverTools", () => {
+    expect(canApplyUpdates({ serverTools: {} })).toBe(true);
+    expect(canApplyUpdates({ serverTools: { listChanged: true } })).toBe(true);
+  });
+
+  it("blocks updates when the host advertises capabilities but omits serverTools", () => {
+    expect(canApplyUpdates({})).toBe(false);
+    expect(canApplyUpdates({ openLinks: {} })).toBe(false);
+    expect(canApplyUpdates({ serverTools: false })).toBe(false);
+    expect(canApplyUpdates({ serverTools: null })).toBe(false);
+  });
+
+  it("stays optimistic when capabilities are unknown so the timeout can surface hangs", () => {
+    expect(canApplyUpdates(undefined)).toBe(true);
+    expect(canApplyUpdates(null)).toBe(true);
   });
 });

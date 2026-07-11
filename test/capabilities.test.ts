@@ -168,6 +168,8 @@ describe("capabilities tool — all-supported client", () => {
     expect(features.elicitation?.available).toBe(true);
     expect(features.apps?.status).toBe("advertised");
     expect(features.apps?.available).toBe(true);
+    expect(features.serverTools?.status).toBe("unknown");
+    expect(features.serverTools?.available).toBe(false);
 
     // Text output must not contain any handler-provided secrets
     const text = textOf(res);
@@ -207,6 +209,8 @@ describe("capabilities tool — no-support client", () => {
     expect(features.elicitation?.available).toBe(false);
     expect(features.apps?.status).toBe("unsupported");
     expect(features.apps?.available).toBe(false);
+    expect(features.serverTools?.status).toBe("unsupported");
+    expect(features.serverTools?.available).toBe(false);
   });
 });
 
