@@ -71,6 +71,42 @@ describe("environments", () => {
     expect(await exists(root)).toBe(false);
   });
 
+  it("aggregates provisioning and temp-root cleanup failures in order", async () => {
+    const parent = await makeTempDir("okh-eval-parent-");
+    cleanups.push(parent);
+    const root = join(parent, "known-root");
+    const provisionError = new Error("git init failed exactly once");
+    const cleanupError = new Error("temp root removal failed exactly once");
+
+    try {
+      await provisionEnvironment("git", {
+        repoRoot: "C:/repo",
+        makeTempRoot: async () => {
+          await mkdir(root);
+          return root;
+        },
+        removeTempRoot: async (tempRoot) => {
+          expect(tempRoot).toBe(root);
+          throw cleanupError;
+        },
+        runner: async (command, args, options) => {
+          if (command === "git" && args[0] === "init") throw provisionError;
+          return testRun(command, args, options);
+        },
+      });
+      throw new Error("expected provisionEnvironment to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(error).toMatchObject({
+        message: `Failed to provision eval environment "git" and clean up temp root "${root}".`,
+      });
+      const aggregate = error as AggregateError;
+      expect(aggregate.errors).toEqual([provisionError, cleanupError]);
+      expect(aggregate.errors[0]).toBe(provisionError);
+      expect(aggregate.errors[1]).toBe(cleanupError);
+    }
+  });
+
   it("empty leaves an empty registry with an unregistered notes folder in the workspace", async () => {
     const prov = await provisionEnvironment("empty", { repoRoot: "C:/repo", runner: testRun });
     cleanups.push(prov.root);

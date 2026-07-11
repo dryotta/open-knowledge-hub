@@ -87,12 +87,14 @@ export interface Provisioned {
 }
 
 export type MakeTempRoot = (prefix: string) => Promise<string>;
+export type RemoveTempRoot = (root: string) => Promise<void>;
 
 export interface ProvisionEnvironmentOptions {
   repoRoot: string;
   label?: string;
   runner?: typeof run;
   makeTempRoot?: MakeTempRoot;
+  removeTempRoot?: RemoveTempRoot;
 }
 
 const fixturePath = (f: string): string => (isAbsolute(f) ? f : resolve(EVAL_ROOT, f));
@@ -145,6 +147,7 @@ export async function provisionEnvironment(
   const def = environments[env];
   const runner = opts.runner ?? run;
   const makeTempRoot: MakeTempRoot = opts.makeTempRoot ?? ((prefix) => mkdtemp(prefix));
+  const removeTempRoot: RemoveTempRoot = opts.removeTempRoot ?? ((root) => rm(root, { recursive: true, force: true }));
   const git = new Git(runner);
 
   const root = await makeTempRoot(join(tmpdir(), `okh-eval-${opts.label ?? env}-`));
@@ -197,7 +200,7 @@ export async function provisionEnvironment(
     return { root, okhHome, copilotHome, workspace, containerPath, fixtureDir: primaryFixtureDir, originPath };
   } catch (provisionError) {
     try {
-      await rm(root, { recursive: true, force: true });
+      await removeTempRoot(root);
     } catch (cleanupError) {
       throw new AggregateError(
         [provisionError, cleanupError],
