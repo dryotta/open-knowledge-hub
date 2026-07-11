@@ -78,7 +78,7 @@ async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: s
       name: "team",
       backend: { type: "git", config: { origin: "https://example.com/team.git" } },
       localPath: root,
-      sync: { mode: sync, config: sync === "shared" ? { branch: "user/test/hub" } : {} },
+      sync: { mode: sync, config: {} },
       addedAt: new Date().toISOString(),
     }],
   })}\n`, "utf8");

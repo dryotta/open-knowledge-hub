@@ -483,7 +483,7 @@ export class ContainerService {
       return { name: entry.name, backend: entry.backend.type, validation, action: "validated" };
     }
     return entry.sync.mode === "shared"
-      ? this.syncShared(entry, validation, message)
+      ? this.syncPr(entry, validation, message)
       : this.syncAuto(entry, validation, message);
   }
 
@@ -521,15 +521,12 @@ export class ContainerService {
     };
   }
 
-  private async syncShared(
+  private async syncPr(
     entry: ContainerEntry,
     validation: { ok: boolean; issues: string[] },
     message?: string,
   ): Promise<SyncResult> {
     const root = entry.localPath;
-    // entry.sync.config.branch holds the persistent shared branch configured during v1->v2 migration.
-    // The Git backend adapter (Task 2+) will use it to rebase and publish an idempotent PR.
-    // This legacy implementation continues to open ephemeral sync branches for backwards compat.
     const base = await this.git.currentBranch(root);
     if (base.startsWith(`okh/${entry.name}/sync-`)) {
       throw new OkhError(

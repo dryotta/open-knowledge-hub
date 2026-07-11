@@ -6,8 +6,11 @@ import { saveModuleManifest, moduleManifestExists } from "../modules/manifest.js
 
 const LEGACY_REL = join(".okh", "okh.yaml");
 
+const legacySyncModeEnum = z.enum(["auto", "pr"]);
+export type LegacySyncMode = z.infer<typeof legacySyncModeEnum>;
+
 const legacyContainerSchema = z.object({
-  sync: z.enum(["auto", "pr"]).optional(),
+  sync: legacySyncModeEnum.optional(),
   modules: z
     .array(z.object({ path: z.string(), type: z.string(), config: z.record(z.string(), z.unknown()).optional() }))
     .default([]),
@@ -19,7 +22,7 @@ const legacyContainerSchema = z.object({
  * delete the legacy file, and return the raw legacy sync string. Idempotent: no-op
  * when the legacy file is absent.
  */
-export async function migrateLegacyContainerManifest(root: string): Promise<string | undefined> {
+export async function migrateLegacyContainerManifest(root: string): Promise<LegacySyncMode | undefined> {
   const legacyPath = join(root, LEGACY_REL);
   let raw: string;
   try {
