@@ -563,6 +563,43 @@ describe("health-hub lint fixture", () => {
   });
 });
 
+describe("ask/across-hubs — no-fabrication criterion", () => {
+  it("states complete fixture-backed fact boundary, allows coverage-gap/inference, rejects unsupported claims presented as known facts", async () => {
+    const doc = parseYaml(await readFile(join(SCENARIOS, "ask/across-hubs.yaml"), "utf8"));
+    const sc = doc[0];
+    const judgeAssert = sc.tests[0].assert.find(
+      (a: { type: string; value?: string }) =>
+        a.type === "javascript" && String(a.value).endsWith("judge.ts"),
+    );
+    const criteria = judgeAssert?.config?.criteria as
+      | Array<{ id: string; text: string; required?: boolean }>
+      | undefined;
+    const crit = criteria?.find((c) => c.id === "no-fabrication");
+    expect(crit, "no-fabrication criterion must exist").toBeDefined();
+    const text = crit!.text;
+
+    // Must name fixture-backed facts present in both hubs
+    expect(text, "must reference signed session tokens").toMatch(/signed session token/i);
+    // Must name kb-hub-specific facts
+    expect(text, "must reference issued at login (kb-hub fact)").toMatch(/issued at login/i);
+    expect(text, "must reference 24-hour expiry (kb-hub fact)").toMatch(/24.hour/i);
+    expect(text, "must reference rotate on use (kb-hub fact)").toMatch(/rotate on use/i);
+    // Must name memory evidence
+    expect(text, "must reference clock skew or drift (memory evidence)").toMatch(/clock skew|clock drift/i);
+
+    // Must explicitly allow coverage-gap statements
+    expect(text, "must explicitly allow coverage-gap statements").toMatch(/coverage.gap/i);
+    // Must explicitly allow clearly labeled inference or synthesis
+    expect(text, "must explicitly allow labeled inference or synthesis").toMatch(/inference|synthesis/i);
+
+    // Must state that unsupported details presented as source-backed facts should fail
+    expect(text, "must reject unsupported technical details presented as known facts").toMatch(/unsupported/i);
+
+    // Criterion must remain required (not required:false)
+    expect(crit!.required, "no-fabrication must not be required:false").not.toBe(false);
+  });
+});
+
 describe("lint scenario uses health environment", () => {
   async function loadScenario(path: string) {
     const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));

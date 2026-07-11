@@ -20,4 +20,13 @@
               - id: spans-hubs
                 text: The answer draws on more than one hub where the relevant facts live.
               - id: no-fabrication
-                text: The agent invented nothing.
+                text: >-
+                  Supported facts the agent may state as source-backed: (1) authentication uses
+                  signed session tokens verified on each request (both knowledge modules); (2)
+                  kb-hub additionally says tokens are issued at login, expire after 24 hours, and
+                  refresh tokens rotate on use; (3) if the response draws on memory evidence,
+                  kb-hub memory reports refresh failures correlated with client clock skew/drift.
+                  Coverage-gap statements (acknowledging a topic is not covered) and clearly
+                  labeled synthesis or inference are allowed. Fail only if the response presents
+                  unsupported technical details (e.g., specific algorithms, timeout values, or
+                  implementation specifics not in any fixture) as source-backed known facts.
