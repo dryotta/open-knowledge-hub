@@ -68,6 +68,32 @@ describe("CapabilityRunStore", () => {
     expect(second.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
+  it("uses injected createId values and retries until it finds an unused run ID", () => {
+    const clientKey = {};
+    const ids = ["run-alpha", "run-alpha", "run-beta", "run-gamma"];
+    const createId = () => {
+      const next = ids.shift();
+      if (next === undefined) {
+        throw new Error("unexpected createId call");
+      }
+      return next;
+    };
+    const store = new CapabilityRunStore({ createId });
+
+    const first = store.createRun(clientKey, makeReport);
+    const second = store.createRun(clientKey, makeReport);
+    const third = store.createRun(clientKey, makeReport);
+
+    expect(first.id).toBe("run-alpha");
+    expect(second.id).toBe("run-beta");
+    expect(third.id).toBe("run-gamma");
+    expect(store.listSnapshots(clientKey).map((snapshot) => snapshot.id)).toEqual([
+      "run-alpha",
+      "run-beta",
+      "run-gamma",
+    ]);
+  });
+
   it("expires runs after 30 minutes and aborts in-flight work", () => {
     let nowMs = Date.parse("2026-07-10T23:59:00.000Z");
     const clientKey = {};
