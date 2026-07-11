@@ -796,7 +796,7 @@ describe("runSamplingToolsProbe", () => {
       });
     });
 
-    it("fails malformed form actions and AbortError without leaking payloads", async () => {
+    it("fails malformed form results and AbortError without leaking payloads", async () => {
       const malformed = createRun({ elicitation: {} });
       await runFormElicitationProbe(
         makeClient({
@@ -818,6 +818,31 @@ describe("runSamplingToolsProbe", () => {
         message: "Form elicitation returned an invalid result.",
       });
       expect(JSON.stringify(malformedResult)).not.toContain("private");
+
+      const malformedContent = createRun({ elicitation: {} });
+      await runFormElicitationProbe(
+        makeClient({
+          elicitInput: async () =>
+            ({
+              action: "accept",
+              content: { confirmed: { secret: "private-content" } },
+            }) as unknown as ElicitResult,
+        }),
+        malformedContent.store,
+        malformedContent.clientKey,
+        malformedContent.runId,
+        DEFAULT_PROBE_TIMEOUTS,
+      );
+      const malformedContentResult = malformedContent.store.getSnapshotForClient(
+        malformedContent.clientKey,
+        malformedContent.runId,
+      ).report.probes.elicitationForm;
+      expect(malformedContentResult).toEqual({
+        status: "failed",
+        code: "elicitation.form_invalid_result",
+        message: "Form elicitation returned an invalid result.",
+      });
+      expect(JSON.stringify(malformedContentResult)).not.toContain("private");
 
       const aborted = createRun({ elicitation: {} });
       await runFormElicitationProbe(
@@ -902,12 +927,32 @@ describe("runSamplingToolsProbe", () => {
       });
     });
 
-    it("fails malformed URL results without retaining returned content", async () => {
+    it.each([
+      {
+        label: "missing action",
+        result: { content: { url: "https://private.invalid/secret" } },
+        privateValue: "private",
+      },
+      {
+        label: "malformed action",
+        result: { action: "private-action", content: { url: "https://private.invalid/secret" } },
+        privateValue: "private",
+      },
+      {
+        label: "malformed accepted content",
+        result: { action: "accept", content: { path: { secret: "private-content" } } },
+        privateValue: "private",
+      },
+      {
+        label: "malformed declined content",
+        result: { action: "decline", content: { path: { secret: "private-content" } } },
+        privateValue: "private",
+      },
+    ])("fails malformed URL results with $label without retaining returned content", async ({ result, privateValue }) => {
       const { store, clientKey, runId } = createRun({ elicitation: { url: {} } });
       await runUrlElicitationProbe(
         makeClient({
-          elicitInput: async () =>
-            ({ action: "private-action", content: { url: "https://private.invalid/secret" } }) as unknown as ElicitResult,
+          elicitInput: async () => result as unknown as ElicitResult,
         }),
         store,
         clientKey,
@@ -915,13 +960,34 @@ describe("runSamplingToolsProbe", () => {
         DEFAULT_PROBE_TIMEOUTS,
       );
 
-      const result = store.getSnapshotForClient(clientKey, runId).report.probes.elicitationUrl;
-      expect(result).toEqual({
+      const probeResult = store.getSnapshotForClient(clientKey, runId).report.probes.elicitationUrl;
+      expect(probeResult).toEqual({
         status: "failed",
         code: "elicitation.url_invalid_result",
         message: "URL elicitation returned an invalid result.",
       });
-      expect(JSON.stringify(result)).not.toContain("private");
+      expect(JSON.stringify(probeResult)).not.toContain(privateValue);
+    });
+
+    it("fails programmatic AbortError URL elicitation without treating it as a user decline", async () => {
+      const { store, clientKey, runId } = createRun({ elicitation: { url: {} } });
+      await runUrlElicitationProbe(
+        makeClient({
+          elicitInput: async () => {
+            throw { name: "AbortError", message: "private abort payload" };
+          },
+        }),
+        store,
+        clientKey,
+        runId,
+        DEFAULT_PROBE_TIMEOUTS,
+      );
+
+      expect(store.getSnapshotForClient(clientKey, runId).report.probes.elicitationUrl).toEqual({
+        status: "failed",
+        code: "elicitation.url_aborted",
+        message: "URL elicitation was aborted.",
+      });
     });
 
     it.each([

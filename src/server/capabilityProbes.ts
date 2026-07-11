@@ -1,6 +1,7 @@
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
   ErrorCode,
+  ElicitResultSchema,
   LATEST_PROTOCOL_VERSION,
   type ClientCapabilities,
   type CreateMessageRequestParams,
@@ -585,6 +586,23 @@ function elicitationAction(result: unknown): "accept" | "decline" | "cancel" | u
     : undefined;
 }
 
+function invalidElicitationResultProbe(kind: ElicitationKind): CapabilityProbe {
+  const label = kind === "form" ? "Form elicitation" : "URL elicitation";
+  return probe("failed", `elicitation.${kind}_invalid_result`, `${label} returned an invalid result.`);
+}
+
+function validateElicitationResult(
+  kind: ElicitationKind,
+  result: unknown,
+): { valid: true; result: ElicitResult } | { valid: false; result: CapabilityProbe } {
+  const validation = ElicitResultSchema.safeParse(result);
+  if (!validation.success) {
+    return { valid: false, result: invalidElicitationResultProbe(kind) };
+  }
+
+  return { valid: true, result: validation.data };
+}
+
 export async function runFormElicitationProbe(
   client: CapabilityProbeClient,
   runs: CapabilityRunStore,
@@ -611,11 +629,18 @@ export async function runFormElicitationProbe(
       },
       requestOptions(timeouts.elicitationMs, run.signal, relatedTask),
     );
-    const action = elicitationAction(result);
+    const validation = validateElicitationResult("form", result);
+    if (!validation.valid) {
+      runs.updateProbe(clientKey, runId, "elicitationForm", validation.result);
+      return;
+    }
+
+    const validatedResult = validation.result;
+    const action = elicitationAction(validatedResult);
     let next: CapabilityProbe;
     if (action === "accept") {
       next =
-        isRecord(result) && isRecord(result.content) && typeof result.content.confirmed === "boolean"
+        isRecord(validatedResult.content) && typeof validatedResult.content.confirmed === "boolean"
           ? probe("passed", "elicitation.form_passed", "Form elicitation returned valid confirmation.")
           : probe(
               "failed",
@@ -629,7 +654,7 @@ export async function runFormElicitationProbe(
         "Form elicitation was supported but not completed by the user.",
       );
     } else {
-      next = probe("failed", "elicitation.form_invalid_result", "Form elicitation returned an invalid result.");
+      next = invalidElicitationResultProbe("form");
     }
     runs.updateProbe(clientKey, runId, "elicitationForm", next);
   } catch (error) {
@@ -658,7 +683,13 @@ export async function runUrlElicitationProbe(
       },
       requestOptions(timeouts.elicitationMs, run.signal, relatedTask),
     );
-    const action = elicitationAction(result);
+    const validation = validateElicitationResult("url", result);
+    if (!validation.valid) {
+      runs.updateProbe(clientKey, runId, "elicitationUrl", validation.result);
+      return;
+    }
+
+    const action = elicitationAction(validation.result);
     const next =
       action === "accept"
         ? probe("passed", "elicitation.url_passed", "URL elicitation was accepted.")
@@ -668,7 +699,7 @@ export async function runUrlElicitationProbe(
               "elicitation.url_not_completed",
               "URL elicitation was supported but not completed by the user.",
             )
-          : probe("failed", "elicitation.url_invalid_result", "URL elicitation returned an invalid result.");
+          : invalidElicitationResultProbe("url");
     runs.updateProbe(clientKey, runId, "elicitationUrl", next);
   } catch (error) {
     runs.updateProbe(clientKey, runId, "elicitationUrl", elicitationErrorProbe("url", error));
