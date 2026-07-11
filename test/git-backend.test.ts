@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { rm, writeFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { OkhError } from "../src/errors.js";
@@ -44,6 +44,8 @@ class FakeGh {
 // Stub Git for abort-failure test
 // ---------------------------------------------------------------------------
 
+// Partial stub for abort-failure path — only methods exercised by ensureSharedBranch
+// + rebase + abortRebase are needed. Cast via `as unknown as Git`.
 class AbortFailingGit {
   abortCalled = false;
 
@@ -80,6 +82,15 @@ async function cloneOrigin(bare: string): Promise<string> {
   cleanups.push(dest);
   await testRun("git", ["clone", bare, dest]);
   return dest;
+}
+
+/** Creates a bare origin and registers its parent temp-dir for cleanup. */
+async function makeTrackedOrigin(
+  files?: Record<string, string>,
+): Promise<string> {
+  const origin = await makeOrigin(files);
+  cleanups.push(dirname(origin)); // parent dir contains both origin.git and seed/
+  return origin;
 }
 
 function makeEntry(
@@ -255,8 +266,7 @@ describe("GitBackend — actions", () => {
 
 describe("GitBackend — auto sync", () => {
   it("commits dirty files, pushes to origin, outcome synced", async () => {
-    const origin = await makeOrigin();
-    cleanups.push(origin.replace("origin.git", "").trimEnd());
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     await writeFile(join(root, "note.md"), "hello", "utf8");
 
@@ -279,7 +289,7 @@ describe("GitBackend — auto sync", () => {
   });
 
   it("integrates remote changes via fast-forward, outcome synced", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
 
     // Initial sync to set upstream
@@ -302,7 +312,7 @@ describe("GitBackend — auto sync", () => {
   });
 
   it("outcome is up-to-date when nothing to commit and remote is current", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
 
     // Push once to establish upstream
@@ -320,7 +330,7 @@ describe("GitBackend — auto sync", () => {
   });
 
   it("throws GIT_ERROR with diverged-branch guidance when pull fails", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     await writeFile(join(root, "local.md"), "x", "utf8");
 
@@ -337,7 +347,7 @@ describe("GitBackend — auto sync", () => {
   });
 
   it("rejects any action with INVALID_ARGUMENT error", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
 
     const backend = new GitBackend(new Git(testRun), new FakeGh() as unknown as Gh);
@@ -355,7 +365,7 @@ describe("GitBackend — auto sync", () => {
 
 describe("GitBackend — shared sync", () => {
   it("creates branch from origin/main when not found locally or remotely", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -373,7 +383,7 @@ describe("GitBackend — shared sync", () => {
   });
 
   it("remains checked out on configured branch after sync", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -387,7 +397,7 @@ describe("GitBackend — shared sync", () => {
   });
 
   it("tracks existing remote shared branch when no local branch exists", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -418,7 +428,7 @@ describe("GitBackend — shared sync", () => {
   });
 
   it("rebases local commit onto updated origin/main before push", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -445,7 +455,7 @@ describe("GitBackend — shared sync", () => {
   });
 
   it("repeated sync succeeds without re-creating branch", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -453,16 +463,17 @@ describe("GitBackend — shared sync", () => {
     const entry = makeEntry(root, "shared", { branch });
 
     await backend.sync({ entry, validation: { ok: true, issues: [] } });
-    // Second sync with no changes
+    // Second sync with no changes: branch exists locally, rebase is no-op → "synced"
     const result = await backend.sync({ entry, validation: { ok: true, issues: [] } });
 
     expect(result.pushed).toBe(true);
+    expect(result.outcome).toBe("synced");
     const git = new Git(testRun);
     expect(await git.currentBranch(root)).toBe(branch);
   });
 
   it("rebase conflict: aborts cleanly, local commit preserved, OkhError thrown", async () => {
-    const origin = await makeOrigin({ "shared.md": "base content\n" });
+    const origin = await makeTrackedOrigin({ "shared.md": "base content\n" });
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -518,7 +529,7 @@ describe("GitBackend — shared sync", () => {
   });
 
   it("plain shared sync never calls Gh PR methods", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const fakeGh = new FakeGh();
 
@@ -532,7 +543,7 @@ describe("GitBackend — shared sync", () => {
   });
 
   it("rejects unknown action listing publish-pr as supported", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
 
     const backend = new GitBackend(new Git(testRun), new FakeGh() as unknown as Gh);
@@ -553,7 +564,7 @@ describe("GitBackend — shared sync", () => {
 
 describe("GitBackend — publish-pr", () => {
   it("syncs first then creates PR with correct base and head", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
     await writeFile(join(root, "note.md"), "hello", "utf8");
@@ -581,7 +592,7 @@ describe("GitBackend — publish-pr", () => {
   });
 
   it("reuses existing open PR without creating a new one", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -605,7 +616,7 @@ describe("GitBackend — publish-pr", () => {
   });
 
   it("uses message as PR title when provided", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -624,7 +635,7 @@ describe("GitBackend — publish-pr", () => {
   });
 
   it("defaults PR title to 'okh sync: <name>' when no message", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
 
@@ -642,7 +653,7 @@ describe("GitBackend — publish-pr", () => {
   });
 
   it("PR create failure leaves branch pushed; retry succeeds", async () => {
-    const origin = await makeOrigin();
+    const origin = await makeTrackedOrigin();
     const root = await cloneOrigin(origin);
     const branch = "user/test/hub";
     await writeFile(join(root, "note.md"), "hello", "utf8");

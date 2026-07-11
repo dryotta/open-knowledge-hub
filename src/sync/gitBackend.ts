@@ -16,6 +16,17 @@ const backendConfigSchema = z.object({ origin: repoUrlSchema }).strict();
 const autoConfigSchema = z.object({}).strict();
 const sharedInputConfigSchema = z.object({ branch: z.string().optional() }).strict();
 
+/**
+ * SyncBackend for git-hosted containers.
+ *
+ * Supports two modes:
+ * - `auto`: commit all local changes, `pull --ff-only`, push to `origin`.
+ * - `shared`: maintain a persistent shared branch (defaults to `user/<login>/hub`),
+ *   rebase it onto `origin/main` on each sync, and optionally open a PR.
+ *
+ * Both `Git` and `Gh` are injected so tests can drive real temp repos with a
+ * fake `Gh`, or stub `Git` for error-path testing.
+ */
 export class GitBackend implements SyncBackend {
   readonly type = "git" as const;
   readonly modes: readonly SyncMode[] = ["auto", "shared"];
@@ -115,7 +126,10 @@ export class GitBackend implements SyncBackend {
       );
     }
 
-    // Fetch so tracking refs are current, then sample behind count for accurate outcome.
+    // Fetch first so the remote-tracking refs are current; `aheadBehind` then
+    // gives an accurate `behind` count rather than the stale value from the last
+    // fetch. The subsequent `pull --ff-only` does its own fetch again, which is
+    // a no-op when nothing new has arrived between these two calls.
     await this.git.fetchRemote(root, "origin");
     const ab = await this.git.aheadBehind(root);
     const hadRemoteWork = ab !== null && ab.behind > 0;
@@ -158,6 +172,8 @@ export class GitBackend implements SyncBackend {
   private async syncShared(request: BackendSyncRequest): Promise<BackendSyncResult> {
     const { entry, message, action } = request;
     const root = entry.localPath;
+    // `resolveSync` always persists `{ branch: string }` in the shared config and
+    // `BackendRegistry.validateEntry` enforces this invariant before any sync.
     const { branch } = entry.sync.config as { branch: string };
 
     if (action !== undefined && action !== "publish-pr") {
