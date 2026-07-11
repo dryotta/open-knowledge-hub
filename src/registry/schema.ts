@@ -28,8 +28,6 @@ export const repoUrlSchema = z
 
 export const backendTypeSchema = z.enum(["git", "local", "onedrive"]);
 export type BackendType = z.infer<typeof backendTypeSchema>;
-/** Alias kept for callers that reference the flat backend type name. */
-export type Backend = BackendType;
 
 export const syncModeSchema = z.enum(["auto", "shared"]);
 export type SyncMode = z.infer<typeof syncModeSchema>;
