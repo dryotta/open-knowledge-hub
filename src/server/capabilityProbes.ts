@@ -63,12 +63,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function supportsMcpApps(capabilities: ClientCapabilities): boolean {
+function mcpAppsSupport(capabilities: ClientCapabilities): "advertised" | "mismatch" | "absent" {
   const extension = capabilities.extensions?.[MCP_APPS_EXTENSION_ID];
-  if (!isRecord(extension)) return false;
-  if (!Object.prototype.hasOwnProperty.call(extension, "mimeTypes")) return true;
+  if (!isRecord(extension)) return "absent";
+  if (!Object.prototype.hasOwnProperty.call(extension, "mimeTypes")) return "advertised";
 
-  return Array.isArray(extension.mimeTypes) && extension.mimeTypes.includes(MCP_APPS_MIME_TYPE);
+  return Array.isArray(extension.mimeTypes) && extension.mimeTypes.includes(MCP_APPS_MIME_TYPE)
+    ? "advertised"
+    : "mismatch";
 }
 
 function initialProbe(
@@ -99,7 +101,12 @@ export function createInitialCapabilityReport(
     (elicitation.form !== undefined || Object.keys(elicitation).length === 0);
   const elicitationUrl = elicitation?.url !== undefined;
   const tasks = capabilities.tasks !== undefined;
-  const apps = supportsMcpApps(capabilities);
+  const appsSupport = mcpAppsSupport(capabilities);
+  const apps = appsSupport === "advertised";
+  const appsUnsupportedMessage =
+    appsSupport === "mismatch"
+      ? "The MCP Apps extension advertised no compatible MIME type."
+      : "Compatible MCP Apps support is not advertised.";
 
   const probes: CapabilityReport["probes"] = {
     roots: initialProbe(roots, "roots.list", "Roots listing is pending.", "Roots are not advertised."),
@@ -131,19 +138,19 @@ export function createInitialCapabilityReport(
       apps,
       "apps.initialize",
       "MCP App initialization is pending.",
-      "Compatible MCP Apps support is not advertised.",
+      appsUnsupportedMessage,
     ),
     appTheme: initialProbe(
       apps,
       "apps.theme",
       "MCP App theme handling is pending.",
-      "Compatible MCP Apps support is not advertised.",
+      appsUnsupportedMessage,
     ),
     appResize: initialProbe(
       apps,
       "apps.resize",
       "MCP App resize handling is pending.",
-      "Compatible MCP Apps support is not advertised.",
+      appsUnsupportedMessage,
     ),
     tasksCreate: probe("not_exercised", "tasks.create", "Task creation is not exercised."),
     tasksPoll: probe("not_exercised", "tasks.poll", "Task polling is not exercised."),

@@ -147,6 +147,12 @@ describe("createInitialCapabilityReport", () => {
       expect(incompatible.probes[key].status).toBe("unsupported");
       expect(malformed.probes[key].status).toBe("unsupported");
     }
+    expect(incompatible.probes.appInitialize.message).toBe(
+      "The MCP Apps extension advertised no compatible MIME type.",
+    );
+    expect(malformed.probes.appInitialize.message).toBe(
+      "Compatible MCP Apps support is not advertised.",
+    );
     expect(JSON.stringify(malformed)).not.toContain("secret-token");
   });
 

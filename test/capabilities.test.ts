@@ -9,9 +9,15 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   ErrorCode,
+  McpError,
   CallToolResultSchema,
+  CreateMessageRequestSchema,
+  ElicitRequestSchema,
+  ListRootsRequestSchema,
   type CallToolResult,
   type ClientCapabilities,
+  type CreateMessageRequest,
+  type ElicitRequest,
   type Request,
   type RequestId,
   type Task,
@@ -90,10 +96,17 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+type ClientHandlers = {
+  roots?: () => { roots: Array<{ uri: string; name?: string }> };
+  sampling?: (request: CreateMessageRequest) => Promise<Record<string, unknown>>;
+  elicitation?: (request: ElicitRequest) => Promise<Record<string, unknown>>;
+};
+
 type ConnectOptions = {
   capabilities?: ClientCapabilities;
   build?: Omit<BuildServerOptions, "paths" | "service">;
   clientName?: string;
+  handlers?: ClientHandlers;
 };
 
 async function connect(options: ConnectOptions = {}): Promise<{
@@ -122,6 +135,19 @@ async function connect(options: ConnectOptions = {}): Promise<{
     { name: options.clientName ?? "capability-test-client", version: "1" },
     { capabilities: options.capabilities ?? {} },
   );
+  const handlers = options.handlers;
+  if (handlers?.roots) {
+    const roots = handlers.roots;
+    client.setRequestHandler(ListRootsRequestSchema, () => roots());
+  }
+  if (handlers?.sampling) {
+    const sampling = handlers.sampling;
+    client.setRequestHandler(CreateMessageRequestSchema, (request) => sampling(request));
+  }
+  if (handlers?.elicitation) {
+    const elicitation = handlers.elicitation;
+    client.setRequestHandler(ElicitRequestSchema, (request) => elicitation(request));
+  }
   servers.push(server);
   clients.push(client);
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -532,6 +558,236 @@ describe("capabilities actions", () => {
 
     await expect(client.experimental.tasks.getTask("does-not-exist")).rejects.toThrow(
       "Failed to retrieve task: Task not found",
+    );
+  });
+});
+
+describe("capabilities live probes", () => {
+  const fullCapabilities: ClientCapabilities = {
+    roots: { listChanged: true },
+    sampling: { tools: {} },
+    elicitation: { form: {}, url: {} },
+  };
+
+  const SECRETS = {
+    rootUri: "file:///private/secret-root",
+    rootName: "secret-root-display-name",
+    generatedBasic: "generated-secret-basic-text",
+    generatedFinal: "generated-secret-final-text",
+    model: "private-secret-model",
+    toolInput: "tool-input-secret-value",
+    elicited: "elicited-secret-value",
+  };
+
+  function rootsHandler(): { roots: Array<{ uri: string; name?: string }> } {
+    return { roots: [{ uri: SECRETS.rootUri, name: SECRETS.rootName }] };
+  }
+
+  async function samplingHandler(request: CreateMessageRequest): Promise<Record<string, unknown>> {
+    const params = request.params as { tools?: unknown; toolChoice?: { mode?: string } };
+    if (params.tools) {
+      if (params.toolChoice?.mode === "required") {
+        return {
+          role: "assistant",
+          model: SECRETS.model,
+          stopReason: "endTurn",
+          content: [
+            {
+              type: "tool_use",
+              id: "capability-tool-use-1",
+              name: "capability_echo",
+              input: { value: SECRETS.toolInput },
+            },
+          ],
+        };
+      }
+      return {
+        role: "assistant",
+        model: SECRETS.model,
+        stopReason: "endTurn",
+        content: [{ type: "text", text: SECRETS.generatedFinal }],
+      };
+    }
+    return {
+      role: "assistant",
+      model: SECRETS.model,
+      stopReason: "endTurn",
+      content: { type: "text", text: SECRETS.generatedBasic },
+    };
+  }
+
+  async function acceptElicitation(request: ElicitRequest): Promise<Record<string, unknown>> {
+    const mode = (request.params as { mode?: string }).mode;
+    if (mode === "url") return { action: "accept" };
+    return { action: "accept", content: { confirmed: true, note: SECRETS.elicited } };
+  }
+
+  function assertNoObservedValues(serialized: string): void {
+    for (const secret of Object.values(SECRETS)) {
+      expect(serialized).not.toContain(secret);
+    }
+  }
+
+  it("passes every interactive probe and never echoes observed values", async () => {
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: { roots: rootsHandler, sampling: samplingHandler, elicitation: acceptElicitation },
+    });
+
+    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const report = reportOf(result);
+
+    expect(report.client.declared).toEqual({
+      roots: true,
+      rootsListChanged: true,
+      sampling: true,
+      samplingTools: true,
+      elicitationForm: true,
+      elicitationUrl: true,
+      tasks: false,
+    });
+    expect(report.probes.roots.status).toBe("passed");
+    expect(report.probes.samplingBasic.status).toBe("passed");
+    expect(report.probes.samplingTools.status).toBe("passed");
+    expect(report.probes.elicitationForm.status).toBe("passed");
+    expect(report.probes.elicitationUrl.status).toBe("passed");
+    expect(report.overallStatus).toBe("complete");
+
+    assertNoObservedValues(JSON.stringify(result));
+    expect(textOf(result)).toBe(formatCapabilityReport(report));
+  });
+
+  it("records interactive rejection and decline as supported but not completed without leaking reasons", async () => {
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: {
+        roots: rootsHandler,
+        sampling: async () => {
+          throw new McpError(ErrorCode.InvalidRequest, "user rejected request");
+        },
+        elicitation: async () => ({ action: "decline" }),
+      },
+    });
+
+    const report = reportOf(await client.callTool({ name: "capabilities", arguments: {} }));
+
+    expect(report.probes.roots.status).toBe("passed");
+    expect(report.probes.samplingBasic.status).toBe("supported_not_completed");
+    expect(report.probes.samplingTools.status).toBe("supported_not_completed");
+    expect(report.probes.elicitationForm.status).toBe("supported_not_completed");
+    expect(report.probes.elicitationUrl.status).toBe("supported_not_completed");
+    expect(JSON.stringify(report)).not.toContain("user rejected request");
+  });
+
+  it("surfaces a rejected roots response as a failure without leaking the offending URI", async () => {
+    const secretPath = "https://secret-host.invalid/leaked-root-path";
+    const { client } = await connect({
+      capabilities: { roots: { listChanged: true } },
+      handlers: { roots: () => ({ roots: [{ uri: secretPath }] }) },
+    });
+
+    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const report = reportOf(result);
+
+    expect(report.probes.roots.status).toBe("failed");
+    expect(report.probes.roots.code).toBe("roots.request_failed");
+    expect(JSON.stringify(result)).not.toContain(secretPath);
+  });
+
+  it("marks App probes unsupported with a mismatch detail for an incompatible MIME list", async () => {
+    const { client } = await connect({
+      capabilities: {
+        extensions: { [MCP_APPS_EXTENSION_ID]: { mimeTypes: ["text/html"] } },
+      },
+    });
+
+    const report = reportOf(await client.callTool({ name: "capabilities", arguments: {} }));
+
+    for (const key of ["appInitialize", "appTheme", "appResize"] as const) {
+      expect(report.probes[key].status).toBe("unsupported");
+    }
+    expect(report.probes.appInitialize.message).toContain("MIME");
+  });
+
+  it("records task input required and passes the task lifecycle for an augmented scan", async () => {
+    const { client } = await connect({
+      capabilities: fullCapabilities,
+      handlers: { roots: rootsHandler, sampling: samplingHandler, elicitation: acceptElicitation },
+    });
+
+    const stream = client.experimental.tasks.callToolStream(
+      { name: "capabilities", arguments: {} },
+      CallToolResultSchema,
+      { task: {} },
+    );
+    const statuses: string[] = [];
+    let final: CallToolResult | undefined;
+    for await (const message of stream) {
+      if (message.type === "error") throw message.error;
+      if (message.type === "taskStatus") statuses.push(message.task.status);
+      if (message.type === "result") final = message.result as CallToolResult;
+    }
+    if (final === undefined) throw new Error("Task-augmented scan produced no result.");
+    const report = final.structuredContent as CapabilityReport;
+
+    expect(statuses).toContain("input_required");
+    expect(report.probes.tasksCreate.status).toBe("passed");
+    expect(report.probes.tasksPoll.status).toBe("passed");
+    expect(report.probes.tasksInput.status).toBe("passed");
+    expect(report.probes.tasksResult.status).toBe("passed");
+    expect(report.probes.samplingBasic.status).toBe("passed");
+    assertNoObservedValues(JSON.stringify(final));
+  });
+
+  it("passes task cancellation when the client cancels an augmented task", async () => {
+    const { client } = await connect();
+    const runId = reportOf(await client.callTool({ name: "capabilities", arguments: {} })).runId;
+
+    const stream = client.experimental.tasks.callToolStream(
+      { name: "capabilities", arguments: { action: "task_cancel", runId } },
+      CallToolResultSchema,
+      { task: {} },
+    );
+    const iterator = stream[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    if (first.value?.type !== "taskCreated") throw new Error("Expected taskCreated.");
+    await client.experimental.tasks.cancelTask(first.value.task.taskId);
+
+    const refreshed = reportOf(await client.callTool({
+      name: "capabilities",
+      arguments: { action: "report", runId },
+    }));
+    expect(refreshed.probes.tasksCancel.status).toBe("passed");
+  });
+
+  it("returns tool errors for unknown and expired capability runs", async () => {
+    let now = 0;
+    const runs = new CapabilityRunStore({
+      createId: () => RUN_ID,
+      now: () => new Date(now),
+      ttlMs: 10,
+      maxRuns: 2,
+    });
+    const { client } = await connect({ build: { capabilityRuns: runs } });
+
+    const unknown = await client.callTool({
+      name: "capabilities",
+      arguments: { action: "report", runId: OTHER_RUN_ID },
+    });
+    expect(isErrorResult(unknown)).toBe(true);
+    expect(textOf(unknown)).toBe(
+      `MCP error ${ErrorCode.InvalidParams}: Capability run was not found.`,
+    );
+
+    const runId = reportOf(await client.callTool({ name: "capabilities", arguments: {} })).runId;
+    now += 20;
+    const expired = await client.callTool({
+      name: "capabilities",
+      arguments: { action: "report", runId },
+    });
+    expect(isErrorResult(expired)).toBe(true);
+    expect(textOf(expired)).toBe(
+      `MCP error ${ErrorCode.InvalidParams}: Capability run has expired.`,
     );
   });
 });
