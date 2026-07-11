@@ -31,6 +31,7 @@
       let initialized = false;
       let toolResult;
       let submitted = false;
+      let measured = false;
       let resize = "unobserved";
 
       function post(message) {
@@ -75,7 +76,7 @@
       }
 
       async function submitAppReport() {
-        if (!initialized || !toolResult || submitted) return;
+        if (!initialized || !measured || !toolResult || submitted) return;
         const structured = toolResult.structuredContent;
         const runId = structured && typeof structured.runId === "string"
           ? structured.runId
@@ -151,11 +152,13 @@
           height: document.documentElement.scrollHeight,
         });
         await new Promise((resolve) => setTimeout(resolve, 250));
-        resize = fixedContainer(hostContext)
-          ? "fixed_container"
-          : (window.innerWidth !== before.width || window.innerHeight !== before.height)
-            ? "observed"
+        const changed = window.innerWidth !== before.width || window.innerHeight !== before.height;
+        resize = changed
+          ? "observed"
+          : fixedContainer(hostContext)
+            ? "fixed_container"
             : "unobserved";
+        measured = true;
         await submitAppReport();
       }
 
