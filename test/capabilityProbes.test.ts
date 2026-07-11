@@ -48,6 +48,8 @@ describe("runCapabilityProbes — unsupported features are not called", () => {
     expect(report.features.elicitation.available).toBe(false);
     expect(report.features.apps.status).toBe("unsupported");
     expect(report.features.apps.available).toBe(false);
+    expect(report.features.serverTools.status).toBe("unsupported");
+    expect(report.features.serverTools.available).toBe(false);
   });
 
   it("does not call roots when roots capability is absent", async () => {
@@ -110,6 +112,10 @@ describe("runCapabilityProbes — MCP Apps", () => {
     expect(report.features.apps.status).toBe("advertised");
     expect(report.features.apps.message).toBe("MCP Apps extension is advertised.");
     expect(report.features.apps.available).toBe(true);
+
+    // Host serverTools proxying can't be observed server-side; report as unknown.
+    expect(report.features.serverTools.status).toBe("unknown");
+    expect(report.features.serverTools.available).toBe(false);
   });
 
   it("reports unsupported when extensions are absent", async () => {
@@ -257,17 +263,19 @@ describe("formatCapabilityReport", () => {
         sampling: { status: "unsupported" as const, available: false, message: "Sampling is not advertised." },
         elicitation: { status: "failed" as const, available: true, message: "Elicitation request failed." },
         apps: { status: "advertised" as const, available: true, message: "MCP Apps extension is advertised." },
+        serverTools: { status: "unknown" as const, available: false, message: "verify in-app." },
       },
     };
 
     const output = formatCapabilityReport(report);
     const lines = output.split("\n");
 
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(5);
     expect(lines[0]).toBe("Roots: Roots request succeeded.");
     expect(lines[1]).toBe("Sampling: Sampling is not advertised.");
     expect(lines[2]).toBe("Form Elicitation: Elicitation request failed.");
     expect(lines[3]).toBe("MCP Apps: MCP Apps extension is advertised.");
+    expect(lines[4]).toBe("App Server Tools: verify in-app.");
   });
 
   it("does not include raw response values", () => {
@@ -277,16 +285,18 @@ describe("formatCapabilityReport", () => {
         sampling: { status: "passed" as const, available: true, message: "Sampling request succeeded." },
         elicitation: { status: "passed" as const, available: true, message: "Elicitation request succeeded." },
         apps: { status: "unsupported" as const, available: false, message: "MCP Apps is not advertised." },
+        serverTools: { status: "unsupported" as const, available: false, message: "does not apply." },
       },
     };
 
     const output = formatCapabilityReport(report);
-    // Output must be exactly the four fixed summary lines — no observed LLM text or URIs injected
+    // Output must be exactly the fixed summary lines — no observed LLM text or URIs injected
     expect(output).toBe(
       "Roots: Roots request succeeded.\n" +
         "Sampling: Sampling request succeeded.\n" +
         "Form Elicitation: Elicitation request succeeded.\n" +
-        "MCP Apps: MCP Apps is not advertised.",
+        "MCP Apps: MCP Apps is not advertised.\n" +
+        "App Server Tools: does not apply.",
     );
   });
 });

@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 export const MCP_APPS_EXTENSION = "io.modelcontextprotocol/ui";
 export const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 60_000;
 
-export type CapabilityStatus = "unsupported" | "passed" | "declined" | "failed" | "advertised";
+export type CapabilityStatus = "unsupported" | "passed" | "declined" | "failed" | "advertised" | "unknown";
 
 export interface CapabilityFeatureResult {
   available: boolean;
@@ -13,7 +13,7 @@ export interface CapabilityFeatureResult {
 }
 
 function isAvailable(status: CapabilityStatus): boolean {
-  return status !== "unsupported";
+  return status !== "unsupported" && status !== "unknown";
 }
 
 function feat(status: CapabilityStatus, message: string): CapabilityFeatureResult {
@@ -26,6 +26,7 @@ export interface CapabilityReport {
     sampling: CapabilityFeatureResult;
     elicitation: CapabilityFeatureResult;
     apps: CapabilityFeatureResult;
+    serverTools: CapabilityFeatureResult;
   };
 }
 
@@ -91,12 +92,24 @@ export async function runCapabilityProbes(ops: CapabilityProbeOperations): Promi
   }
 
   // Apps probe — passive presence check, no active request
-  const apps: CapabilityFeatureResult =
-    caps?.extensions?.[MCP_APPS_EXTENSION] !== undefined
-      ? feat("advertised", "MCP Apps extension is advertised.")
-      : feat("unsupported", "MCP Apps is not advertised.");
+  const appsAdvertised = caps?.extensions?.[MCP_APPS_EXTENSION] !== undefined;
+  const apps: CapabilityFeatureResult = appsAdvertised
+    ? feat("advertised", "MCP Apps extension is advertised.")
+    : feat("unsupported", "MCP Apps is not advertised.");
 
-  return { features: { roots, sampling, elicitation, apps } };
+  // Server tool proxying (host `serverTools`) is negotiated between the host and
+  // the app iframe during `ui/initialize`; it is NOT part of the client
+  // capabilities the server sees here, so it cannot be probed server-side.
+  // Interactive apps (e.g. Todos) still need it: without it, toggling a checkbox
+  // has no effect. Report it as unknown so operators know to verify in-app.
+  const serverTools: CapabilityFeatureResult = appsAdvertised
+    ? feat(
+        "unknown",
+        "Server tool proxying (host serverTools) is negotiated in-app and is not observable from the server; the Todos app verifies it at runtime and disables updates when absent.",
+      )
+    : feat("unsupported", "Server tool proxying does not apply because MCP Apps is not advertised.");
+
+  return { features: { roots, sampling, elicitation, apps, serverTools } };
 }
 
 export function createCapabilityProbeOperations(
@@ -139,11 +152,12 @@ export function createCapabilityProbeOperations(
 }
 
 export function formatCapabilityReport(report: CapabilityReport): string {
-  const { roots, sampling, elicitation, apps } = report.features;
+  const { roots, sampling, elicitation, apps, serverTools } = report.features;
   return [
     `Roots: ${roots.message}`,
     `Sampling: ${sampling.message}`,
     `Form Elicitation: ${elicitation.message}`,
     `MCP Apps: ${apps.message}`,
+    `App Server Tools: ${serverTools.message}`,
   ].join("\n");
 }
