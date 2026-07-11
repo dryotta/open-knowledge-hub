@@ -54,7 +54,7 @@ Key files:
 | `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
-| `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
+| `manual.ts` | one-shot manual harness (`npm run manual`) with isolated homes and automatic cleanup |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`, `custom-hub`, `health-hub`, `wiki-hub`) |
 
 ---
@@ -305,33 +305,31 @@ npm run test:eval        # vitest unit tests for environments/provider/assertion
 
 ## Running manually (with example prompts)
 
-Manual mode is **environment-centric**: you provision one of the three environments, and
-the harness prints every test prompt that uses it (with an expected-outcome checklist) for
-you to run by hand and eyeball. Runs are **recorded**, so follow-up commands need no paths.
+Manual mode is a **one-shot** harness: it provisions one isolated environment, prints every
+matching prompt with an expected-outcome checklist, launches Copilot CLI in that workspace,
+then removes the **entire temp Root** when the session exits — normal, failed, or
+interrupted. There are no separate setup / enter / cleanup commands.
 
 ```powershell
-npm run eval:setup -- list                 # list environments + how many prompts each has
-npm run eval:setup -- setup local-and-git  # provision an environment; print its test prompts
-npm run eval:setup -- enter                # interactive Copilot session in that environment
-npm run eval:setup -- clean                # delete the temp run
+npm run build
+npm run manual                             # default env: local-and-git
+npm run manual git                         # choose an environment
+npm run manual wiki --model gpt-5.6-luna   # optional model override
+$env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
 ```
 
-- **`setup <env>`** (`empty` | `git` | `local-and-git` | `custom` | `health` | `wiki`) builds the isolated temp Root and
-  prints the Root/Workspace paths, the `enter`/`clean` commands, and — for every test that
-  uses this environment — its description, prompt, and expected-outcome checklist. Nothing
-  is spawned yet; no premium usage.
-- **`enter [env]`** opens an interactive session (most-recent run, or the named env); `/mcp`
-  confirms **open-knowledge-hub** is loaded. Paste one of the printed prompts, watch it
-  work, and verify against that prompt's checklist and by inspecting the workspace.
-  `--model <M>` overrides the model.
-- **`clean [env]`** removes the run (or pass an explicit path).
-
-There is no automated `check` in manual mode — verification is by eye (the printed
-checklist says what to look for); the deterministic assertions run in `npm run eval`.
+- Valid environments: `empty`, `git`, `local-and-git`, `custom`, `health`, `wiki`. Omitting
+  the env uses `local-and-git`.
+- The harness prints `OKH_HOME`, `COPILOT_HOME`, `Workspace`, and — for every scenario that
+  uses the chosen environment — its description, prompt, and checklist.
+- Run `/mcp` to confirm **open-knowledge-hub** is loaded, then paste one of the printed
+  prompts and inspect the workspace / git side-effects yourself.
+- There is no automated `check` in manual mode; the deterministic assertions still live in
+  `npm run eval`.
 
 ### Example prompts (one per flow)
 
-`setup <env>` prints all of an environment's prompts; a few highlights:
+`npm run manual [env]` prints all of an environment's prompts; a few highlights:
 
 - **ask** (env `local-and-git`):
   > Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly from its
@@ -379,11 +377,11 @@ checklist says what to look for); the deterministic assertions run in `npm run e
 
 ### Exploratory (free-form) testing
 
-**Poke at a seeded fixture.** `setup local-and-git` (the rich `kb-hub`), `enter`, and throw
+**Poke at a seeded fixture.** Run `npm run manual local-and-git` (the rich `kb-hub`) and throw
 your own prompts at it — adversarial ones too (prompt-injection in a question, ambiguous
 container/module, "rewrite an existing memory entry" which should stay append-only). After
 each, inspect `<Root>\okh-home\containers\kb-hub` (files + `git`) to see exactly what
-happened, then `clean`.
+happened before you exit; the harness cleans the temp Root automatically.
 
 **Dogfood against a real hub.** Wire OKH into your normal Copilot CLI by adding to
 `~/.copilot/mcp-config.json`:
@@ -421,8 +419,9 @@ Automated e2e can't open real pull requests. To test `pr`-mode by hand:
 - `onboard/github-repo` clones the private repo `dryotta/okh-eval-hub`, which relies on the
   machine's `gh` credential helper (macOS/Windows) or a token with `repo` read (Linux/CI).
   No push/sync is exercised.
-- Fixture workspaces are disposable temp dirs — mutate them freely, then `clean`. Each
-  interactive turn consumes premium requests.
+- Fixture workspaces are disposable temp dirs — inspect and mutate them freely during the
+  session; the harness removes the full temp Root on exit. Each interactive turn consumes
+  premium requests.
 - On Windows, promptfoo may print a libuv assertion on process exit **after** a successful
   run — cosmetic.
 - If a future Copilot CLI version changes its `--output-format json` event shape (currently
