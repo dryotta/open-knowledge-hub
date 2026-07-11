@@ -20,7 +20,7 @@
           value: file://assertions/judge.ts
           config:
             artifacts: { module: mem }
-            required: false
             criteria:
               - id: recorded-incident
                 text: A factual, timestamped memory entry capturing the 500s incident was recorded (see the ON-DISK ARTIFACTS).
+                required: false

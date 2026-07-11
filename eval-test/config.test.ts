@@ -605,6 +605,50 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
   });
 });
 
+describe("remember scenarios — prose criteria are advisory", () => {
+  const REMEMBER_FILES = ["remember/test-result.yaml", "remember/incident.yaml"];
+
+  for (const file of REMEMBER_FILES) {
+    it(`${file}: every judge criterion has required:false at criterion level, no dead config-level required key`, async () => {
+      const doc = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
+      const sc = doc[0];
+      const asserts: Array<{ type: string; value?: string; config?: Record<string, unknown> }> = sc.tests[0].assert;
+
+      // memory-append assertion must be present
+      const memAppend = asserts.find(
+        (a) => a.type === "javascript" && String(a.value).endsWith("memory-append.ts"),
+      );
+      expect(memAppend, `${file}: memory-append assertion must exist`).toBeDefined();
+
+      // judge assertion must be present
+      const judgeAssert = asserts.find(
+        (a) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
+      );
+      expect(judgeAssert, `${file}: judge assertion must exist`).toBeDefined();
+
+      const cfg = judgeAssert!.config as Record<string, unknown>;
+      expect(cfg, `${file}: judge assertion must have config`).toBeDefined();
+
+      // No dead config-level required key
+      expect(
+        Object.prototype.hasOwnProperty.call(cfg, "required"),
+        `${file}: judge config must not have a top-level required key`,
+      ).toBe(false);
+
+      // Every criterion must carry required:false at criterion level
+      const criteria = cfg.criteria as Array<{ id: string; text: string; required?: boolean }>;
+      expect(Array.isArray(criteria), `${file}: criteria must be an array`).toBe(true);
+      expect(criteria.length, `${file}: must have at least one criterion`).toBeGreaterThanOrEqual(1);
+      for (const c of criteria) {
+        expect(
+          c.required,
+          `${file}: criterion "${c.id}" must have required:false at criterion level`,
+        ).toBe(false);
+      }
+    });
+  }
+});
+
 describe("lint scenario uses health environment", () => {
   async function loadScenario(path: string) {
     const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
