@@ -27,6 +27,8 @@ Do NOT dump whole modules into context.
 4. Produce the working set as a short list grouped by module type. For each
    selected item give its item path (e.g. `<module>/<item>`) and one line on why
    it matters. Prefer paths/links over pasted content.
+   Omit irrelevant or rejected candidates entirely — do not list them even to
+   explain why they were skipped.
 5. Surface gaps: what the task needs that no module provides.
 
 Output a concise brief the agent can act on — not a transcript of file contents.
