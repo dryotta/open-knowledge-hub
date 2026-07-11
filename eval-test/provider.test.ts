@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { rm, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import CopilotProvider from "../eval/provider/copilotProvider.js";
-import type { CopilotTurnRunner, CopilotTurnResult } from "../eval/copilot.js";
+import type { CopilotTurnRunner, CopilotTurnResult, ToolEvent } from "../eval/copilot.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -14,6 +14,7 @@ const turn = (over: Partial<CopilotTurnResult> = {}): CopilotTurnResult => ({
   messages: [],
   lastMessage: "",
   tools: [],
+  toolEvents: [],
   cost: 0,
   sessionId: "s",
   code: 0,
@@ -22,13 +23,28 @@ const turn = (over: Partial<CopilotTurnResult> = {}): CopilotTurnResult => ({
   ...over,
 });
 
+const okhEvent = (callId: string, tool: string, t = 1): ToolEvent => ({
+  turn: t,
+  callId,
+  server: "open-knowledge-hub",
+  tool,
+  arguments: {},
+  completed: true,
+  success: true,
+});
+
 describe("CopilotProvider", () => {
   it("provisions the env, runs a single (faked) turn, and returns transcript + metadata", async () => {
     const fake: CopilotTurnRunner = async (opts) => {
       expect(opts.copilotHome).toContain("copilot-home");
       expect(opts.prompt).toBe("answer: how does auth work?");
       expect(opts.resume).toBe(false);
-      return turn({ messages: ["auth uses tokens, done"], lastMessage: "auth uses tokens, done", tools: ["ask"] });
+      return turn({
+        messages: ["auth uses tokens, done"],
+        lastMessage: "auth uses tokens, done",
+        tools: ["ask"],
+        toolEvents: [okhEvent("c1", "ask", opts.turn)],
+      });
     };
     const provider = new CopilotProvider({ config: { model: "test-model", runner: fake } });
     expect(provider.id()).toBeTruthy();
@@ -49,9 +65,19 @@ describe("CopilotProvider", () => {
     const fake: CopilotTurnRunner = async (opts) => {
       seen.push(opts.prompt);
       if (opts.prompt.includes("set me up"))
-        return turn({ messages: ["Pick a wake phrase"], lastMessage: "Pick a wake phrase", tools: ["onboard"] });
+        return turn({
+          messages: ["Pick a wake phrase"],
+          lastMessage: "Pick a wake phrase",
+          tools: ["onboard"],
+          toolEvents: [okhEvent("c1", "onboard", opts.turn)],
+        });
       if (opts.prompt.includes("brain"))
-        return turn({ messages: ["Created it."], lastMessage: "Created it.", tools: ["config", "add"] });
+        return turn({
+          messages: ["Created it."],
+          lastMessage: "Created it.",
+          tools: ["config", "add"],
+          toolEvents: [okhEvent("c2", "config", opts.turn), okhEvent("c3", "add", opts.turn)],
+        });
       return turn();
     };
     const provider = new CopilotProvider({ config: { runner: fake } });

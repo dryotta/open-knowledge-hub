@@ -49,11 +49,22 @@ export const spawnCopilot: CopilotRunner = (opts) =>
 
 const OKH_SERVER = "open-knowledge-hub";
 
+export interface ToolEvent {
+  turn: number;
+  callId: string;
+  server: string;
+  tool: string;
+  arguments: unknown;
+  completed: boolean;
+  success: boolean;
+}
+
 export interface ParsedTurn {
   /** Assistant spoken messages this turn (no tool lines) — used for guard matching. */
   messages: string[];
   lastMessage: string;
   tools: string[];
+  toolEvents: ToolEvent[];
   cost: number;
   sessionId: string | null;
   code: number | null;
@@ -89,17 +100,18 @@ interface CopilotEvent {
 
 /**
  * Parse Copilot CLI `--output-format json` (JSONL) from one turn: assistant
- * message contents, OKH MCP tool names (from `toolRequests[]` and
- * `tool.execution_start`, keyed on `mcpServerName === "open-knowledge-hub"`),
+ * message contents, OKH MCP tool names (from completed+successful
+ * `tool.execution_complete` events keyed on `mcpServerName === "open-knowledge-hub"`),
  * the final `result` event's sessionId / exitCode / cumulative cost, and a
  * human-readable `render` interleaving messages with tool calls + results (in
  * event order) so the judge sees what the agent *did*, not just what it said.
  */
-export function parseCopilotEvents(jsonl: string): ParsedTurn {
+export function parseCopilotEvents(jsonl: string, turn = 1): ParsedTurn {
   const messages: string[] = [];
-  const tools = new Set<string>();
   const parts: string[] = [];
   const toolLabel = new Map<string, string>();
+  const toolEventMap = new Map<string, ToolEvent>();
+  const toolEvents: ToolEvent[] = [];
   let cost = 0;
   let sessionId: string | null = null;
   let code: number | null = null;
@@ -122,21 +134,30 @@ export function parseCopilotEvents(jsonl: string): ParsedTurn {
           messages.push(d.content);
           parts.push(d.content);
         }
-        for (const r of d.toolRequests ?? []) {
-          if (r?.mcpServerName === OKH_SERVER && typeof r.mcpToolName === "string") tools.add(r.mcpToolName);
-        }
         break;
       }
       case "tool.execution_start": {
-        const label = d.mcpServerName ? `${d.mcpServerName}:${d.mcpToolName}` : (d.toolName ?? "tool");
+        const server = d.mcpServerName ?? "";
+        const tool = d.mcpToolName ?? d.toolName ?? "tool";
+        const label = server ? `${server}:${tool}` : tool;
+        const callId = d.toolCallId ?? `synthetic-${toolEvents.length}`;
         if (d.toolCallId) toolLabel.set(d.toolCallId, label);
-        if (d.mcpServerName === OKH_SERVER && typeof d.mcpToolName === "string") tools.add(d.mcpToolName);
+        const ev: ToolEvent = { turn, callId, server, tool, arguments: d.arguments, completed: false, success: false };
+        toolEvents.push(ev);
+        if (d.toolCallId) toolEventMap.set(d.toolCallId, ev);
         const args = d.arguments !== undefined ? truncate(JSON.stringify(d.arguments), 200) : "";
         parts.push(`→ tool: ${label}${args && args !== "{}" ? ` ${args}` : ""}`);
         break;
       }
       case "tool.execution_complete": {
         const label = (d.toolCallId && toolLabel.get(d.toolCallId)) || "tool";
+        if (d.toolCallId) {
+          const ev = toolEventMap.get(d.toolCallId);
+          if (ev) {
+            ev.completed = true;
+            ev.success = d.success === true;
+          }
+        }
         const res = typeof d.result?.content === "string" ? d.result.content : d.result?.detailedContent ?? "";
         parts.push(`← ${label}${d.success === false ? " [error]" : ""}: ${truncate(res.replace(/\s+/g, " "), 300)}`);
         break;
@@ -151,10 +172,20 @@ export function parseCopilotEvents(jsonl: string): ParsedTurn {
       }
     }
   }
+
+  const tools = [
+    ...new Set(
+      toolEvents
+        .filter((ev) => ev.completed && ev.success && ev.server === OKH_SERVER)
+        .map((ev) => ev.tool),
+    ),
+  ].sort();
+
   return {
     messages,
     lastMessage: messages.at(-1) ?? "",
-    tools: [...tools].sort(),
+    tools,
+    toolEvents,
     cost,
     sessionId,
     code,
@@ -175,6 +206,8 @@ export interface CopilotTurnOptions {
   timeoutMs?: number;
   /** Extra env merged over process.env (e.g. tokens). */
   extraEnv?: NodeJS.ProcessEnv;
+  /** 1-based turn index within the conversation; set by runConversation. */
+  turn?: number;
 }
 
 export interface CopilotTurnResult extends ParsedTurn {
@@ -204,12 +237,12 @@ export const spawnCopilotTurn: CopilotTurnRunner = (opts) =>
     const timer = opts.timeoutMs ? setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs) : undefined;
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      const parsed = parseCopilotEvents(out);
+      const parsed = parseCopilotEvents(out, opts.turn ?? 1);
       resolve({ ...parsed, raw: out, code: parsed.code ?? code });
     });
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
-      const parsed = parseCopilotEvents(out);
+      const parsed = parseCopilotEvents(out, opts.turn ?? 1);
       resolve({ ...parsed, raw: `${out}\n[spawn error] ${(err as Error).message}`, code: null });
     });
   });
@@ -234,6 +267,7 @@ export interface ConversationTurn {
   user: string;
   agent: string;
   tools: string[];
+  toolEvents: ToolEvent[];
 }
 
 export interface ConversationResult {
@@ -242,6 +276,7 @@ export interface ConversationResult {
   /** Union of OKH tools called across all turns, sorted. */
   toolCalls: string[];
   turns: ConversationTurn[];
+  toolEvents: ToolEvent[];
   /** Last turn's cumulative premiumRequests (== whole-conversation cost). */
   cost: number;
   /** Last turn's exit code. */
@@ -290,6 +325,7 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
   const maxTurns = script.maxTurns ?? responses.length + 2;
   const sent = responses.map(() => false);
   const turns: ConversationTurn[] = [];
+  const allToolEvents: ToolEvent[] = [];
   const toolSet = new Set<string>();
   let cost = 0;
   let code: number | null = null;
@@ -304,9 +340,13 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       cwd: ctx.cwd,
       timeoutMs: ctx.timeoutMs,
       extraEnv: ctx.extraEnv,
+      turn: turns.length + 1,
     });
-    turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools });
-    for (const t of r.tools) toolSet.add(t);
+    turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools, toolEvents: r.toolEvents });
+    for (const ev of r.toolEvents) {
+      allToolEvents.push(ev);
+      if (ev.completed && ev.success && ev.server === OKH_SERVER) toolSet.add(ev.tool);
+    }
     if (r.cost) cost = r.cost;
     code = r.code;
     return r;
@@ -325,5 +365,5 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
     .map((t, i) => `=== USER (turn ${i + 1}) ===\n${t.user}\n\n=== AGENT (turn ${i + 1}) ===\n${t.agent}`)
     .join("\n\n");
 
-  return { transcript, toolCalls: [...toolSet].sort(), turns, cost, code };
+  return { transcript, toolCalls: [...toolSet].sort(), turns, toolEvents: allToolEvents, cost, code };
 }
