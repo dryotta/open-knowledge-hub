@@ -30,7 +30,7 @@ const RELATED_TASK: RelatedTaskMetadata = { taskId: "task-123" };
 
 function makeClient(overrides: Partial<CapabilityProbeClient> = {}): CapabilityProbeClient {
   return {
-    listRoots: async () => ({ roots: [] }),
+    listRoots: async (_params, _options) => ({ roots: [] }),
     createMessage: async () => ({
       model: "test-model",
       role: "assistant",
@@ -243,7 +243,7 @@ describe("runRootsProbe", () => {
       RELATED_TASK,
     );
 
-    expect(pendingListRoots).toHaveBeenCalledWith({
+    expect(pendingListRoots).toHaveBeenCalledWith(undefined, {
       timeout: DEFAULT_PROBE_TIMEOUTS.machineMs,
       signal: pending.signal,
       relatedTask: RELATED_TASK,
@@ -428,6 +428,7 @@ describe("runBasicSamplingProbe", () => {
     await runRootsProbe(client, store, clientKey, runId, DEFAULT_PROBE_TIMEOUTS);
     await runBasicSamplingProbe(client, store, clientKey, runId, DEFAULT_PROBE_TIMEOUTS);
 
+    expect(store.getSnapshotForClient(clientKey, runId).report.probes.samplingBasic.status).toBe("passed");
     const serialized = JSON.stringify(store.getSnapshotForClient(clientKey, runId));
     for (const privateValue of [
       "private-app-token",

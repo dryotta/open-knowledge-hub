@@ -36,7 +36,7 @@ export const DEFAULT_PROBE_TIMEOUTS = {
 } as const satisfies CapabilityProbeTimeouts;
 
 export interface CapabilityProbeClient {
-  listRoots(options?: RequestOptions): Promise<ListRootsResult>;
+  listRoots(params?: unknown, options?: RequestOptions): Promise<ListRootsResult>;
   createMessage(
     params: CreateMessageRequestParams,
     options?: RequestOptions,
@@ -235,7 +235,7 @@ export async function runRootsProbe(
   if (run.report.probes.roots.status !== "pending") return;
 
   try {
-    const result = await client.listRoots(requestOptions(timeouts.machineMs, run.signal, relatedTask));
+    const result = await client.listRoots(undefined, requestOptions(timeouts.machineMs, run.signal, relatedTask));
     const validation = validateRootsResult(result);
 
     if (!validation.valid) {
