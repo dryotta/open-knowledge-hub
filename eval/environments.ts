@@ -137,7 +137,7 @@ export async function provisionEnvironment(
   const runner = opts.runner ?? run;
   const git = new Git(runner);
 
-  const root = await mkdtemp(join(tmpdir(), `manual-${opts.label ?? env}-`));
+  const root = await mkdtemp(join(tmpdir(), `okh-eval-${opts.label ?? env}-`));
   const okhHome = join(root, "okh-home");
   const copilotHome = join(root, "copilot-home");
   const workspace = join(root, "workspace");
