@@ -584,6 +584,42 @@ describe("runSamplingToolsProbe", () => {
       expect(JSON.stringify(result)).not.toMatch(/private|secret|duplicate-private-id/);
     });
 
+    it("rejects malformed first sampling content and does not forward raw content", async () => {
+      const { store, clientKey, runId } = createRun({ sampling: { tools: {} } });
+      const createMessage = vi
+        .fn()
+        .mockResolvedValueOnce({
+          model: "private-first-model",
+          role: "assistant",
+          content: [
+            { type: "private_non_sdk_block", rawMarker: "raw-private-marker" },
+            { type: "tool_use", id: "tool-id", name: "capability_echo", input: { value: "secret" } },
+          ],
+        })
+        .mockResolvedValueOnce({
+          model: "private-final-model",
+          role: "assistant",
+          content: { type: "text", text: "private final summary" },
+        });
+
+      await runSamplingToolsProbe(
+        makeClient({ createMessage }),
+        store,
+        clientKey,
+        runId,
+        DEFAULT_PROBE_TIMEOUTS,
+      );
+
+      expect(createMessage).toHaveBeenCalledTimes(1);
+      const result = store.getSnapshotForClient(clientKey, runId).report.probes.samplingTools;
+      expect(result).toEqual({
+        status: "failed",
+        code: "sampling.tools_invalid_result",
+        message: "Sampling returned an invalid tool-use result.",
+      });
+      expect(JSON.stringify(result)).not.toMatch(/raw-private-marker|private|secret/);
+    });
+
     it("fails when the final assistant response has no non-empty text", async () => {
       const { store, clientKey, runId } = createRun({ sampling: { tools: {} } });
       const createMessage = vi

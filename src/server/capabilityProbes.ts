@@ -1,6 +1,7 @@
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
   ErrorCode,
+  CreateMessageResultWithToolsSchema,
   ElicitResultSchema,
   LATEST_PROTOCOL_VERSION,
   type ClientCapabilities,
@@ -35,6 +36,12 @@ export const DEFAULT_PROBE_TIMEOUTS = {
   samplingMs: 5 * 60_000,
   elicitationMs: 10 * 60_000,
 } as const satisfies CapabilityProbeTimeouts;
+
+const INTERACTIVE_DECLINE_DECISION_PATTERN = String.raw`(?:cancel(?:led|ed|lation)?|declin(?:ed)?|deni(?:ed|al)?|reject(?:ed|ion)?|not approved)`;
+const INTERACTIVE_DECLINE_PATTERN = new RegExp(
+  String.raw`(?:\buser\b.{0,40}\b${INTERACTIVE_DECLINE_DECISION_PATTERN}\b|\b${INTERACTIVE_DECLINE_DECISION_PATTERN}\b.{0,40}\bby (?:the )?user\b)`,
+  "i",
+);
 
 export interface CapabilityProbeClient {
   listRoots(params?: unknown, options?: RequestOptions): Promise<ListRootsResult>;
@@ -194,12 +201,7 @@ function errorText(error: unknown): string {
 }
 
 function isInteractiveDecline(error: unknown): boolean {
-  const text = errorText(error);
-  const decision = String.raw`(?:cancel(?:led|ed|lation)?|declin(?:ed)?|deni(?:ed|al)?|reject(?:ed|ion)?|not approved)`;
-  return new RegExp(
-    String.raw`(?:\buser\b.{0,40}\b${decision}\b|\b${decision}\b.{0,40}\bby (?:the )?user\b)`,
-    "i",
-  ).test(text);
+  return INTERACTIVE_DECLINE_PATTERN.test(errorText(error));
 }
 
 function isAbortError(error: unknown): boolean {
@@ -425,14 +427,22 @@ type ToolUseValidation =
   | { valid: false; result: CapabilityProbe };
 
 function validateToolUseResult(result: unknown): ToolUseValidation {
-  if (!isRecord(result) || result.role !== "assistant") {
+  const validation = CreateMessageResultWithToolsSchema.safeParse(result);
+  if (!validation.success) {
+    return {
+      valid: false,
+      result: probe("failed", "sampling.tools_invalid_result", "Sampling returned an invalid tool-use result."),
+    };
+  }
+
+  if (validation.data.role !== "assistant") {
     return {
       valid: false,
       result: probe("failed", "sampling.tools_missing_tool_use", "Sampling did not return a tool use."),
     };
   }
 
-  const assistantContent = result.content;
+  const assistantContent = validation.data.content;
   const blocks = Array.isArray(assistantContent) ? assistantContent : [assistantContent];
   const toolUses = blocks.filter((block) => isRecord(block) && block.type === "tool_use");
 
@@ -486,7 +496,7 @@ function validateToolUseResult(result: unknown): ToolUseValidation {
   return {
     valid: true,
     id: toolUse.id,
-    assistantContent: assistantContent as CreateMessageResultWithTools["content"],
+    assistantContent,
   };
 }
 
