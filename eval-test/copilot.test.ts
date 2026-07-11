@@ -409,6 +409,58 @@ describe("runConversation — state machine", () => {
     expect(res.failure).toBeUndefined();
   });
 
+  it("fully unguarded linear chain fires each turn strictly by after-state despite arbitrary agent wording", async () => {
+    const seen: string[] = [];
+    // Agent says completely unrelated things at each step — no regex could match.
+    const runner = fakeRunner(
+      [
+        { match: "start", agent: "I like turtles" },
+        { match: "step-a", agent: "The weather is nice" },
+        { match: "step-b", agent: "42 is the answer" },
+        { match: "step-c", agent: "Farewell" },
+      ],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "start the chain",
+      responses: [
+        { id: "a", after: "start", send: "step-a reply" },
+        { id: "b", after: "a", send: "step-b reply" },
+        { id: "c", after: "b", send: "step-c reply" },
+        { id: "d", after: "c", send: "step-d reply" },
+      ],
+      terminal: { after: "d" },
+    };
+    const res = await runConversation(script, ctx(runner));
+    // Every turn fires in declared order despite no guards and nonsense agent text
+    expect(seen).toEqual(["start the chain", "step-a reply", "step-b reply", "step-c reply", "step-d reply"]);
+    expect(res.failure).toBeUndefined();
+    expect(res.turns).toHaveLength(5);
+  });
+
+  it("unguarded turn cannot fire before its predecessor completes", async () => {
+    const seen: string[] = [];
+    // Only one agent response to keep things short
+    const runner = fakeRunner(
+      [{ match: "start", agent: "anything" }],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "start",
+      responses: [
+        // b depends on a, but a depends on start — so b can't fire from start
+        { id: "a", after: "start", send: "a-reply" },
+        { id: "b", after: "a", send: "b-reply" },
+      ],
+      terminal: { after: "b" },
+      maxTurns: 3,
+    };
+    const res = await runConversation(script, ctx(runner));
+    // a fires first (after:start), then b (after:a) — order is correct
+    expect(seen).toEqual(["start", "a-reply", "b-reply"]);
+    expect(res.failure).toBeUndefined();
+  });
+
   it("max-turn limit reports nonterminal exhaustion as failure", async () => {
     const seen: string[] = [];
     // Agent always says "purpose" so the loop goes on, but maxTurns limits it

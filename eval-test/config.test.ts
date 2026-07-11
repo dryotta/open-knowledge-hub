@@ -4,6 +4,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { environments } from "../eval/environments.js";
+import { llmwikiLoader } from "../src/modules/loaders/llmwiki.js";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EVAL = join(REPO, "eval");
@@ -340,7 +341,7 @@ describe("llmwiki scenario structured tool expectations", () => {
     // 1: module run lint
     const lintExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
     expect(lintExp.name).toBe("run");
-    expect(lintExp.arguments!.container).toBe("wiki-hub");
+    expect(lintExp.arguments!.container).toBe("health-hub");
     expect(lintExp.arguments!.module).toBe("wiki");
     expect(lintExp.arguments!.skill).toBe("lint");
 
@@ -349,7 +350,7 @@ describe("llmwiki scenario structured tool expectations", () => {
       (e: string | { name: string }) => (typeof e === "string" ? e : e.name) === "inspect",
     ) as { name: string; arguments?: Record<string, unknown> };
     expect(inspectExp).toBeDefined();
-    expect(inspectExp.arguments!.container).toBe("wiki-hub");
+    expect(inspectExp.arguments!.container).toBe("health-hub");
 
     // sync must appear last
     const lastExp = expectations[expectations.length - 1] as { name: string } | string;
@@ -469,5 +470,123 @@ describe("llmwiki fixture schema", () => {
     expect(content).toMatch(/durable.*explanation.*connecting|connecting.*multiple.*wiki/i);
     // No concept frontmatter (no type: field in YAML block)
     expect(content).not.toMatch(/^---[\s\S]*?type:/m);
+  });
+});
+
+describe("state-driven linear conversations — cold-start", () => {
+  async function loadScenario(path: string) {
+    const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+    return doc[0];
+  }
+
+  it("cold-start chain is start→wake-phrase→container-choice→create-confirmed→wrap-up", async () => {
+    const sc = await loadScenario("onboard/cold-start-conversation.yaml");
+    const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; when?: string; send: string }>;
+    const ids = turns.map((t) => t.id);
+    expect(ids).toEqual(["wake-phrase", "container-choice", "create-confirmed", "wrap-up"]);
+    // Verify the after chain
+    expect(turns[0]!.after).toBe("start");
+    expect(turns[1]!.after).toBe("wake-phrase");
+    expect(turns[2]!.after).toBe("container-choice");
+    expect(turns[3]!.after).toBe("create-confirmed");
+  });
+
+  it("ALL cold-start turns are unguarded (no when property)", async () => {
+    const sc = await loadScenario("onboard/cold-start-conversation.yaml");
+    const turns = sc.config[0].vars.turns as Array<{ id: string; when?: string }>;
+    for (const t of turns) {
+      expect(t.when, `turn "${t.id}" must not have a when guard`).toBeUndefined();
+    }
+  });
+});
+
+describe("state-driven linear conversations — llmwiki", () => {
+  async function loadScenario(path: string) {
+    const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+    return doc[0];
+  }
+
+  it("llmwiki linear chain is start→purpose→goals→scope→template→tags→sources→scope-confirmed→sync-confirmed", async () => {
+    const sc = await loadScenario("initialize/llmwiki.yaml");
+    const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; when?: string }>;
+    const ids = turns.map((t) => t.id);
+    expect(ids).toEqual(["purpose", "goals", "scope", "template", "tags", "sources", "scope-confirmed", "sync-confirmed"]);
+    // Verify the linear after chain
+    expect(turns[0]!.after).toBe("start");
+    expect(turns[1]!.after).toBe("purpose");
+    expect(turns[2]!.after).toBe("goals");
+    expect(turns[3]!.after).toBe("scope");
+    expect(turns[4]!.after).toBe("template");
+    expect(turns[5]!.after).toBe("tags");
+    expect(turns[6]!.after).toBe("sources");
+    expect(turns[7]!.after).toBe("scope-confirmed");
+  });
+
+  it("ALL llmwiki turns are unguarded (no when property)", async () => {
+    const sc = await loadScenario("initialize/llmwiki.yaml");
+    const turns = sc.config[0].vars.turns as Array<{ id: string; when?: string }>;
+    for (const t of turns) {
+      expect(t.when, `turn "${t.id}" must not have a when guard`).toBeUndefined();
+    }
+  });
+});
+
+describe("wiki-hub fixture health", () => {
+  const FIXTURE_WIKI = join(EVAL, "fixtures", "wiki-hub", "wiki");
+
+  it("wiki-hub/wiki is clean in all four health arrays", async () => {
+    const h = await llmwikiLoader.health!(FIXTURE_WIKI);
+    expect(h.orphans, "no orphans").toEqual([]);
+    expect(h.danglingLinks, "no dangling links").toEqual([]);
+    expect(h.uncataloged, "no uncataloged pages").toEqual([]);
+    expect(h.missingType, "no missing types").toEqual([]);
+  });
+});
+
+describe("health-hub lint fixture", () => {
+  const HEALTH_WIKI = join(EVAL, "fixtures", "health-hub", "wiki");
+
+  it("health-hub/wiki has a valid module manifest", async () => {
+    const manifest = parseYaml(await readFile(join(HEALTH_WIKI, ".okh", "module.yaml"), "utf8"));
+    expect(manifest.type).toBe("llmwiki");
+  });
+
+  it("health-hub/wiki has orphan concepts/positional-encoding.md", async () => {
+    const h = await llmwikiLoader.health!(HEALTH_WIKI);
+    expect(h.orphans).toContain("concepts/positional-encoding.md");
+  });
+
+  it("health-hub/wiki has dangling link concepts/attention.md→concepts/kv-cache.md", async () => {
+    const h = await llmwikiLoader.health!(HEALTH_WIKI);
+    const dangling = h.danglingLinks.map((l) => `${l.from}->${l.to}`);
+    expect(dangling).toContain("concepts/attention.md->concepts/kv-cache.md");
+  });
+});
+
+describe("lint scenario uses health environment", () => {
+  async function loadScenario(path: string) {
+    const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+    return doc[0];
+  }
+
+  it("lint/wiki-health.yaml uses env health and container health-hub in prompt", async () => {
+    const sc = await loadScenario("lint/wiki-health.yaml");
+    const vars = sc.config[0].vars;
+    expect(vars.env).toBe("health");
+    expect(vars.prompt).toContain("health-hub");
+  });
+
+  it("lint/wiki-health.yaml tool expectations reference container health-hub", async () => {
+    const sc = await loadScenario("lint/wiki-health.yaml");
+    const assertion = sc.tests[0].assert.find(
+      (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).includes("tools-called"),
+    );
+    const cfg = assertion?.config as { expect: Array<{ name: string; arguments?: Record<string, unknown> }> };
+    const lintExp = cfg.expect[0] as { name: string; arguments?: Record<string, unknown> };
+    expect(lintExp.arguments!.container).toBe("health-hub");
+    const inspectExp = cfg.expect.find(
+      (e: { name: string; arguments?: Record<string, unknown> }) => e.name === "inspect",
+    );
+    expect(inspectExp!.arguments!.container).toBe("health-hub");
   });
 });

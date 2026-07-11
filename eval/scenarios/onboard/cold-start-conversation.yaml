@@ -1,5 +1,6 @@
 # onboard flow — a genuine multi-turn cold-start conversation: the harness plays
 # the user, answering each stage (wake phrase → new container → confirm → wrap-up).
+# All turns are unguarded (no `when`); `after` state drives the linear conversation.
 - config:
     - vars:
         env: empty
@@ -8,21 +9,17 @@
         turns:
           - id: wake-phrase
             after: start
-            when: "wake phrase|name|call it|address|what.*call"
             send: "Let's call it 'brain'."
           - id: container-choice
             after: wake-phrase
-            when: "existing|new folder|git|repository|which|container|set up"
             send: |
               Create a brand-new folder called "my-notes" with a knowledge module
               named "kb".
           - id: create-confirmed
             after: container-choice
-            when: "plan|confirm|proceed|go ahead|create|shall i|ready|yes"
             send: "Yes, go ahead and create it."
           - id: wrap-up
             after: create-confirmed
-            when: "created|registered|set up|complete"
             send: "Thanks — how would I use it day to day?"
         terminal:
           after: wrap-up

@@ -131,9 +131,9 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 |-----|-----------|------|----------|
 | `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git-auto) | `ask/*`, `context/*`, `remember/*`, `reflect/*`, `learn/trivial-fact` |
 | `empty` | workspace | `notes` (unregistered folder in the cwd) | `onboard/*`, `run/shared-grilling` |
-| `wiki` | registered | `wiki-hub` (local) | `initialize/llmwiki`, `ask/llmwiki-compounding`, `write/*`, `lint/*` |
+| `wiki` | registered | `wiki-hub` (local) | `initialize/llmwiki`, `ask/llmwiki-compounding`, `write/*` |
 | `custom` | registered | `custom-hub` (local) | `inspect/custom-module`, `run/custom-skill` |
-| `health` | registered | `health-hub` (local); `workspaceDir` = `fixtures/health-source` | `ingest/into-existing-module` |
+| `health` | registered | `health-hub` (local); `workspaceDir` = `fixtures/health-source` | `ingest/into-existing-module`, `lint/*` |
 | `git` | registered | `git-hub` (git-auto, with a seeded bare origin) | `learn/useful-fact` (sync) |
 
 - **`registered`** copies each hub into `OKH_HOME/containers/<name>` and registers it;
@@ -154,8 +154,8 @@ Fixtures (`fixtures/`):
 - **`git-hub`** — a `kb` knowledge module (used as the git-backed hub; appears alone or alongside `kb-hub`).
 - **`plain-notes`** — a minimal folder used as the unregistered `notes` hub.
 - **`custom-hub`** — a container with a `recipes` custom module including a `cook` skill.
-- **`health-hub`** — a container with a `health` knowledge module that retains source copies.
-- **`wiki-hub`** — a container with a `new-wiki` llmwiki module (pre-initialized scope contract).
+- **`health-hub`** — a container with a `health` knowledge module (retains source copies) and a `wiki` llmwiki module seeded with unhealthy state (orphan page, dangling link) for lint scenarios.
+- **`wiki-hub`** — a container with a `new-wiki` llmwiki module (pre-initialized scope contract) and a `wiki` llmwiki module with clean health baseline for initialize/ask/write scenarios.
 
 ### Multi-turn scenarios
 
@@ -168,7 +168,7 @@ Each `turns` entry is `{ id, after, when?, send }`:
 
 - **`id`** — the state this turn transitions to when selected.
 - **`after`** — the state (string or list) from which this turn is eligible; initial state is `"start"`.
-- **`when`** — optional case-insensitive regex matched against the agent's last message; omit to match unconditionally within the eligible state.
+- **`when`** — optional case-insensitive regex matched against the agent's last message. **Use `when` only for true sibling-branch discrimination** (e.g. the agent may ask about purpose *or* goals first and you need different replies). For linear sequencing, omit `when` — the `after` chain alone drives turn order.
 - **`send`** — the user message to send.
 
 A `terminal: { after, requiredTools? }` block marks the finishing state. The conversation
@@ -180,25 +180,22 @@ surface as `metadata.failure`.
 
 ```yaml
 # scenarios/onboard/cold-start-conversation.yaml (excerpt)
+# All turns are unguarded — `after` state drives the linear conversation.
 vars:
   env: empty
   prompt: "Use the Open Knowledge Hub MCP and run onboard to set me up."
   turns:
     - id: wake-phrase
       after: start
-      when: "wake phrase|name|call it"
       send: "Let's call it 'brain'."
     - id: container-choice
       after: wake-phrase
-      when: "existing|new folder|container"
       send: "Create a brand-new folder called \"my-notes\" with a knowledge module named \"kb\"."
     - id: create-confirmed
       after: container-choice
-      when: "plan|confirm|go ahead|create"
       send: "Yes, go ahead and create it."
     - id: wrap-up
       after: create-confirmed
-      when: "created|registered|complete"
       send: "Thanks — how would I use it day to day?"
   terminal:
     after: wrap-up

@@ -31,7 +31,8 @@ describe("okh-eval manual CLI (environment-centric)", () => {
     expect((await scenariosForEnv("git")).length).toBe(1);
     expect((await scenariosForEnv("empty")).length).toBe(8);
     expect((await scenariosForEnv("custom")).length).toBe(2);
-    expect((await scenariosForEnv("wiki")).length).toBe(4);
+    expect((await scenariosForEnv("wiki")).length).toBe(3);
+    expect((await scenariosForEnv("health")).length).toBe(2);
   });
 
   it("setup provisions local-and-git and lists its prompts + checklists", async () => {

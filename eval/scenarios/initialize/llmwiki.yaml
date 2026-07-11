@@ -1,4 +1,5 @@
 # initialize skill — grill scope, offer templates, and build an empty llmwiki contract/structure.
+# All turns are unguarded (no `when`); `after` state drives the linear conversation.
 - config:
     - vars:
         env: wiki
@@ -8,35 +9,29 @@
         turns:
           - id: purpose
             after: start
-            when: "purpose|goal|audience|who.*read"
             send: |
               This is an engineering handbook for backend developers and coding agents.
               It should help them understand our systems and make safe changes.
           - id: goals
-            after: start
-            when: "specific goals|outcomes.*achieve|what.*achieve"
+            after: purpose
             send: |
               The complete goal is for backend developers and coding agents to understand
               our systems and make safe changes. Continue to the scope boundaries.
           - id: scope
-            after: [purpose, goals]
-            when: "scope|in.?scope|out.?of.?scope|topics"
+            after: goals
             send: |
               In scope: backend components, request flows, architecture decisions, and
               engineering terminology. Out of scope: product roadmaps and customer data.
           - id: template
             after: scope
-            when: "structure|template|encyclopedia|di.taxis|topic tree|codebase|custom"
             send: |
               Use the Encyclopedia template: concepts, entities, summaries, and
               syntheses. Use matching singular OKF concept types.
           - id: tags
             after: template
-            when: "tag|tagging"
             send: "Skip tags; the group structure and links are enough."
           - id: sources
             after: tags
-            when: "source|retain|copies"
             send: "Do not retain source copies."
           - id: scope-confirmed
             after: sources

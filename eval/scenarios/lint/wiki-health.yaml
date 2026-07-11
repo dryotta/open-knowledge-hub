@@ -1,10 +1,10 @@
 # lint flow — read deterministic health, resolve the dangling link, log the pass.
 - config:
     - vars:
-        env: wiki
+        env: health
         prompt: |
           Use the open-knowledge-hub MCP tools. Run the "wiki" module's `lint` skill in
-          container "wiki-hub" to inspect the ml-wiki's health, fix what it safely can,
+          container "health-hub" to inspect the ml-wiki's health, fix what it safely can,
           and log the pass. Then sync.
   tests:
     - description: Lint - wiki health - inspects, fixes dangling link, logs
@@ -15,11 +15,11 @@
             ordered: true
             expect:
               - name: run
-                arguments: { container: wiki-hub, module: wiki, skill: lint }
+                arguments: { container: health-hub, module: wiki, skill: lint }
               - name: inspect
-                arguments: { container: wiki-hub, module: wiki }
+                arguments: { container: health-hub, module: wiki }
               - name: sync
-                arguments: { container: wiki-hub }
+                arguments: { container: health-hub }
         - type: javascript
           value: file://assertions/okf-valid.ts
           config: { module: wiki, requireChanged: true }
