@@ -196,6 +196,10 @@ function isInteractiveDecline(error: unknown): boolean {
   return /abort|cancel|declin|deni|reject|not approved/i.test(errorText(error));
 }
 
+function isAbortError(error: unknown): boolean {
+  return isRecord(error) && error.name === "AbortError";
+}
+
 function validateRootsResult(result: unknown):
   | { valid: true; count: number; namesObserved: boolean }
   | { valid: false; invalidUri: boolean } {
@@ -334,6 +338,8 @@ export async function runBasicSamplingProbe(
               "sampling.not_implemented",
               "Sampling was advertised but the method is not implemented.",
             )
+          : isAbortError(error)
+            ? probe("failed", "sampling.aborted", "Basic sampling was aborted.")
           : isInteractiveDecline(error)
             ? probe(
                 "supported_not_completed",

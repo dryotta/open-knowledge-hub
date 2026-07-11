@@ -379,6 +379,23 @@ describe("runBasicSamplingProbe", () => {
     },
   );
 
+  it("fails programmatic AbortError sampling without treating it as a user decline", async () => {
+    const { store, clientKey, runId } = createRun({ sampling: {} });
+    const client = makeClient({
+      createMessage: async () => {
+        throw { name: "AbortError", message: "This operation was aborted" };
+      },
+    });
+
+    await runBasicSamplingProbe(client, store, clientKey, runId, DEFAULT_PROBE_TIMEOUTS);
+
+    expect(store.getSnapshotForClient(clientKey, runId).report.probes.samplingBasic).toEqual({
+      status: "failed",
+      code: "sampling.aborted",
+      message: "Basic sampling was aborted.",
+    });
+  });
+
   it.each([
     [ErrorCode.RequestTimeout, "sampling.timeout", "Basic sampling timed out."],
     [ErrorCode.MethodNotFound, "sampling.not_implemented", "Sampling was advertised but the method is not implemented."],
