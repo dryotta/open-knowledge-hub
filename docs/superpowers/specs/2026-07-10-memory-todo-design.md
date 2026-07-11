@@ -1,6 +1,6 @@
 # Memory Todo Lists and MCP App
 
-**Status:** Approved design  
+**Status:** Approved revised design
 **Date:** 2026-07-10
 
 ## 1. Summary
@@ -16,7 +16,7 @@ The feature adds:
 - automatic todo recognition in the `remember` skill;
 - label, due-date, and priority management;
 - a `todo` memory skill for explicit management;
-- deterministic read/update MCP tools;
+- one deterministic `todos` MCP API for reading, previewing, and applying changes;
 - an MCP App for filtering and completing/reopening tasks.
 
 ## 2. Goals and non-goals
@@ -197,11 +197,52 @@ containers. Optional container and module arguments narrow the scope.
 The existing general memory loader may remain a file listing; todo discovery is
 a dedicated capability because it requires recursive parsing and mutations.
 
-## 6. MCP tools
+## 6. MCP API
 
 ### 6.1 `todos`
 
-`todos` is read-only, model-visible, and app-callable. It accepts optional:
+`todos` is the only todo tool. It is model-visible, app-callable, and linked to
+the Todo MCP App. Its input is a discriminated union:
+
+```ts
+type TodosInput =
+  | {
+      operation?: "list";
+      container?: string;
+      module?: string;
+      status?: "open" | "completed" | "custom" | "all";
+      labels?: string[];
+      labelMode?: "any" | "all";
+      priorities?: TodoPriority[];
+      dueAfter?: string;
+      dueBefore?: string;
+      overdue?: boolean;
+      query?: string;
+    }
+  | {
+      operation: "create";
+      container: string;
+      module: string;
+      text: string;
+      entrySummary?: string;
+      observation?: string;
+      labels?: string[];
+      due?: string;
+      priority?: TodoPriority;
+      apply?: boolean;
+    }
+  | {
+      operation: "update";
+      ref: string;
+      completed?: boolean;
+      labels?: string[];
+      due?: string | null;
+      priority?: TodoPriority | null;
+      apply?: boolean;
+    };
+```
+
+`operation` defaults to `list`. List accepts optional:
 
 - `container`;
 - `module`;
@@ -233,48 +274,53 @@ The tool metadata links to:
 ui://open-knowledge-hub/todos
 ```
 
-### 6.2 `update_todo`
-
-`update_todo` is model-visible and app-callable. It supports two operations:
+Because one tool supports both reads and writes, its MCP annotations must not
+claim that every call is read-only. The operation-specific result remains
+explicit:
 
 ```ts
-type UpdateTodoInput =
-  | {
-      operation: "create";
-      container: string;
-      module: string;
-      text: string;
-      entrySummary?: string;
-      observation?: string;
-      labels?: string[];
-      due?: string;
-      priority?: TodoPriority;
-    }
-  | {
-      operation: "patch";
-      ref: string;
-      completed?: boolean;
-      labels?: string[];
-      due?: string | null;
-      priority?: TodoPriority | null;
-    };
+type TodosResult =
+  | { operation: "list"; tasks: TodoRecord[]; warnings: TodoWarning[]; counts: TodoCounts }
+  | { operation: "create" | "update"; applied: false; preview: TodoMutationPreview; needsConfirmation: true }
+  | { operation: "create" | "update"; applied: true; todo: TodoRecord; dirtyContainer: string };
 ```
 
-At least one patch field is required. The tool validates dates, priorities,
-labels, scope, and locator freshness before writing.
+### 6.2 Preview and apply
+
+Create and update are preview-only unless `apply: true` is supplied. A preview
+performs the same validation and serialization as an applied mutation but does
+not write. It returns:
+
+- the exact proposed checkbox line;
+- the target container, module, relative path, and line or insertion location;
+- normalized fields;
+- `needsConfirmation: true`.
+
+After explicit chat confirmation, a skill repeats the same request with
+`apply: true`. The service re-reads and revalidates the target at apply time, so
+a preview does not reserve or lock a stale locator.
+
+An MCP App checkbox click is itself explicit user authorization. The app calls
+the same operation with `apply: true` and does not need a prior preview.
+
+At least one update field is required. The tool validates dates, priorities,
+labels, scope, and locator freshness before previewing or writing.
 
 `entrySummary` and `observation` let `remember` place factual memory and its
 related checkbox in one dated entry. A plain `todo` skill create omits them and
 uses the default `Todo` summary.
 
-Create and patch affect one memory module and one Markdown file per call. The
-result returns the updated normalized task and the affected container so clients
-can report that local unsynced changes exist.
+An applied create or update affects one memory module and one Markdown file per
+call. The result returns the updated normalized task and affected container so
+clients can report that local unsynced changes exist.
 
 ### 6.3 Tool routing
 
-Hub instructions and tool descriptions explicitly route requests to show, list,
-filter, or review todos to `todos`, rather than `ask` or raw file inspection.
+Hub instructions and tool descriptions route every todo API operation through
+`todos`. Natural-language creation and changes use the target memory module's
+`remember` or `todo` skill for interpretation, proposal, confirmation, and sync.
+The tool does not use skill invocation as authorization; safety comes from its
+preview-by-default mutation contract.
 
 ## 7. Skills
 
@@ -292,11 +338,11 @@ For a todo:
 5. use user-supplied labels when present;
 6. query existing module todos and reuse semantically matching labels;
 7. otherwise create concise lowercase labels, falling back to `general`;
-8. preview the write and obtain confirmation;
-9. call `update_todo` with `operation: "create"`, including the entry summary
-   and factual observation when present;
-10. call `sync` after the user approves persistence, following the existing write
-    policy.
+8. call `todos` with `operation: "create"` and no `apply` to obtain the canonical
+   preview, including the entry summary and factual observation when present;
+9. present that preview and obtain confirmation;
+10. repeat the request with `apply: true`;
+11. call `sync` after the applied write.
 
 If the input contains both a factual observation and a todo, record both in the
 same dated entry.
@@ -311,9 +357,10 @@ Add a vendored `todo` skill for:
 - setting or clearing a due date;
 - setting or clearing priority.
 
-The skill resolves natural-language references by querying `todos`, presents the
-exact proposed task change, obtains confirmation, calls `update_todo`, and then
-uses the normal `sync` flow.
+The skill resolves natural-language references with `todos { operation: "list" }`,
+calls `todos` create or update without `apply` for a canonical preview, presents
+that preview, obtains confirmation, repeats the mutation with `apply: true`, and
+then uses the normal `sync` flow.
 
 The skill does not delete tasks, rename task text, or manage recurrence in v1.
 
@@ -325,8 +372,8 @@ Use `@modelcontextprotocol/ext-apps` server helpers to register the `todos` tool
 and its UI resource. Build the UI as a single local HTML bundle shipped under
 `dist`; it requires no network access or external resource domains.
 
-The app consumes the initial `todos` structured result and calls server tools
-through the MCP App bridge.
+The app consumes the initial `todos` list result and calls the same tool through
+the MCP App bridge for applied status changes.
 
 ### 8.2 Layout and behavior
 
@@ -363,9 +410,10 @@ Filtering and sorting are client-side after the initial result for immediate
 feedback.
 
 The app only completes and reopens tasks in v1. During an update it disables the
-row. On success it applies the returned task in place and marks the affected
-container as locally changed. On stale or ambiguous failure it shows the error
-and refreshes through `todos`.
+row and calls `todos { operation: "update", ref, completed, apply: true }`. On
+success it applies the returned task in place and marks the affected container
+as locally changed. On stale or ambiguous failure it shows the error and
+refreshes through `todos { operation: "list" }`.
 
 The app does not call `sync`. It tells the user that changes are local and may be
 synced through the normal conversation flow.
@@ -378,7 +426,8 @@ appropriate.
 
 ## 9. Writes, concurrency, and safety
 
-- A skill follows the existing preview, confirmation, write, and sync policy.
+- A skill uses the API's preview response, obtains confirmation, applies the same
+  mutation, and syncs.
 - An app checkbox click is explicit authorization for that local status change.
 - App changes remain local until the user invokes the existing `sync` flow.
 - Validate every resolved path remains beneath the selected memory module.
@@ -421,7 +470,8 @@ appropriate.
 
 ### MCP surface and app
 
-- `todos` and `update_todo` schemas, annotations, text, and structured output;
+- the unified `todos` list/create/update schema, previews, applied results,
+  annotations, text, and structured output;
 - `ui://` resource registration and `text/html;profile=mcp-app`;
 - app tool-result rendering, filters, sorting, successful toggles, and stale
   refresh;
@@ -433,9 +483,13 @@ appropriate.
 - `remember` distinguishes ordinary memory from explicit tracked actions;
 - supplied and inferred labels;
 - due-date and priority normalization;
-- `todo` skill create and patch flows;
+- `todo` skill create and update flows;
 - todo-list requests route to `todos`;
+- agent-driven mutations preview before confirmation and apply afterward;
 - app status changes do not auto-sync.
+- live mutation evals verify preview, confirmation, applied mutation, final
+  on-disk state, and subsequent sync; they do not treat `run(todo)` as API
+  authorization.
 
 Run:
 
@@ -461,4 +515,8 @@ Run:
 8. The `todo` skill can add, complete/reopen, relabel, and change due date or
    priority.
 9. App edits remain local until the normal `sync` flow is invoked.
-10. Build, unit tests, eval validation, and the full end-to-end eval pass.
+10. `todos` is the only todo MCP tool; `update_todo` is not registered.
+11. Create and update calls cannot write unless `apply: true` is supplied.
+12. The `remember` and `todo` skills only set `apply: true` after presenting the
+    API preview and receiving confirmation.
+13. Build, unit tests, eval validation, and the full end-to-end eval pass.
