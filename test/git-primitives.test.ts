@@ -202,6 +202,55 @@ describe("Git.abortRebase", () => {
   });
 });
 
+describe("Git.currentCommit", () => {
+  it("calls rev-parse HEAD and returns trimmed SHA", async () => {
+    const { runner, calls } = makeRunner({
+      responses: { "git rev-parse HEAD": "  abc1234def5678\n" },
+    });
+    const git = new Git(runner);
+    const sha = await git.currentCommit("/repo");
+    expect(sha).toBe("abc1234def5678");
+    expect(calls[0]).toMatchObject({
+      command: "git",
+      args: ["rev-parse", "HEAD"],
+      cwd: "/repo",
+    });
+  });
+
+  it("wraps runner errors as OkhError GIT_ERROR", async () => {
+    const { runner } = makeRunner({ throws: ["git rev-parse HEAD"] });
+    const git = new Git(runner);
+    await expect(git.currentCommit("/repo")).rejects.toMatchObject({
+      name: "OkhError",
+      code: "GIT_ERROR",
+    });
+  });
+});
+
+describe("Git.pushForceWithLease", () => {
+  it("calls push --force-with-lease --set-upstream remote branch with correct cwd", async () => {
+    const { runner, calls } = makeRunner({});
+    const git = new Git(runner);
+    await git.pushForceWithLease("/repo", "origin", "user/alice/hub");
+    expect(calls[0]).toMatchObject({
+      command: "git",
+      args: ["push", "--force-with-lease", "--set-upstream", "origin", "user/alice/hub"],
+      cwd: "/repo",
+    });
+  });
+
+  it("wraps runner errors as OkhError GIT_ERROR", async () => {
+    const { runner } = makeRunner({
+      throws: ["git push --force-with-lease --set-upstream origin user/alice/hub"],
+    });
+    const git = new Git(runner);
+    await expect(git.pushForceWithLease("/repo", "origin", "user/alice/hub")).rejects.toMatchObject({
+      name: "OkhError",
+      code: "GIT_ERROR",
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Gh primitives
 // ---------------------------------------------------------------------------

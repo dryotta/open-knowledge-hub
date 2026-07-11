@@ -15,6 +15,8 @@ import type {
 const backendConfigSchema = z.object({ origin: repoUrlSchema }).strict();
 const autoConfigSchema = z.object({}).strict();
 const sharedInputConfigSchema = z.object({ branch: z.string().optional() }).strict();
+/** Strict schema for the resolved shared config stored in `entry.sync.config`. */
+const sharedConfigSchema = z.object({ branch: z.string().min(1) }).strict();
 
 /**
  * SyncBackend for git-hosted containers.
@@ -158,23 +160,36 @@ export class GitBackend implements SyncBackend {
     return { mode: "auto", outcome, committed, pushed: true, branch };
   }
 
-  private async ensureSharedBranch(root: string, branch: string): Promise<void> {
+  /**
+   * Ensures the shared `branch` is checked out in `root`.
+   * Returns `true` when the branch did not previously exist on origin (newly created).
+   */
+  private async ensureSharedBranch(root: string, branch: string): Promise<boolean> {
     await this.git.fetchRemote(root, "origin");
     if (await this.git.localBranchExists(root, branch)) {
       await this.git.checkout(root, branch);
+      return false;
     } else if (await this.git.remoteBranchExists(root, "origin", branch)) {
       await this.git.checkoutTracking(root, branch, `origin/${branch}`);
+      return false;
     } else {
       await this.git.createBranchFrom(root, branch, "origin/main");
+      return true;
     }
   }
 
   private async syncShared(request: BackendSyncRequest): Promise<BackendSyncResult> {
     const { entry, message, action } = request;
     const root = entry.localPath;
-    // `resolveSync` always persists `{ branch: string }` in the shared config and
-    // `BackendRegistry.validateEntry` enforces this invariant before any sync.
-    const { branch } = entry.sync.config as { branch: string };
+
+    const parseResult = sharedConfigSchema.safeParse(entry.sync.config);
+    if (!parseResult.success) {
+      throw new OkhError(
+        "INVALID_ARGUMENT",
+        `Shared sync config is missing or invalid: ${parseResult.error.issues[0]?.message ?? parseResult.error.message}. Run resolveSync to configure the shared branch.`,
+      );
+    }
+    const { branch } = parseResult.data;
 
     if (action !== undefined && action !== "publish-pr") {
       throw new OkhError(
@@ -183,7 +198,9 @@ export class GitBackend implements SyncBackend {
       );
     }
 
-    await this.ensureSharedBranch(root, branch);
+    const isNew = await this.ensureSharedBranch(root, branch);
+
+    const headBefore = await this.git.currentCommit(root);
 
     await this.git.stageAll(root);
     let committed = false;
@@ -212,10 +229,14 @@ export class GitBackend implements SyncBackend {
       );
     }
 
-    await this.git.push(root, "origin", branch);
+    const headAfter = await this.git.currentCommit(root);
+    const headChanged = headBefore !== headAfter;
+
+    await this.git.pushForceWithLease(root, "origin", branch);
 
     if (action !== "publish-pr") {
-      return { mode: "shared", outcome: "synced", committed, pushed: true, branch };
+      const outcome = isNew || committed || headChanged ? "synced" : "up-to-date";
+      return { mode: "shared", outcome, committed, pushed: true, branch };
     }
 
     // publish-pr: find existing or create new PR

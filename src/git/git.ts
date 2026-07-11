@@ -149,9 +149,24 @@ export class Git {
     }
   }
 
+  /** Returns the current HEAD commit SHA. */
+  async currentCommit(cwd: string): Promise<string> {
+    const out = await this.git(["rev-parse", "HEAD"], cwd);
+    return out.trim();
+  }
+
   /** Push `branch` to `remote`, setting upstream. */
   async push(cwd: string, remote: string, branch: string): Promise<void> {
     await this.git(["push", "--set-upstream", remote, branch], cwd);
+  }
+
+  /**
+   * Force-push `branch` to `remote` with lease protection, setting upstream.
+   * Required after rebasing an already-pushed branch so the push is rejected
+   * if the remote ref moved since our last fetch.
+   */
+  async pushForceWithLease(cwd: string, remote: string, branch: string): Promise<void> {
+    await this.git(["push", "--force-with-lease", "--set-upstream", remote, branch], cwd);
   }
 
   /** A short diffstat of `worktree` vs `ref` (default HEAD), for change summaries. */

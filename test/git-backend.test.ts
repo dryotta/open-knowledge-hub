@@ -53,6 +53,7 @@ class AbortFailingGit {
   async localBranchExists(): Promise<boolean> { return true; }
   async remoteBranchExists(): Promise<boolean> { return false; }
   async checkout(): Promise<void> {}
+  async currentCommit(): Promise<string> { return "abc123"; }
   async stageAll(): Promise<void> {}
   async hasStagedChanges(): Promise<boolean> { return false; }
   async commit(): Promise<void> {}
@@ -61,7 +62,7 @@ class AbortFailingGit {
     this.abortCalled = true;
     throw new OkhError("GIT_ERROR", "abort failed");
   }
-  async push(): Promise<void> {}
+  async pushForceWithLease(): Promise<void> {}
   async currentBranch(): Promise<string> { return "user/test/hub"; }
   async aheadBehind(): Promise<null> { return null; }
   async isValidBranchName(): Promise<boolean> { return true; }
@@ -463,13 +464,58 @@ describe("GitBackend — shared sync", () => {
     const entry = makeEntry(root, "shared", { branch });
 
     await backend.sync({ entry, validation: { ok: true, issues: [] } });
-    // Second sync with no changes: branch exists locally, rebase is no-op → "synced"
+    // Second sync with no changes: branch exists locally, rebase is no-op → "up-to-date"
     const result = await backend.sync({ entry, validation: { ok: true, issues: [] } });
 
     expect(result.pushed).toBe(true);
-    expect(result.outcome).toBe("synced");
+    expect(result.outcome).toBe("up-to-date");
     const git = new Git(testRun);
     expect(await git.currentBranch(root)).toBe(branch);
+  });
+
+  it("pushForceWithLease succeeds after rebase rewrites shared branch history", async () => {
+    // Regression: after rebasing an already-pushed personal shared branch the commit SHAs
+    // are rewritten. A normal `git push` would be rejected as non-fast-forward; only
+    // `--force-with-lease` (which checks that the remote hasn't moved beyond our last
+    // fetch) allows the push to succeed.
+    const origin = await makeTrackedOrigin();
+    const root = await cloneOrigin(origin);
+    const branch = "user/test/hub";
+
+    const backend = new GitBackend(new Git(testRun), new FakeGh() as unknown as Gh);
+    const entry = makeEntry(root, "shared", { branch });
+
+    // Sync 1: commit A on shared branch and push
+    await writeFile(join(root, "commit-a.md"), "commit A", "utf8");
+    await backend.sync({ entry, validation: { ok: true, issues: [] } });
+
+    // Verify commit A is on the remote shared branch
+    const { stdout: remoteA } = await testRun("git", ["ls-remote", "--heads", origin, branch]);
+    expect(remoteA).toContain(branch);
+
+    // Origin/main advances (rewrites the base that commit A was on)
+    await pushToOrigin(origin, "origin-advance.md", "from origin/main");
+
+    // Sync 2: commit B, rebase onto new origin/main, push --force-with-lease
+    await writeFile(join(root, "commit-b.md"), "commit B", "utf8");
+    const result = await backend.sync({ entry, validation: { ok: true, issues: [] } });
+
+    expect(result.committed).toBe(true);
+    expect(result.pushed).toBe(true);
+    expect(result.outcome).toBe("synced");
+
+    // Remote shared branch must contain A, B and the advanced origin/main file
+    const verifyDir = await makeTempDir("okh-verify-fwl-");
+    cleanups.push(verifyDir);
+    await testRun("git", ["clone", origin, verifyDir]);
+    await testRun("git", ["checkout", branch], { cwd: verifyDir });
+
+    const aExists = await stat(join(verifyDir, "commit-a.md")).then(() => true, () => false);
+    const bExists = await stat(join(verifyDir, "commit-b.md")).then(() => true, () => false);
+    const advanceExists = await stat(join(verifyDir, "origin-advance.md")).then(() => true, () => false);
+    expect(aExists).toBe(true);
+    expect(bExists).toBe(true);
+    expect(advanceExists).toBe(true);
   });
 
   it("rebase conflict: aborts cleanly, local commit preserved, OkhError thrown", async () => {
@@ -516,16 +562,11 @@ describe("GitBackend — shared sync", () => {
       .catch((e) => e);
 
     expect(stubGit.abortCalled).toBe(true);
-
-    const isAggregate = err instanceof AggregateError;
-    if (isAggregate) {
-      expect((err as AggregateError).errors).toHaveLength(2);
-    } else {
-      // OkhError containing both messages
-      const msg = (err as Error).message;
-      expect(msg).toMatch(/conflict|rebase/i);
-      expect(msg).toMatch(/abort/i);
-    }
+    expect(err).toBeInstanceOf(AggregateError);
+    const aggregateErr = err as AggregateError;
+    expect(aggregateErr.errors).toHaveLength(2);
+    expect((aggregateErr.errors[0] as Error).message).toMatch(/conflict during rebase/);
+    expect((aggregateErr.errors[1] as Error).message).toMatch(/abort failed/);
   });
 
   it("plain shared sync never calls Gh PR methods", async () => {
