@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, cp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, cp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -86,6 +86,17 @@ export interface Provisioned {
   originPath?: string;
 }
 
+export type MakeTempRoot = (prefix: string) => Promise<string>;
+export type RemoveTempRoot = (root: string) => Promise<void>;
+
+export interface ProvisionEnvironmentOptions {
+  repoRoot: string;
+  label?: string;
+  runner?: typeof run;
+  makeTempRoot?: MakeTempRoot;
+  removeTempRoot?: RemoveTempRoot;
+}
+
 const fixturePath = (f: string): string => (isAbsolute(f) ? f : resolve(EVAL_ROOT, f));
 
 /** Register one hub into the OKH containers dir; seed a bare origin for git-auto. */
@@ -131,59 +142,73 @@ async function registerHub(
  */
 export async function provisionEnvironment(
   env: EnvName,
-  opts: { repoRoot: string; label?: string; runner?: typeof run },
+  opts: ProvisionEnvironmentOptions,
 ): Promise<Provisioned> {
   const def = environments[env];
   const runner = opts.runner ?? run;
+  const makeTempRoot: MakeTempRoot = opts.makeTempRoot ?? ((prefix) => mkdtemp(prefix));
+  const removeTempRoot: RemoveTempRoot = opts.removeTempRoot ?? ((root) => rm(root, { recursive: true, force: true }));
   const git = new Git(runner);
 
-  const root = await mkdtemp(join(tmpdir(), `okh-eval-${opts.label ?? env}-`));
-  const okhHome = join(root, "okh-home");
-  const copilotHome = join(root, "copilot-home");
-  const workspace = join(root, "workspace");
-  const containersDir = join(okhHome, "containers");
-  await mkdir(containersDir, { recursive: true });
-  await mkdir(copilotHome, { recursive: true });
-  await mkdir(workspace, { recursive: true });
+  const root = await makeTempRoot(join(tmpdir(), `okh-eval-${opts.label ?? env}-`));
+  try {
+    const okhHome = join(root, "okh-home");
+    const copilotHome = join(root, "copilot-home");
+    const workspace = join(root, "workspace");
+    const containersDir = join(okhHome, "containers");
+    await mkdir(containersDir, { recursive: true });
+    await mkdir(copilotHome, { recursive: true });
+    await mkdir(workspace, { recursive: true });
 
-  const paths: OkhPaths = {
-    home: okhHome,
-    containersDir,
-    registryFile: join(okhHome, "registry.json"),
-    preferencesFile: join(okhHome, "preferences.json"),
-  };
+    const paths: OkhPaths = {
+      home: okhHome,
+      containersDir,
+      registryFile: join(okhHome, "registry.json"),
+      preferencesFile: join(okhHome, "preferences.json"),
+    };
 
-  const primary = def.hubs[0];
-  const primaryFixtureDir = fixturePath(primary.fixture);
-  let containerPath = "";
-  let originPath: string | undefined;
+    const primary = def.hubs[0];
+    const primaryFixtureDir = fixturePath(primary.fixture);
+    let containerPath = "";
+    let originPath: string | undefined;
 
-  if (def.placement === "workspace") {
-    for (const hub of def.hubs) {
-      const dest = join(workspace, hub.container);
-      await cp(fixturePath(hub.fixture), dest, { recursive: true });
-      if (hub === primary) containerPath = dest;
-    }
-    await saveRegistry(paths, emptyRegistry());
-  } else {
-    let registry = emptyRegistry();
-    for (const hub of def.hubs) {
-      const { entry, originPath: hubOrigin } = await registerHub(hub, containersDir, root, git, runner);
-      registry = withContainerAdded(registry, entry);
-      if (hub === primary) {
-        containerPath = entry.localPath;
-        originPath = hubOrigin;
+    if (def.placement === "workspace") {
+      for (const hub of def.hubs) {
+        const dest = join(workspace, hub.container);
+        await cp(fixturePath(hub.fixture), dest, { recursive: true });
+        if (hub === primary) containerPath = dest;
       }
+      await saveRegistry(paths, emptyRegistry());
+    } else {
+      let registry = emptyRegistry();
+      for (const hub of def.hubs) {
+        const { entry, originPath: hubOrigin } = await registerHub(hub, containersDir, root, git, runner);
+        registry = withContainerAdded(registry, entry);
+        if (hub === primary) {
+          containerPath = entry.localPath;
+          originPath = hubOrigin;
+        }
+      }
+      await saveRegistry(paths, registry);
     }
-    await saveRegistry(paths, registry);
-  }
 
-  if (def.workspaceDir) {
-    await cp(fixturePath(def.workspaceDir), workspace, { recursive: true });
-  }
+    if (def.workspaceDir) {
+      await cp(fixturePath(def.workspaceDir), workspace, { recursive: true });
+    }
 
-  await writeMcpConfig(copilotHome, opts.repoRoot, okhHome);
-  return { root, okhHome, copilotHome, workspace, containerPath, fixtureDir: primaryFixtureDir, originPath };
+    await writeMcpConfig(copilotHome, opts.repoRoot, okhHome);
+    return { root, okhHome, copilotHome, workspace, containerPath, fixtureDir: primaryFixtureDir, originPath };
+  } catch (provisionError) {
+    try {
+      await removeTempRoot(root);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [provisionError, cleanupError],
+        `Failed to provision eval environment "${env}" and clean up temp root "${root}".`,
+      );
+    }
+    throw provisionError;
+  }
 }
 
 async function writeMcpConfig(copilotHome: string, repoRoot: string, okhHome: string): Promise<void> {

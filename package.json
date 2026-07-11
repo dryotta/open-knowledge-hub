@@ -21,6 +21,7 @@
     "typecheck": "npm run typecheck:server && npm run typecheck:app",
     "inspect": "npm run build && npx @modelcontextprotocol/inspector node dist/index.js",
     "inspect:dev": "npm run build:app && npx @modelcontextprotocol/inspector npx tsx src/index.ts",
+    "manual": "tsx eval/manual.ts",
     "test": "npm run build:app && vitest run",
     "test:watch": "npm run build:app && vitest",
     "test:e2e": "npm run build:app && vitest run --config vitest.e2e.config.ts",
@@ -30,7 +31,6 @@
     "eval": "node --import tsx eval/run-scenarios.ts eval",
     "eval:validate": "node --import tsx eval/run-scenarios.ts validate",
     "eval:view": "promptfoo view",
-    "eval:setup": "tsx eval/okh-eval.ts",
     "build:server": "tsc -p tsconfig.json",
     "build:app": "node scripts/build-todo-app.mjs",
     "typecheck:server": "tsc -p tsconfig.json --noEmit",
@@ -43,7 +43,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/cross-spawn": "6.0.6",
     "@types/node": "^22.0.0",
+    "cross-spawn": "7.0.6",
     "esbuild": "0.28.1",
     "playwright": "1.61.1",
     "promptfoo": "^0.120.5",
