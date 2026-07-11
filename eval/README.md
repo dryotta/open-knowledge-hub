@@ -4,7 +4,7 @@ End-to-end tests that exercise the **real** Open Knowledge Hub MCP server **insi
 GitHub Copilot CLI** against real fixture containers. There is **no external grader
 key** — both the agent and the judge run through Copilot CLI.
 
-The same 17 scenarios run two ways:
+The same 25 scenarios run two ways:
 
 - **Automated** — [promptfoo](https://promptfoo.dev) drives a custom Copilot-CLI
   provider, applies deterministic `javascript` assertions plus a Copilot-CLI **judge**,
@@ -32,10 +32,10 @@ promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios
        ├─ runConversation(...)  ← copilot.ts
        │    turn 1:  copilot -p "<prompt>" --session-id <uuid> --allow-all --output-format json --model <model>
        │    then per scripted reply:  copilot -p "<reply>" --resume=<uuid> ...   (single-turn = just turn 1)
-       └─ returns the aggregated transcript + metadata (containerPath, originPath, toolCalls, cost, …)
+       └─ returns the aggregated transcript + metadata (containerPath, originPath, toolCalls, toolEvents, cost, …)
   └─ assertions grade the transcript + on-disk side-effects:
        • deterministic javascript assertions (tools called, files changed, git commits…)
-       • a Copilot-CLI judge (binary criteria, self-consistency, cross-checked)
+       • a Copilot-CLI judge (binary criteria, self-consistency)
 ```
 
 Everything is isolated per run: each scenario gets its own `OKH_HOME`, `COPILOT_HOME`,
@@ -49,13 +49,13 @@ Key files:
 | `promptfooconfig.yaml` | the single default config: `{{prompt}}` pass-through + shared provider + `scenarios:` glob |
 | `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout |
 | `scenarios/<verb>/<case>.yaml` | one scenario (a one-element list): `config.vars` (prompt+env) + `tests[0].assert` |
-| `environments.ts` | defines the 3 environments **and** provisions them (`provisionEnvironment`) |
+| `environments.ts` | defines the 6 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, drives the (multi-turn) conversation, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
 | `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
-| `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`) |
+| `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`, `custom-hub`, `health-hub`, `wiki-hub`) |
 
 ---
 
@@ -129,9 +129,12 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 
 | env | placement | hubs | used for |
 |-----|-----------|------|----------|
-| `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git) | the 8 `kb-hub` scenarios + `ask/across-hubs` |
-| `git` | registered | `git-hub` (git-auto, with a seeded push origin) | `learn/useful-fact` (sync) |
-| `empty` | workspace | `notes` (unregistered folder in the cwd) | the 7 `onboard/*` scenarios |
+| `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git-auto) | `ask/*`, `context/*`, `remember/*`, `reflect/*`, `learn/trivial-fact` |
+| `empty` | workspace | `notes` (unregistered folder in the cwd) | `onboard/*`, `run/shared-grilling` |
+| `wiki` | registered | `wiki-hub` (local) | `initialize/llmwiki`, `ask/llmwiki-compounding`, `write/*`, `lint/*` |
+| `custom` | registered | `custom-hub` (local) | `inspect/custom-module`, `run/custom-skill` |
+| `health` | registered | `health-hub` (local); `workspaceDir` = `fixtures/health-source` | `ingest/into-existing-module` |
+| `git` | registered | `git-hub` (git-auto, with a seeded bare origin) | `learn/useful-fact` (sync) |
 
 - **`registered`** copies each hub into `OKH_HOME/containers/<name>` and registers it;
   `git-auto` hubs also get a throwaway **bare origin** seeded and cloned so `sync` has
@@ -141,31 +144,39 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
   or "add from a URL".
 
 To add or change an environment, edit `environments.ts`; scenarios only reference it by
-name. Consolidation is intentional — scenarios are **not** minimally isolated (e.g. the
-`ask` scenarios run with `git-hub` also present); their prompts are scoped to a named
-container, and the full eval is the gate.
+name.
 
 Fixtures (`fixtures/`):
 
 - **`kb-hub`** — a rich container: `kb` knowledge (an Auth concept), a `debugging` skill,
   a `csv2json` tool, and a `mem` module with two dated entries about a recurring
   token-refresh / clock-skew issue.
-- **`git-hub`** — a `kb` knowledge module (used as the git-backed hub).
+- **`git-hub`** — a `kb` knowledge module (used as the git-backed hub; appears alone or alongside `kb-hub`).
 - **`plain-notes`** — a minimal folder used as the unregistered `notes` hub.
+- **`custom-hub`** — a container with a `recipes` custom module including a `cook` skill.
+- **`health-hub`** — a container with a `health` knowledge module that retains source copies.
+- **`wiki-hub`** — a container with a `new-wiki` llmwiki module (pre-initialized scope contract).
 
 ### Multi-turn scenarios
 
-Most scenarios are single-turn: one prompt, one agent reply. Conversational flows
-(onboard) can instead declare `vars.turns` — a list of scripted **user** replies that the
-harness sends across a resumed Copilot session (`--session-id` on turn 1, then
-`--resume=<id>`), one `copilot -p` invocation per turn. In `-p` mode the agent ends each
-turn with its question rather than blocking, so each turn is one conversational step.
+Most scenarios are single-turn: one prompt, one agent reply (`vars.turns` omitted or
+empty). Conversational flows declare `vars.turns` — scripted user replies driven by a
+**state machine**. The harness sends each turn via a resumed session (`--session-id` on
+turn 1, then `--resume=<id>`), one `copilot -p` invocation per turn.
 
-Each entry is a string (an ordered reply) or `{ send, when }`, where `when` is a
-case-insensitive regex matched against the **agent's last message**. Per step the harness
-picks the first unsent reply whose `when` matches; otherwise the first unsent unguarded
-reply; otherwise the conversation ends (a `maxTurns` cap, default `turns.length + 2`,
-guards against loops). This adapts if the agent reorders or combines stages.
+Each `turns` entry is `{ id, after, when?, send }`:
+
+- **`id`** — the state this turn transitions to when selected.
+- **`after`** — the state (string or list) from which this turn is eligible; initial state is `"start"`.
+- **`when`** — optional case-insensitive regex matched against the agent's last message; omit to match unconditionally within the eligible state.
+- **`send`** — the user message to send.
+
+A `terminal: { after, requiredTools? }` block marks the finishing state. The conversation
+stops when that state is reached and all `requiredTools` have been successfully called.
+
+Unmatched state (no eligible turn matches the current state), hitting `maxTurns` (default
+`responses.length + 2`), or a non-zero process exit are all **explicit failures** and
+surface as `metadata.failure`.
 
 ```yaml
 # scenarios/onboard/cold-start-conversation.yaml (excerpt)
@@ -173,17 +184,33 @@ vars:
   env: empty
   prompt: "Use the Open Knowledge Hub MCP and run onboard to set me up."
   turns:
-    - { when: "wake phrase|name|call it", send: "Let's call it 'brain'." }
-    - { when: "new folder|which|container", send: "Create a new folder 'my-notes' with a 'kb' module." }
-    - { when: "plan|confirm|go ahead|create", send: "Yes, go ahead and create it." }
-    - { send: "Thanks — how would I use it day to day?" }   # unguarded fallback
+    - id: wake-phrase
+      after: start
+      when: "wake phrase|name|call it"
+      send: "Let's call it 'brain'."
+    - id: container-choice
+      after: wake-phrase
+      when: "existing|new folder|container"
+      send: "Create a brand-new folder called \"my-notes\" with a knowledge module named \"kb\"."
+    - id: create-confirmed
+      after: container-choice
+      when: "plan|confirm|go ahead|create"
+      send: "Yes, go ahead and create it."
+    - id: wrap-up
+      after: create-confirmed
+      when: "created|registered|complete"
+      send: "Thanks — how would I use it day to day?"
+  terminal:
+    after: wrap-up
+    requiredTools: [onboard, config, add_container]
 ```
 
 The provider reads each turn via `--output-format json`, extracting the agent's message,
-OKH tool calls (`mcpServerName: open-knowledge-hub`), and the run's cumulative cost
-(`result.usage.premiumRequests`). The aggregated transcript (labelled `USER`/`AGENT`
-blocks per turn) is what the judge and `transcript` assertions grade, and
-`metadata.toolCalls` is the union across all turns.
+OKH tool calls, and the run's cumulative cost. `metadata.toolEvents` is the full ordered
+list of **completed + successful** OKH tool executions across all turns, each retaining
+`server`, `tool`, `arguments`, and `turn` index. `metadata.toolCalls` is the deduped
+sorted name list derived from the same events. The aggregated transcript (labelled
+`USER`/`AGENT` blocks per turn) is what the judge and `transcript` assertions grade.
 
 ### Assertions
 
@@ -192,15 +219,32 @@ side-effects — no model needed:
 
 | assertion | checks |
 |-----------|--------|
-| `tools-called` | the expected OKH tools appear in the transcript (`config.expect`) |
+| `tools-called` | every expected OKH tool was completed successfully; `expect` items are tool-name strings or `{ name, arguments?, server?, turn? }` tuples; `ordered: true` requires event-order match |
 | `transcript` | substrings that must / must not appear (`mustContain` / `mustNotContain`) |
 | `okf-valid` | a module's OKF concepts are valid; optionally changed vs. the fixture |
-| `memory-append` | a new dated entry was appended to a memory module (append-only) |
+| `memory-append` | exactly one new Markdown entry was appended (no prior content rewritten); entry contains exactly one ISO timestamp heading and the configured `observation` preserved verbatim |
 | `module-unchanged` | a module was **not** modified (guardrail / rejection cases) |
 | `git-committed` | the git origin gained commits beyond the seed (i.e. `sync` pushed) |
 | `container-registered` | a container is registered with the expected backend/module |
 | `manifest-initialized` | an OKH manifest was created for a container |
 | `wake-phrase-set` | the wake phrase preference was set |
+| `source-retained` | a source file was copied into the module's `sources/` folder |
+| `llmwiki-state` | llmwiki module artifacts: index text, group index files, no content pages, expected new page type/terms, index+log changed, clean health |
+
+`tools-called` example with structured tuples and `ordered: true`:
+
+```yaml
+- type: javascript
+  value: file://assertions/tools-called.ts
+  config:
+    ordered: true
+    expect:
+      - name: run
+        arguments: { container: wiki-hub, module: new-wiki, skill: initialize }
+      - name: run
+        arguments: { skill: grilling }
+      - name: sync
+```
 
 ### The judge
 
@@ -211,11 +255,12 @@ runs once, then the judge grades that transcript **`k` times** (default 3; overr
 **majority vote**. A criterion with fewer than `ceil(k/2)` valid votes, or a tie, is
 `UNRELIABLE` and fails.
 
-Any objectively checkable criterion carries a `check` (`tool`, `container`, `manifest`,
-`wake-phrase`, `transcript-contains`, `transcript-absent`). The judge still grades it, but
-its verdict is **cross-checked against deterministic ground truth**; a
-judge/deterministic disagreement fails the scenario and is flagged in the reason. A green
-result is therefore reproducible within majority tolerance and self-auditing.
+A criterion carrying a `check` (`tool`, `container`, `manifest`, `wake-phrase`,
+`transcript-contains`, `transcript-absent`) is evaluated **deterministically** — the
+check result is authoritative and gates pass/fail regardless of the judge. The judge's
+concurrent majority-vote verdict is logged for diagnostics only. Criteria without a
+`check` use pure judge behaviour: majority vote decides, and `UNRELIABLE` (tie or
+insufficient votes) fails.
 
 ---
 
@@ -225,7 +270,7 @@ result is therefore reproducible within majority tolerance and self-auditing.
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
 npm run eval:validate    # structural promptfoo validation
-npm run eval             # full live run (premium usage) — all 17 scenarios, concurrently
+npm run eval             # full live run (premium usage) — all 25 scenarios, concurrently
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
 # a single scenario: filter by description, e.g. promptfoo eval -c eval/promptfooconfig.yaml --filter-pattern "Ask - answerable"
 ```
@@ -268,7 +313,7 @@ npm run eval:setup -- enter                # interactive Copilot session in that
 npm run eval:setup -- clean                # delete the temp run
 ```
 
-- **`setup <env>`** (`empty` | `git` | `local-and-git`) builds the isolated temp Root and
+- **`setup <env>`** (`empty` | `git` | `local-and-git` | `custom` | `health` | `wiki`) builds the isolated temp Root and
   prints the Root/Workspace paths, the `enter`/`clean` commands, and — for every test that
   uses this environment — its description, prompt, and expected-outcome checklist. Nothing
   is spawned yet; no premium usage.
