@@ -10,6 +10,7 @@ export interface BuildServerOptions {
   paths?: OkhPaths;
   service?: ContainerService;
   todoService?: TodoService;
+  capabilityProbeTimeoutMs?: number;
 }
 
 /** Construct the fully-wired MCP server. Dependencies are injectable for tests. */
@@ -22,6 +23,14 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Mcp
     { name: "open-knowledge-hub", version: "0.2.0" },
     { instructions: await buildInstructions(prefs as unknown as Record<string, unknown>) },
   );
-  await registerTools(server, service, paths, todoService);
+  await registerTools(
+    server,
+    service,
+    paths,
+    todoService,
+    {
+      ...(options.capabilityProbeTimeoutMs !== undefined ? { capabilityProbeTimeoutMs: options.capabilityProbeTimeoutMs } : {}),
+    },
+  );
   return server;
 }

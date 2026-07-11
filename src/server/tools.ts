@@ -21,6 +21,11 @@ import { vendoredSkills } from "../modules/vendored.js";
 import { TodoService } from "../todos/service.js";
 import { handler, isBlank, fail, ok, toolReg } from "./toolSupport.js";
 import { registerTodoTools } from "./todoTools.js";
+import {
+  createCapabilityProbeOperations,
+  runCapabilityProbes,
+  formatCapabilityReport,
+} from "./capabilityProbes.js";
 
 function formatInspect(r: InspectResult): string {
   if (r.kind === "containers") {
@@ -125,12 +130,17 @@ function describeConfigError(err: z.ZodError): string {
   return `Invalid value for "${key}": ${first?.message ?? "invalid value"}.`;
 }
 
+export interface RegisterToolsOptions {
+  capabilityProbeTimeoutMs?: number;
+}
+
 /** Register the operational tools (`inspect`, `add_container`, `add_module`, `sync`, `config`) plus the flows. */
 export async function registerTools(
   server: McpServer,
   service: ContainerService,
   paths: OkhPaths,
   todoService: TodoService,
+  options: RegisterToolsOptions = {},
 ): Promise<void> {
   server.registerTool(
     "inspect",
@@ -244,6 +254,16 @@ export async function registerTools(
 
   await registerFlowTools(server, service);
   await registerTodoTools(server, todoService);
+
+  server.registerTool(
+    "capabilities",
+    { ...(await toolReg("capabilities")), annotations: { readOnlyHint: true, openWorldHint: false } },
+    handler(async () => {
+      const ops = createCapabilityProbeOperations(server, options.capabilityProbeTimeoutMs);
+      const report = await runCapabilityProbes(ops);
+      return ok(formatCapabilityReport(report), { features: report });
+    }),
+  );
 }
 
 /**
