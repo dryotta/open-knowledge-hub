@@ -77,7 +77,7 @@ These read state or change containers directly.
 | `add_module` | `container?`, `path?`, `type?`, `name?`, `description?`, `config?`, `create?` | Returns a step-by-step workflow to add/create/initialize a module; applies on `create:true` (identity args required then). |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
-| `todos` | `container?`, `module?`, `status?`, `labels?`, `priority?`, `due?`, `text?` | Read todos across memory modules with optional filters; returns structured, text, or app-backed results. |
+| `todos` | `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?` | Read todos across memory modules with optional filters; returns structured, text, or app-backed results. |
 | `update_todo` | safe opaque todo ref plus create/patch fields | Create or patch one todo (complete/reopen, labels, due date, or priority); does not sync automatically. |
 
 ### Flows (return instructions — they do not act)
