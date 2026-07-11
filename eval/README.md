@@ -252,6 +252,12 @@ runs once, then the judge grades that transcript **`k` times** (default 3; overr
 **majority vote**. A criterion with fewer than `ceil(k/2)` valid votes, or a tie, is
 `UNRELIABLE` and fails.
 
+Judge votes run concurrently by default. `OKH_JUDGE_CONCURRENCY` caps parallel votes per
+scenario (maximum `k`); set it to `1` to restore sequential judging. Invalid values fall
+back to `k`. The tested agent is pinned to `claude-sonnet-4.5`, while the judge defaults
+to the faster `gpt-5.6-luna`. Override the judge globally with `OKH_JUDGE_MODEL`, or per
+assertion with `graderModel`.
+
 A criterion carrying a `check` (`tool`, `container`, `manifest`, `wake-phrase`,
 `transcript-contains`, `transcript-absent`) is evaluated **deterministically** — the
 check result is authoritative and gates pass/fail regardless of the judge. The judge's
@@ -281,8 +287,8 @@ npm run eval:view        # open the report + Prompts/Datasets/Results UI
 
 **Cost:** each scenario is **N agent turns + `k` judge calls** (single-turn scenarios have
 `N=1`; multi-turn scenarios run one agent turn per scripted reply; `k` defaults to 3). Set
-`OKH_JUDGE_K=1` for cheap local iteration. Response caching is disabled for the agent
-(`--no-cache`).
+`OKH_JUDGE_K=1` for cheap local iteration. Parallel voting reduces wall time, not premium
+usage. Response caching is disabled for the agent (`--no-cache`).
 
 **Model matrix:** change the default `model` in `scenarios/shared/provider.ts` (one place),
 then compare runs in `npm run eval:view`. **Comparing builds:** run the suite on two OKH

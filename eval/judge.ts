@@ -20,6 +20,7 @@ export interface CriterionResult {
 }
 
 const MAX_JUDGE_K = 11;
+const DEFAULT_JUDGE_MODEL = "gpt-5.6-luna";
 
 /**
  * Return the last top-level balanced JSON object in `text` that parses to an
@@ -118,7 +119,7 @@ async function judgeOnce(
   try {
     const res = await runner({
       prompt,
-      model: opts.model ?? "claude-sonnet-4.5",
+      model: opts.model ?? process.env.OKH_JUDGE_MODEL ?? DEFAULT_JUDGE_MODEL,
       copilotHome,
       cwd: workspace,
       timeoutMs: opts.timeoutMs ?? 180_000,
@@ -152,6 +153,11 @@ function resolveK(optsK?: number): number {
   return Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), MAX_JUDGE_K) : 3;
 }
 
+function resolveConcurrency(k: number): number {
+  const raw = Number(process.env.OKH_JUDGE_CONCURRENCY);
+  return Number.isInteger(raw) && raw >= 1 ? Math.min(raw, k) : k;
+}
+
 /**
  * Grade a transcript against binary criteria using k independent Copilot-CLI judge
  * runs, then majority-vote each criterion. A run whose output doesn't parse (or
@@ -164,11 +170,31 @@ export async function runJudgeCriteria(
   opts: { k?: number; model?: string; timeoutMs?: number; runner?: CopilotRunner } = {},
 ): Promise<CriterionResult[]> {
   const k = resolveK(opts.k);
+  const concurrency = resolveConcurrency(k);
   const prompt = gradeCriteriaPrompt(criteria, transcript);
   const votes: Array<Map<string, "PASS" | "FAIL">> = [];
   const evidence = new Map<string, string[]>();
-  for (let i = 0; i < k; i++) {
-    const raw = await judgeOnce(prompt, opts);
+  const raws = new Array<string>(k);
+  let next = 0;
+  let failed = false;
+  let firstError: unknown;
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (!failed && next < k) {
+        const index = next++;
+        try {
+          raws[index] = await judgeOnce(prompt, opts);
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            firstError = error;
+          }
+        }
+      }
+    }),
+  );
+  if (failed) throw firstError;
+  for (const raw of raws) {
     const arr = extractJsonArray(raw);
     if (!arr) continue;
     const m = new Map<string, "PASS" | "FAIL">();

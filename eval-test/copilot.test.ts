@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildJudgeCopilotArgs,
   parseCopilotEvents,
   runConversation,
   type CopilotTurnRunner,
@@ -9,6 +10,25 @@ import {
 } from "../eval/copilot.js";
 
 const line = (o: unknown) => JSON.stringify(o);
+
+describe("buildJudgeCopilotArgs", () => {
+  it("uses a silent tool-free CLI invocation for judge-only calls", () => {
+    expect(buildJudgeCopilotArgs("grade this", "gpt-5.6-luna")).toEqual([
+      "-p",
+      "grade this",
+      "--allow-all",
+      "--available-tools=",
+      "--silent",
+      "--no-color",
+      "--no-custom-instructions",
+      "--disable-builtin-mcps",
+      "--no-remote-export",
+      "--no-auto-update",
+      "--model",
+      "gpt-5.6-luna",
+    ]);
+  });
+});
 
 describe("parseCopilotEvents", () => {
   it("does NOT count toolRequests or start-only; only completed+successful OKH events count", () => {
