@@ -3,7 +3,7 @@
     - vars:
         env: empty
         prompt: |
-          hub, add the knowledge hub at https://github.com/dryotta/okh-eval-hub.git
+          hub, add the knowledge hub at https://github.com/dryotta/okh-manual-hub.git
           (preview the clone first; assume I confirm), then inspect its kb module and
           summarize the actual knowledge it contains.
   tests:
@@ -14,14 +14,14 @@
           config: { expect: [add_container, inspect] }
         - type: javascript
           value: file://assertions/container-registered.ts
-          config: { name: okh-eval-hub, backend: git, module: kb }
+          config: { name: okh-manual-hub, backend: git, module: kb }
         - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
               - id: cloned-registered-git
                 text: The repo was cloned and registered as a git container with a "kb" knowledge module.
-                check: { kind: container, name: okh-eval-hub, backend: git, module: kb }
+                check: { kind: container, name: okh-manual-hub, backend: git, module: kb }
               - id: used-inspect
                 text: The agent inspected the hub's contents.
                 check: { kind: tool, name: inspect }
