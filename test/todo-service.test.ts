@@ -29,6 +29,10 @@ function encodeRef(locator: unknown): string {
   return Buffer.from(JSON.stringify(locator), "utf8").toString("base64url");
 }
 
+async function readSource(relativePath: string): Promise<string> {
+  return readFile(join(process.cwd(), relativePath), "utf8");
+}
+
 async function mutateTodo(service: TodoService, input: unknown) {
   return (service as MutationCapableTodoService).mutate(input);
 }
@@ -68,6 +72,20 @@ afterEach(async () => {
 });
 
 describe("TodoService.list", () => {
+  it("does not retain the legacy patch compatibility API in todo sources", async () => {
+    const [typesSource, serviceSource] = await Promise.all([
+      readSource("src/todos/types.ts"),
+      readSource("src/todos/service.ts"),
+    ]);
+
+    expect(typesSource).not.toContain("TodoUpdateInput");
+    expect(typesSource).not.toContain("TodoUpdateResult");
+    expect(typesSource).not.toContain('operation: "patch"');
+    expect(serviceSource).not.toContain("TodoUpdateInput");
+    expect(serviceSource).not.toContain("TodoUpdateResult");
+    expect(serviceSource).not.toMatch(/\basync update\(/);
+  });
+
   it("recursively scans only memory markdown and returns source-aware opaque refs", async () => {
     const { service } = await setupTodoServiceFixture();
 

@@ -8,8 +8,13 @@
           priority and labeled shopping. Preview the exact todo you would create,
           wait for my confirmation, then apply only that confirmed todo and sync it.
         turns:
-          - when: '\b(confirm|confirmation|proceed|approve)\b|go ahead|shall i|proposed|proposal|exact proposed|ready to (create|add|save|write)|before i (write|create|add)'
+          - id: confirm
+            after: start
+            when: '\b(confirm|confirmation|proceed|approve)\b|go ahead|shall i|proposed|proposal|exact proposed|ready to (create|add|save|write)|before i (write|create|add)'
             send: "Yes, I explicitly confirm that exact proposed todo. Go ahead and write it."
+        terminal:
+          after: confirm
+          requiredTools: [run, todos, sync]
   tests:
     - description: Remember - todo - creates confirmed prioritized shopping task
       assert:

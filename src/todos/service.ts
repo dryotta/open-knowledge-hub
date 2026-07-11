@@ -20,8 +20,6 @@ import type {
   TodoQuery,
   TodoRecord,
   TodoSource,
-  TodoUpdateInput,
-  TodoUpdateResult,
   TodoWarning,
 } from "./types.js";
 
@@ -276,28 +274,6 @@ export class TodoService {
 
   async mutate(input: TodoMutationInput): Promise<TodoMutationResult> {
     return this.mutex.run(() => this.executeMutation(input));
-  }
-
-  async update(input: TodoUpdateInput): Promise<TodoUpdateResult> {
-    return this.mutex.run(async () => {
-      const result = await this.executeMutation(
-        input.operation === "create"
-          ? { ...input, apply: true }
-          : {
-              operation: "update",
-              ref: input.ref,
-              ...(input.completed === undefined ? {} : { completed: input.completed }),
-              ...(input.labels === undefined ? {} : { labels: input.labels }),
-              ...(input.due === undefined ? {} : { due: input.due }),
-              ...(input.priority === undefined ? {} : { priority: input.priority }),
-              apply: true,
-            },
-      );
-      if (!result.applied) {
-        throw new OkhError("CONFLICT", "Legacy todo update unexpectedly produced a preview.");
-      }
-      return result;
-    });
   }
 
   async list(query: TodoQuery = {}): Promise<TodoListResult> {

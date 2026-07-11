@@ -145,17 +145,3 @@ export type TodoMutationResult =
       todo: TodoRecord;
       dirtyContainer: string;
     };
-
-export type TodoUpdateInput =
-  | Extract<TodoMutationInput, { operation: "create" }>
-  | {
-      operation: "patch";
-      ref: string;
-      completed?: boolean;
-      labels?: string[];
-      due?: string | null;
-      priority?: TodoPriority | null;
-      apply?: boolean;
-    };
-
-export type TodoUpdateResult = Extract<TodoMutationResult, { applied: true }>;
