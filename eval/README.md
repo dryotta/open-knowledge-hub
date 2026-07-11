@@ -313,8 +313,8 @@ interrupted. There are no separate setup / enter / cleanup commands.
 ```powershell
 npm run build
 npm run manual                             # default env: local-and-git
-npm run manual git                         # choose an environment
-npm run manual wiki --model gpt-5.6-luna   # optional model override
+npm run manual -- git                      # choose an environment
+npm run manual -- wiki --model gpt-5.6-luna # optional model override
 $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
 ```
 
@@ -329,7 +329,7 @@ $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
 
 ### Example prompts (one per flow)
 
-`npm run manual [env]` prints all of an environment's prompts; a few highlights:
+`npm run manual -- [env]` prints all of an environment's prompts; a few highlights:
 
 - **ask** (env `local-and-git`):
   > Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly from its
@@ -377,7 +377,7 @@ $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
 
 ### Exploratory (free-form) testing
 
-**Poke at a seeded fixture.** Run `npm run manual local-and-git` (the rich `kb-hub`) and throw
+**Poke at a seeded fixture.** Run `npm run manual -- local-and-git` (the rich `kb-hub`) and throw
 your own prompts at it — adversarial ones too (prompt-injection in a question, ambiguous
 container/module, "rewrite an existing memory entry" which should stay append-only). After
 each, inspect `<Root>\okh-home\containers\kb-hub` (files + `git`) to see exactly what
