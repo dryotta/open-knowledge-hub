@@ -46,6 +46,7 @@
     .banner-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--bg)); }
     .banner-unsynced { color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--bg)); }
     .banner-warning { color: var(--warning); background: color-mix(in srgb, var(--warning) 6%, var(--bg)); }
+    .banner-notice { color: var(--muted); background: var(--surface); }
 
     .filters { display: grid; gap: .8rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: .8rem; }
     .status-buttons, .label-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
@@ -84,6 +85,7 @@
       <div id="status-message" class="status-message" role="status" aria-live="polite">Waiting for todo data…</div>
     </header>
     <div id="error-banner" class="banner banner-error" role="alert" hidden></div>
+    <div id="updates-banner" class="banner banner-notice" role="status" hidden></div>
     <div id="unsynced-banner" class="banner banner-unsynced" role="status" hidden></div>
     <div id="warning-banner" class="banner banner-warning" role="status" hidden></div>
     <section id="filters" class="filters" aria-label="Todo filters"></section>

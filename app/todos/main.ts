@@ -1,6 +1,6 @@
 import { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { applyAppFilters, mergeRefreshedTasks, type AppFilters } from "./model.js";
+import { applyAppFilters, canApplyUpdates, mergeRefreshedTasks, type AppFilters } from "./model.js";
 import {
   TODO_PRIORITIES,
   type TodoListResult,
@@ -15,6 +15,7 @@ const filtersNode = document.getElementById("filters");
 const listNode = document.getElementById("todo-list");
 const statusNode = document.getElementById("status-message");
 const errorNode = document.getElementById("error-banner");
+const updatesNode = document.getElementById("updates-banner");
 const unsyncedNode = document.getElementById("unsynced-banner");
 const warningNode = document.getElementById("warning-banner");
 
@@ -23,6 +24,7 @@ if (
   || !(listNode instanceof HTMLUListElement)
   || !(statusNode instanceof HTMLElement)
   || !(errorNode instanceof HTMLElement)
+  || !(updatesNode instanceof HTMLElement)
   || !(unsyncedNode instanceof HTMLElement)
   || !(warningNode instanceof HTMLElement)
 ) {
@@ -33,12 +35,19 @@ const filtersElement = filtersNode;
 const listElement = listNode;
 const statusElement = statusNode;
 const errorBanner = errorNode;
+const updatesBanner = updatesNode;
 const unsyncedBanner = unsyncedNode;
 const warningBanner = warningNode;
+
+/** Max time to wait for a proxied update before surfacing an error. */
+const UPDATE_TIMEOUT_MS = 4000;
 
 const app = new App({ name: "Open Knowledge Hub Todos", version: "0.2.0" });
 const dirtyContainers = new Set<string>();
 const pendingRefs = new Set<string>();
+// Whether the host can proxy tool calls back to the server (serverTools).
+// Optimistic until connect() resolves and we can read host capabilities.
+let updatesSupported = true;
 const filters: AppFilters = {
   status: "all",
   labels: [],
@@ -241,6 +250,11 @@ function renderBanners(): void {
   errorBanner.hidden = errorMessage.length === 0;
   errorBanner.textContent = errorMessage;
 
+  updatesBanner.hidden = updatesSupported;
+  updatesBanner.textContent = updatesSupported
+    ? ""
+    : "This host can't apply todo changes from the app. Use the todo or remember skill in chat to update items, then sync.";
+
   const dirty = [...dirtyContainers].sort((left, right) => left.localeCompare(right));
   unsyncedBanner.hidden = dirty.length === 0;
   unsyncedBanner.textContent = dirty.length === 0
@@ -284,7 +298,7 @@ function renderList(): void {
           data-ref="${escapeHtml(task.ref)}"
           aria-label="${task.status === "completed" ? "Reopen" : "Complete"} ${escapeHtml(task.text)}"
           ${checked(task.status === "completed")}
-          ${disabled(readOnly || pending)}
+          ${disabled(readOnly || pending || !updatesSupported)}
         >
         <div class="todo-main">
           <div class="todo-title">${escapeHtml(task.text)}</div>
@@ -396,6 +410,10 @@ async function refreshAfterFailure(message: string, expectedRef?: string): Promi
 async function toggleTodo(ref: string, completed: boolean): Promise<void> {
   const current = tasks.find((task) => task.ref === ref);
   if (!current || current.readOnly || current.status === "custom" || pendingRefs.has(ref)) return;
+  if (!updatesSupported) {
+    render();
+    return;
+  }
 
   pendingRefs.add(ref);
   errorMessage = "";
@@ -405,7 +423,7 @@ async function toggleTodo(ref: string, completed: boolean): Promise<void> {
     const result = await app.callServerTool({
       name: "todos",
       arguments: { operation: "update", ref, completed, apply: true },
-    });
+    }, { timeout: UPDATE_TIMEOUT_MS });
     if (result.isError) {
       pendingRefs.delete(ref);
       const message = failureMessage("Could not update the todo", result);
@@ -520,6 +538,8 @@ render();
 
 try {
   await app.connect();
+  updatesSupported = canApplyUpdates(app.getHostCapabilities());
+  render();
 } catch (error: unknown) {
   errorMessage = `Could not connect the todo app: ${error instanceof Error ? error.message : "transport error."}`;
   render();

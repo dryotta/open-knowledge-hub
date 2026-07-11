@@ -12,6 +12,25 @@ export interface AppFilters {
   query: string;
 }
 
+/**
+ * Decide whether the app is allowed to apply todo updates in the current host.
+ *
+ * Toggling a checkbox proxies a `tools/call` back to the MCP server via the
+ * host. That only works when the host advertises the `serverTools` capability
+ * ("Host can proxy tool calls to the MCP server") in its `ui/initialize`
+ * response. When the host advertises capabilities but omits `serverTools`, the
+ * proxied call never completes, so updates must be disabled up front.
+ *
+ * When capabilities are unknown (`undefined`), stay optimistic and let the
+ * per-call timeout surface a hung update instead of pre-emptively disabling.
+ */
+export function canApplyUpdates(hostCapabilities: unknown): boolean {
+  if (hostCapabilities === undefined || hostCapabilities === null) return true;
+  if (typeof hostCapabilities !== "object") return true;
+  const serverTools = (hostCapabilities as Record<string, unknown>).serverTools;
+  return serverTools !== undefined && serverTools !== null && serverTools !== false;
+}
+
 export function applyAppFilters(tasks: TodoRecord[], filters: AppFilters, today: string): TodoRecord[] {
   const dueFiltered = tasks.filter((task) => {
     if (filters.source && `${task.source.container}/${task.source.module}` !== filters.source) return false;

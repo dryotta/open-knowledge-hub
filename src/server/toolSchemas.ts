@@ -27,6 +27,7 @@ export const toolShapes = {
   config: { set: z.record(z.string(), z.unknown()).optional() },
   onboard: {},
   ask: { container, module: moduleArg, question: z.string().optional() },
+  capabilities: {},
   context: { container, task: z.string().optional() },
   run: { container, module: moduleArg, skill: z.string(), input: z.string().optional() },
   todos: {

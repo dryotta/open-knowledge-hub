@@ -1,0 +1,4 @@
+---
+title: Check MCP client capabilities
+---
+Check which MCP capabilities the connected client supports: roots, sampling, form elicitation, and MCP Apps. Advertised core features (roots, elicitation) are tested immediately with a live request. Sampling may use the model and incur a token cost. Elicitation may prompt the user for input. Also reports app server tools: whether the host can proxy tool calls back to the server (serverTools) — required for interactive apps like Todos to apply changes. This is negotiated inside the app and cannot be observed from the server, so it is reported as unknown and verified in-app at runtime.
