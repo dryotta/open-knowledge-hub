@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { loadRegistry, findContainer } from "../../src/registry/registry.js";
 import { discoverModules } from "../../src/modules/discovery.js";
 import type { ToolEvent } from "../copilot.js";
@@ -11,7 +12,8 @@ export type Check =
   | { kind: "manifest"; name: string }
   | { kind: "wake-phrase"; default?: string }
   | { kind: "transcript-contains"; pattern: string }
-  | { kind: "transcript-absent"; pattern: string };
+  | { kind: "transcript-absent"; pattern: string }
+  | { kind: "todo-preview-apply"; operation: "create" | "update" };
 
 export interface CheckContext {
   okhHome?: string;
@@ -23,6 +25,90 @@ export interface CheckContext {
 export interface CheckResult {
   pass: boolean;
   reason: string;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stripApply(args: Record<string, unknown>): Record<string, unknown> {
+  const { apply: _apply, ...rest } = args;
+  return rest;
+}
+
+function isSuccessfulTodoMutation(event: ToolEvent, operation: "create" | "update"): event is ToolEvent & {
+  arguments: Record<string, unknown>;
+  success: true;
+  turn: number;
+} {
+  const args = asObject(event.arguments);
+  return event.server === "open-knowledge-hub" &&
+    event.tool === "todos" &&
+    event.completed === true &&
+    event.success === true &&
+    typeof event.turn === "number" &&
+    args?.operation === operation;
+}
+
+function isSuccessfulSync(event: ToolEvent): event is ToolEvent & { success: true } {
+  return event.server === "open-knowledge-hub" && event.tool === "sync" && event.completed === true && event.success === true;
+}
+
+export async function checkTodoPreviewApply(
+  ctx: CheckContext,
+  operation: "create" | "update",
+): Promise<CheckResult> {
+  const toolEvents = ctx.toolEvents ?? [];
+  const mutations = toolEvents
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => isSuccessfulTodoMutation(event, operation))
+    .map(({ event, index }) => ({
+      index,
+      turn: event.turn as number,
+      applied: asObject(event.arguments)?.apply === true,
+      args: asObject(event.arguments)!,
+      baseArgs: stripApply(asObject(event.arguments)!),
+    }));
+  if (mutations.length === 0) {
+    return { pass: false, reason: `no successful todos ${operation} events found` };
+  }
+
+  for (const apply of mutations) {
+    if (!apply.applied) continue;
+    const preview = mutations.find((candidate) =>
+      !candidate.applied &&
+      candidate.turn < apply.turn &&
+      isDeepStrictEqual(candidate.baseArgs, apply.baseArgs));
+    if (!preview) continue;
+
+    const priorApply = mutations.find((candidate) =>
+      candidate.applied &&
+      candidate.index < apply.index &&
+      isDeepStrictEqual(candidate.baseArgs, apply.baseArgs));
+    if (priorApply) {
+      return {
+        pass: false,
+        reason: `found applied ${operation} before a valid preview/apply pair on turn ${apply.turn}`,
+      };
+    }
+
+    const sync = toolEvents
+      .map((event, index) => ({ event, index }))
+      .find(({ event, index }) => index > apply.index && isSuccessfulSync(event));
+    if (!sync) {
+      return { pass: false, reason: `missing successful sync after applied ${operation}` };
+    }
+
+    return {
+      pass: true,
+      reason: `${operation} preview on turn ${preview.turn} matched applied mutation on turn ${apply.turn} before sync`,
+    };
+  }
+
+  return {
+    pass: false,
+    reason: `no ${operation} preview/apply pair with matching arguments, later turn, and post-apply sync`,
+  };
 }
 
 function pathsFor(okhHome: string) {
@@ -109,6 +195,8 @@ export async function evaluateCheck(check: Check, ctx: CheckContext): Promise<Ch
         return { pass: false, reason: `bad pattern /${check.pattern}/` };
       }
     }
+    case "todo-preview-apply":
+      return checkTodoPreviewApply(ctx, check.operation);
     default:
       return { pass: false, reason: `unknown check kind: ${(check as { kind?: string }).kind ?? "?"}` };
   }

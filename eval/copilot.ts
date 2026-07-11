@@ -80,6 +80,7 @@ export interface ParsedTurn {
   messages: string[];
   lastMessage: string;
   tools: string[];
+  /** Ordered tool events (all servers) with untruncated arguments for deterministic assertions. */
   toolEvents: ToolEvent[];
   cost: number;
   sessionId: string | null;
@@ -304,8 +305,9 @@ export interface ConversationResult {
   transcript: string;
   /** Union of OKH tools called across all turns, sorted. */
   toolCalls: string[];
-  turns: ConversationTurn[];
+  /** Ordered tool events across all turns with untruncated arguments. */
   toolEvents: ToolEvent[];
+  turns: ConversationTurn[];
   /** Last turn's cumulative premiumRequests (== whole-conversation cost). */
   cost: number;
   /** Last turn's exit code. */

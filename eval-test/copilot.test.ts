@@ -136,6 +136,9 @@ describe("parseCopilotEvents", () => {
     expect(p.render).toContain("← open-knowledge-hub:add");
     expect(p.render).toContain("Created container my-notes");
     expect(p.render).toContain("Done — created my-notes.");
+    expect((p as { toolEvents?: unknown }).toolEvents).toEqual([
+     { turn: 1, callId: "c1", server: "open-knowledge-hub", tool: "add", arguments: { source: "my-notes", create: true }, completed: true, success: true },
+    ]);
   });
 });
 
@@ -250,6 +253,50 @@ describe("runConversation", () => {
     expect(res.toolEvents).toHaveLength(2);
     expect(res.toolEvents[0]).toMatchObject({ tool: "run", turn: 1 });
     expect(res.toolEvents[1]).toMatchObject({ tool: "config", turn: 2 });
+  });
+
+  it("preserves structured tool event order across resumed turns", async () => {
+    const runner = fakeRunner([
+      {
+        match: "start",
+        agent: "Please confirm.",
+        toolEvents: [
+          {
+            turn: 0,
+            callId: "t1",
+            server: "open-knowledge-hub",
+            tool: "todos",
+            arguments: { operation: "update", ref: "r1", completed: true },
+            completed: true,
+            success: true,
+          },
+        ],
+      },
+      {
+        match: "confirm",
+        agent: "Done.",
+        toolEvents: [
+          {
+            turn: 0,
+            callId: "t2",
+            server: "open-knowledge-hub",
+            tool: "todos",
+            arguments: { operation: "update", ref: "r1", completed: true, apply: true },
+            completed: true,
+            success: true,
+          },
+          { turn: 0, callId: "t3", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
+        ],
+      },
+    ], []);
+    const res = await runConversation(
+      { initial: "start", responses: [{ id: "confirm", after: "start", when: "confirm", send: "confirm" }], terminal: { after: "confirm" } },
+      ctx(runner),
+    );
+    expect(res.toolEvents).toHaveLength(3);
+    expect(res.toolEvents[0]).toMatchObject({ tool: "todos", turn: 1, arguments: { operation: "update", ref: "r1", completed: true } });
+    expect(res.toolEvents[1]).toMatchObject({ tool: "todos", turn: 2, arguments: { operation: "update", ref: "r1", completed: true, apply: true } });
+    expect(res.toolEvents[2]).toMatchObject({ tool: "sync", turn: 2, arguments: { container: "kb-hub" } });
   });
 
   it("adapts when the agent reorders stages (guard match wins over declared order)", async () => {

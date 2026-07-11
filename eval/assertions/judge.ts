@@ -93,7 +93,7 @@ export default async function judge(
     ...(context.config?.graderModel ? { model: context.config.graderModel } : {}),
   });
   const byId = new Map(results.map((r) => [r.id, r]));
-  const checkCtx = { okhHome: meta.okhHome, toolCalls: meta.toolCalls ?? [], toolEvents: meta.toolEvents, transcript: output };
+  const checkCtx = { okhHome: meta.okhHome, toolCalls: meta.toolCalls ?? [], toolEvents: meta.toolEvents ?? [], transcript: output };
 
   const parts: string[] = [];
   let pass = true;
