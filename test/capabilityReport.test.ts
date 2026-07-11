@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveOverallStatus,
   formatCapabilityReport,
+  normalizeCapabilityReport,
   toCapabilityToolResult,
   type CapabilityProbe,
   type CapabilityReport,
@@ -162,6 +163,7 @@ describe("capability report", () => {
 
   it("redacts hostile evidence and clamps unsafe numeric input", () => {
     const report = makeHostileReport();
+    const normalized = normalizeCapabilityReport(report);
     const first = formatCapabilityReport(report);
     const second = formatCapabilityReport(report);
     const result = toCapabilityToolResult(report);
@@ -177,7 +179,32 @@ describe("capability report", () => {
     expect(JSON.stringify(result.structuredContent)).not.toContain("Infinity");
     expect(JSON.stringify(result.structuredContent)).toContain("\"kind\":\"durationMs\",\"value\":60000");
     expect(JSON.stringify(result.structuredContent)).toContain("\"kind\":\"count\",\"value\":0");
+    expect(normalized.probes.roots).not.toHaveProperty("evidence");
+    expect(normalized.probes.samplingBasic).not.toHaveProperty("evidence");
+    expect(normalized.probes.appInitialize.evidence).toEqual({ kind: "durationMs", value: 60_000 });
+    expect(normalized.probes.tasksCreate.evidence).toEqual({ kind: "count", value: 0 });
     expect(result.content).toEqual([{ type: "text", text: first }]);
+  });
+
+  it("normalizes report identity from trusted context and derives consistent overall status", () => {
+    const report = {
+      ...makeReport(),
+      runId: "spoofed-run-id",
+      createdAt: "1999-01-01T00:00:00.000Z",
+      expiresAt: "1999-01-01T00:30:00.000Z",
+      overallStatus: "complete",
+    } satisfies CapabilityReport;
+
+    const normalized = normalizeCapabilityReport(report, {
+      runId: "run-from-store",
+      createdAt: "2026-07-11T00:00:00.000Z",
+      expiresAt: "2026-07-11T00:30:00.000Z",
+    });
+
+    expect(normalized.runId).toBe("run-from-store");
+    expect(normalized.createdAt).toBe("2026-07-11T00:00:00.000Z");
+    expect(normalized.expiresAt).toBe("2026-07-11T00:30:00.000Z");
+    expect(normalized.overallStatus).toBe("pending");
   });
 
   it("returns equivalent structuredContent and text content", () => {

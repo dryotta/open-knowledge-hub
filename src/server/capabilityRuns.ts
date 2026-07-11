@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
   deriveOverallStatus,
-  type CapabilityEvidence,
-  type CapabilityEvidenceCategory,
+  normalizeCapabilityProbe,
+  normalizeCapabilityReport,
   type CapabilityProbe,
   type CapabilityReport,
+  type ProbeKey,
 } from "./capabilityReport.js";
 
 export const DEFAULT_CAPABILITY_RUN_LIMIT = 32;
@@ -23,7 +24,7 @@ export type CapabilityRun = {
   expiresAt: string;
   report: CapabilityReport;
   taskId?: string;
-  abortController: AbortController;
+  signal: AbortSignal;
 };
 
 export type CapabilityRunSnapshot = {
@@ -78,103 +79,55 @@ export type CapabilityRunStoreOptions = {
   createId?: () => string;
 };
 
-type ProbeKey = keyof CapabilityReport["probes"];
-
 const APP_PROBE_KEYS = ["appInitialize", "appTheme", "appResize"] as const satisfies readonly ProbeKey[];
-const COUNT_MIN = 0;
-const COUNT_MAX = 1_000;
-const DURATION_MIN_MS = 0;
-const DURATION_MAX_MS = 60_000;
 
-function clampFiniteInteger(value: unknown, min: number, max: number): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  const normalized = Math.trunc(value);
-  if (normalized < min) return min;
-  if (normalized > max) return max;
-  return normalized;
-}
-
-function isCapabilityEvidenceCategory(value: unknown): value is CapabilityEvidenceCategory {
-  return (
-    value === "advertised" ||
-    value === "observed" ||
-    value === "exercised" ||
-    value === "unsupported"
+function normalizeReport(report: CapabilityReport, context: CapabilityRunContext): CapabilityReport {
+  return normalizeCapabilityReport(
+    {
+      ...report,
+      schemaVersion: "1",
+    },
+    {
+      runId: context.id,
+      createdAt: context.createdAt,
+      expiresAt: context.expiresAt,
+    },
   );
 }
 
-function sanitizeEvidence(evidence: CapabilityEvidence | undefined): CapabilityEvidence | undefined {
-  if (evidence === undefined) return undefined;
+type StoredCapabilityRun = Omit<CapabilityRun, "signal"> & {
+  abortController: AbortController;
+};
 
-  const candidate = evidence as { kind?: unknown; value?: unknown };
-  switch (candidate.kind) {
-    case "count": {
-      const value = clampFiniteInteger(candidate.value, COUNT_MIN, COUNT_MAX);
-      return value === undefined ? undefined : { kind: "count", value };
-    }
-    case "durationMs": {
-      const value = clampFiniteInteger(candidate.value, DURATION_MIN_MS, DURATION_MAX_MS);
-      return value === undefined ? undefined : { kind: "durationMs", value };
-    }
-    case "flag":
-      return typeof candidate.value === "boolean" ? { kind: "flag", value: candidate.value } : undefined;
-    case "category":
-      return isCapabilityEvidenceCategory(candidate.value) ? { kind: "category", value: candidate.value } : undefined;
-    default:
-      return undefined;
-  }
-}
-
-function normalizeProbe(probe: CapabilityProbe): CapabilityProbe {
-  const evidence = sanitizeEvidence(probe.evidence);
-  return evidence === undefined
-    ? {
-        status: probe.status,
-        code: probe.code,
-        message: probe.message,
-      }
-    : {
-        status: probe.status,
-        code: probe.code,
-        message: probe.message,
-        evidence,
-      };
-}
-
-function normalizeReport(report: CapabilityReport, context: CapabilityRunContext): CapabilityReport {
-  const probes: CapabilityReport["probes"] = {
-    roots: normalizeProbe(report.probes.roots),
-    samplingBasic: normalizeProbe(report.probes.samplingBasic),
-    samplingTools: normalizeProbe(report.probes.samplingTools),
-    elicitationForm: normalizeProbe(report.probes.elicitationForm),
-    elicitationUrl: normalizeProbe(report.probes.elicitationUrl),
-    appInitialize: normalizeProbe(report.probes.appInitialize),
-    appTheme: normalizeProbe(report.probes.appTheme),
-    appResize: normalizeProbe(report.probes.appResize),
-    tasksCreate: normalizeProbe(report.probes.tasksCreate),
-    tasksPoll: normalizeProbe(report.probes.tasksPoll),
-    tasksInput: normalizeProbe(report.probes.tasksInput),
-    tasksResult: normalizeProbe(report.probes.tasksResult),
-    tasksCancel: normalizeProbe(report.probes.tasksCancel),
+function withProbe(
+  report: CapabilityReport,
+  key: ProbeKey,
+  probe: CapabilityProbe,
+): CapabilityReport {
+  const probes = {
+    ...report.probes,
+    [key]: probe,
   };
+  return {
+    ...report,
+    probes,
+    overallStatus: deriveOverallStatus(Object.values(probes)),
+  };
+}
+
+function mergeReportPreservingTerminal(
+  current: CapabilityReport,
+  next: CapabilityReport,
+): CapabilityReport {
+  const probes = { ...next.probes };
+  for (const key of Object.keys(current.probes) as ProbeKey[]) {
+    if (current.probes[key].status !== "pending") {
+      probes[key] = current.probes[key];
+    }
+  }
 
   return {
-    schemaVersion: "1",
-    runId: context.id,
-    createdAt: context.createdAt,
-    expiresAt: context.expiresAt,
-    testedProtocolGeneration: report.testedProtocolGeneration,
-    client: {
-      declared: {
-        roots: report.client.declared.roots,
-        rootsListChanged: report.client.declared.rootsListChanged,
-        sampling: report.client.declared.sampling,
-        samplingTools: report.client.declared.samplingTools,
-        elicitationForm: report.client.declared.elicitationForm,
-        elicitationUrl: report.client.declared.elicitationUrl,
-        tasks: report.client.declared.tasks,
-      },
-    },
+    ...next,
     probes,
     overallStatus: deriveOverallStatus(Object.values(probes)),
   };
@@ -189,21 +142,8 @@ function cloneReport(report: CapabilityReport): CapabilityReport {
 }
 
 function failExpiredPendingAppProbes(report: CapabilityReport): CapabilityReport {
-  const probes: CapabilityReport["probes"] = {
-    roots: normalizeProbe(report.probes.roots),
-    samplingBasic: normalizeProbe(report.probes.samplingBasic),
-    samplingTools: normalizeProbe(report.probes.samplingTools),
-    elicitationForm: normalizeProbe(report.probes.elicitationForm),
-    elicitationUrl: normalizeProbe(report.probes.elicitationUrl),
-    appInitialize: normalizeProbe(report.probes.appInitialize),
-    appTheme: normalizeProbe(report.probes.appTheme),
-    appResize: normalizeProbe(report.probes.appResize),
-    tasksCreate: normalizeProbe(report.probes.tasksCreate),
-    tasksPoll: normalizeProbe(report.probes.tasksPoll),
-    tasksInput: normalizeProbe(report.probes.tasksInput),
-    tasksResult: normalizeProbe(report.probes.tasksResult),
-    tasksCancel: normalizeProbe(report.probes.tasksCancel),
-  };
+  const normalized = cloneReport(report);
+  const probes = { ...normalized.probes };
 
   for (const key of APP_PROBE_KEYS) {
     if (probes[key].status === "pending") {
@@ -216,13 +156,13 @@ function failExpiredPendingAppProbes(report: CapabilityReport): CapabilityReport
   }
 
   return {
-    ...cloneReport(report),
+    ...normalized,
     probes,
     overallStatus: deriveOverallStatus(Object.values(probes)),
   };
 }
 
-function toRunCopy(run: CapabilityRun): CapabilityRun {
+function toRunCopy(run: StoredCapabilityRun): CapabilityRun {
   return {
     id: run.id,
     clientKey: run.clientKey,
@@ -230,11 +170,11 @@ function toRunCopy(run: CapabilityRun): CapabilityRun {
     expiresAt: run.expiresAt,
     report: cloneReport(run.report),
     ...(run.taskId === undefined ? {} : { taskId: run.taskId }),
-    abortController: run.abortController,
+    signal: run.abortController.signal,
   };
 }
 
-function toSnapshot(run: CapabilityRun): CapabilityRunSnapshot {
+function toSnapshot(run: StoredCapabilityRun): CapabilityRunSnapshot {
   return {
     id: run.id,
     createdAt: run.createdAt,
@@ -246,7 +186,7 @@ function toSnapshot(run: CapabilityRun): CapabilityRunSnapshot {
 }
 
 export class CapabilityRunStore {
-  private readonly runs = new Map<string, CapabilityRun>();
+  private readonly runs = new Map<string, StoredCapabilityRun>();
   private readonly now: () => Date;
   private readonly maxRuns: number;
   private readonly ttlMs: number;
@@ -275,7 +215,7 @@ export class CapabilityRunStore {
       createdAt: created.toISOString(),
       expiresAt: new Date(created.getTime() + this.ttlMs).toISOString(),
     };
-    const run: CapabilityRun = {
+    const run: StoredCapabilityRun = {
       id: context.id,
       clientKey,
       createdAt: context.createdAt,
@@ -299,7 +239,21 @@ export class CapabilityRunStore {
 
   updateReport(clientKey: object, runId: string, report: CapabilityReport): CapabilityRunSnapshot {
     const run = this.requireAccessibleRun(clientKey, runId);
-    run.report = normalizeReport(report, run);
+    run.report = mergeReportPreservingTerminal(run.report, normalizeReport(report, run));
+    return toSnapshot(run);
+  }
+
+  updateProbe(clientKey: object, runId: string, key: ProbeKey, next: CapabilityProbe): CapabilityRunSnapshot {
+    const run = this.requireAccessibleRun(clientKey, runId);
+    if (run.report.probes[key].status === "pending") {
+      run.report = withProbe(run.report, key, normalizeCapabilityProbe(next));
+    }
+    return toSnapshot(run);
+  }
+
+  replaceProbe(clientKey: object, runId: string, key: ProbeKey, next: CapabilityProbe): CapabilityRunSnapshot {
+    const run = this.requireAccessibleRun(clientKey, runId);
+    run.report = withProbe(run.report, key, normalizeCapabilityProbe(next));
     return toSnapshot(run);
   }
 
@@ -322,6 +276,13 @@ export class CapabilityRunStore {
       .map((run) => toSnapshot(run));
   }
 
+  dispose(): void {
+    for (const run of this.runs.values()) {
+      run.abortController.abort();
+    }
+    this.runs.clear();
+  }
+
   private pruneExpired(): void {
     for (const run of Array.from(this.runs.values())) {
       if (this.isExpired(run)) {
@@ -338,7 +299,7 @@ export class CapabilityRunStore {
     return id;
   }
 
-  private requireAccessibleRun(clientKey: object, runId: string): CapabilityRun {
+  private requireAccessibleRun(clientKey: object, runId: string): StoredCapabilityRun {
     const run = this.runs.get(runId);
     if (run === undefined) {
       throw new CapabilityRunNotFoundError(runId);
@@ -353,11 +314,11 @@ export class CapabilityRunStore {
     return run;
   }
 
-  private isExpired(run: CapabilityRun): boolean {
+  private isExpired(run: StoredCapabilityRun): boolean {
     return this.now().getTime() >= Date.parse(run.expiresAt);
   }
 
-  private expireRun(run: CapabilityRun): CapabilityRunSnapshot {
+  private expireRun(run: StoredCapabilityRun): CapabilityRunSnapshot {
     run.report = failExpiredPendingAppProbes(run.report);
     run.abortController.abort();
     const snapshot = toSnapshot(run);
@@ -367,7 +328,7 @@ export class CapabilityRunStore {
 
   private evictOverflow(): void {
     while (this.runs.size > this.maxRuns) {
-      const oldest = this.runs.values().next().value as CapabilityRun | undefined;
+      const oldest = this.runs.values().next().value as StoredCapabilityRun | undefined;
       if (oldest === undefined) return;
       oldest.abortController.abort();
       this.runs.delete(oldest.id);

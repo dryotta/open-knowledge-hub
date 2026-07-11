@@ -63,7 +63,9 @@ export type CapabilityReport = {
   overallStatus: "pending" | "complete" | "issues_detected";
 };
 
-type ProbeKey = keyof CapabilityReport["probes"];
+export type ProbeKey = keyof CapabilityReport["probes"];
+
+export type CapabilityReportContext = Pick<CapabilityReport, "runId" | "createdAt" | "expiresAt">;
 
 type ProbeGroup = {
   title: string;
@@ -157,7 +159,7 @@ function formatEvidence(evidence: CapabilityEvidence | undefined): string {
   }
 }
 
-function normalizeProbe(probe: CapabilityProbe): CapabilityProbe {
+export function normalizeCapabilityProbe(probe: CapabilityProbe): CapabilityProbe {
   const evidence = sanitizeEvidence(probe.evidence);
   return evidence === undefined
     ? {
@@ -173,12 +175,28 @@ function normalizeProbe(probe: CapabilityProbe): CapabilityProbe {
       };
 }
 
-function normalizeReport(report: CapabilityReport): CapabilityReport {
+export function normalizeCapabilityReport(report: CapabilityReport, context?: CapabilityReportContext): CapabilityReport {
+  const probes: CapabilityReport["probes"] = {
+    roots: normalizeCapabilityProbe(report.probes.roots),
+    samplingBasic: normalizeCapabilityProbe(report.probes.samplingBasic),
+    samplingTools: normalizeCapabilityProbe(report.probes.samplingTools),
+    elicitationForm: normalizeCapabilityProbe(report.probes.elicitationForm),
+    elicitationUrl: normalizeCapabilityProbe(report.probes.elicitationUrl),
+    appInitialize: normalizeCapabilityProbe(report.probes.appInitialize),
+    appTheme: normalizeCapabilityProbe(report.probes.appTheme),
+    appResize: normalizeCapabilityProbe(report.probes.appResize),
+    tasksCreate: normalizeCapabilityProbe(report.probes.tasksCreate),
+    tasksPoll: normalizeCapabilityProbe(report.probes.tasksPoll),
+    tasksInput: normalizeCapabilityProbe(report.probes.tasksInput),
+    tasksResult: normalizeCapabilityProbe(report.probes.tasksResult),
+    tasksCancel: normalizeCapabilityProbe(report.probes.tasksCancel),
+  };
+
   return {
     schemaVersion: report.schemaVersion,
-    runId: report.runId,
-    createdAt: report.createdAt,
-    expiresAt: report.expiresAt,
+    runId: context?.runId ?? report.runId,
+    createdAt: context?.createdAt ?? report.createdAt,
+    expiresAt: context?.expiresAt ?? report.expiresAt,
     testedProtocolGeneration: report.testedProtocolGeneration,
     client: {
       declared: {
@@ -191,22 +209,8 @@ function normalizeReport(report: CapabilityReport): CapabilityReport {
         tasks: report.client.declared.tasks,
       },
     },
-    probes: {
-      roots: normalizeProbe(report.probes.roots),
-      samplingBasic: normalizeProbe(report.probes.samplingBasic),
-      samplingTools: normalizeProbe(report.probes.samplingTools),
-      elicitationForm: normalizeProbe(report.probes.elicitationForm),
-      elicitationUrl: normalizeProbe(report.probes.elicitationUrl),
-      appInitialize: normalizeProbe(report.probes.appInitialize),
-      appTheme: normalizeProbe(report.probes.appTheme),
-      appResize: normalizeProbe(report.probes.appResize),
-      tasksCreate: normalizeProbe(report.probes.tasksCreate),
-      tasksPoll: normalizeProbe(report.probes.tasksPoll),
-      tasksInput: normalizeProbe(report.probes.tasksInput),
-      tasksResult: normalizeProbe(report.probes.tasksResult),
-      tasksCancel: normalizeProbe(report.probes.tasksCancel),
-    },
-    overallStatus: report.overallStatus,
+    probes,
+    overallStatus: deriveOverallStatus(Object.values(probes)),
   };
 }
 
@@ -255,11 +259,11 @@ function formatCapabilityReportNormalized(report: CapabilityReport): string {
 }
 
 export function formatCapabilityReport(report: CapabilityReport): string {
-  return formatCapabilityReportNormalized(normalizeReport(report));
+  return formatCapabilityReportNormalized(normalizeCapabilityReport(report));
 }
 
 export function toCapabilityToolResult(report: CapabilityReport): CallToolResult {
-  const normalized = normalizeReport(report);
+  const normalized = normalizeCapabilityReport(report);
   return {
     content: [{ type: "text", text: formatCapabilityReportNormalized(normalized) }],
     structuredContent: normalized,

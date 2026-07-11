@@ -81,7 +81,9 @@ describe("CapabilityRunStore", () => {
     );
 
     expect(run.expiresAt).toBe("2026-07-11T00:29:00.000Z");
-    expect(run.abortController.signal.aborted).toBe(false);
+    expect(run.signal.aborted).toBe(false);
+    expect("abortController" in run).toBe(false);
+    expect("abort" in run.signal).toBe(false);
 
     nowMs += THIRTY_MINUTES_MS;
 
@@ -99,7 +101,7 @@ describe("CapabilityRunStore", () => {
       expect(expiredError.report.overallStatus).toBe("issues_detected");
     }
 
-    expect(run.abortController.signal.aborted).toBe(true);
+    expect(run.signal.aborted).toBe(true);
     expect(() => store.getRunForClient(clientKey, run.id)).toThrow(CapabilityRunNotFoundError);
   });
 
@@ -108,7 +110,7 @@ describe("CapabilityRunStore", () => {
     const store = new CapabilityRunStore();
     const runs = Array.from({ length: 33 }, () => store.createRun(clientKey, makeReport));
 
-    expect(runs[0].abortController.signal.aborted).toBe(true);
+    expect(runs[0].signal.aborted).toBe(true);
     expect(() => store.getRunForClient(clientKey, runs[0].id)).toThrow(CapabilityRunNotFoundError);
     expect(store.listSnapshots(clientKey).map((snapshot) => snapshot.id)).toEqual(runs.slice(1).map((run) => run.id));
   });
@@ -144,7 +146,7 @@ describe("CapabilityRunStore", () => {
       expect("report" in (error as object)).toBe(false);
     }
 
-    expect(run.abortController.signal.aborted).toBe(false);
+    expect(run.signal.aborted).toBe(false);
 
     try {
       store.getRunForClient(originalClient, run.id);
@@ -154,7 +156,7 @@ describe("CapabilityRunStore", () => {
       expect((error as CapabilityRunExpiredError).report.probes.appInitialize.status).toBe("failed");
     }
 
-    expect(run.abortController.signal.aborted).toBe(true);
+    expect(run.signal.aborted).toBe(true);
   });
 
   it("distinguishes missing IDs from expired and cross-client access", () => {
@@ -224,6 +226,93 @@ describe("CapabilityRunStore", () => {
     expect(serialized).not.toContain("raw prompt");
   });
 
+  it("updates only pending probes and lets explicit replacements advance terminal lifecycle states", () => {
+    const clientKey = {};
+    const store = new CapabilityRunStore();
+    const run = store.createRun(clientKey, (context) =>
+      makeReport(context, {
+        roots: probe("pending", "roots.pending", "Roots pending."),
+      }),
+    );
+
+    const first = store.updateProbe(clientKey, run.id, "roots", {
+      status: "failed",
+      code: "roots.failed",
+      message: "Roots failed.",
+      evidence: { kind: "category", value: "file:///secret/root" } as unknown as CapabilityProbe["evidence"],
+    });
+    const late = store.updateProbe(clientKey, run.id, "roots", probe("passed", "roots.late", "Late roots result."));
+    const replaced = store.replaceProbe(clientKey, run.id, "roots", probe("passed", "roots.followup", "Follow-up roots result."));
+
+    expect(first.report.probes.roots).toEqual({
+      status: "failed",
+      code: "roots.failed",
+      message: "Roots failed.",
+    });
+    expect(first.report.overallStatus).toBe("issues_detected");
+    expect(late.report.probes.roots).toEqual(first.report.probes.roots);
+    expect(late.report.overallStatus).toBe("issues_detected");
+    expect(replaced.report.probes.roots).toEqual({
+      status: "passed",
+      code: "roots.followup",
+      message: "Follow-up roots result.",
+    });
+    expect(replaced.report.overallStatus).toBe("complete");
+  });
+
+  it("merges report updates without regressing existing terminal probes", () => {
+    const clientKey = {};
+    const store = new CapabilityRunStore();
+    const run = store.createRun(clientKey, (context) =>
+      makeReport(context, {
+        roots: probe("pending", "roots.pending", "Roots pending."),
+        samplingBasic: probe("pending", "sampling.pending", "Sampling pending."),
+      }),
+    );
+
+    store.updateProbe(clientKey, run.id, "roots", probe("failed", "roots.failed", "Roots failed."));
+    const snapshot = store.updateReport(
+      clientKey,
+      run.id,
+      makeReport(
+        {
+          id: "spoofed-run-id",
+          createdAt: "1999-01-01T00:00:00.000Z",
+          expiresAt: "1999-01-01T00:30:00.000Z",
+        },
+        {
+          roots: probe("passed", "roots.late", "Late roots success."),
+          samplingBasic: probe("passed", "sampling.done", "Sampling completed."),
+        },
+      ),
+    );
+
+    expect(snapshot.report.runId).toBe(run.id);
+    expect(snapshot.report.createdAt).toBe(run.createdAt);
+    expect(snapshot.report.expiresAt).toBe(run.expiresAt);
+    expect(snapshot.report.probes.roots).toEqual(probe("failed", "roots.failed", "Roots failed."));
+    expect(snapshot.report.probes.samplingBasic).toEqual(probe("passed", "sampling.done", "Sampling completed."));
+    expect(snapshot.report.overallStatus).toBe("issues_detected");
+  });
+
+  it("disposes active runs idempotently", () => {
+    const firstClient = {};
+    const secondClient = {};
+    const store = new CapabilityRunStore();
+    const first = store.createRun(firstClient, makeReport);
+    const second = store.createRun(secondClient, makeReport);
+
+    store.dispose();
+    store.dispose();
+
+    expect(first.signal.aborted).toBe(true);
+    expect(second.signal.aborted).toBe(true);
+    expect(store.listSnapshots(firstClient)).toEqual([]);
+    expect(store.listSnapshots(secondClient)).toEqual([]);
+    expect(() => store.getRunForClient(firstClient, first.id)).toThrow(CapabilityRunNotFoundError);
+    expect(() => store.getRunForClient(secondClient, second.id)).toThrow(CapabilityRunNotFoundError);
+  });
+
   it("aborts runs idempotently", () => {
     const clientKey = {};
     const store = new CapabilityRunStore();
@@ -232,9 +321,9 @@ describe("CapabilityRunStore", () => {
     const first = store.abortRun(clientKey, run.id);
     const second = store.abortRun(clientKey, run.id);
 
-    expect(run.abortController.signal.aborted).toBe(true);
+    expect(run.signal.aborted).toBe(true);
     expect(first.id).toBe(run.id);
     expect(second.id).toBe(run.id);
-    expect(store.getRunForClient(clientKey, run.id).abortController.signal.aborted).toBe(true);
+    expect(store.getRunForClient(clientKey, run.id).signal.aborted).toBe(true);
   });
 });
