@@ -1,10 +1,19 @@
-import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { environments, isEnvName, type EnvName, type Provisioned } from "./environments.js";
+import {
+  environments,
+  isEnvName,
+  provisionEnvironment,
+  type EnvName,
+  type Provisioned,
+} from "./environments.js";
 
-const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
+const MODULE_PATH = fileURLToPath(import.meta.url);
+const EVAL_ROOT = resolve(dirname(MODULE_PATH));
+const REPO_ROOT = resolve(EVAL_ROOT, "..");
 
 export const DEFAULT_MANUAL_ENV: EnvName = "local-and-git";
 
@@ -130,4 +139,141 @@ export function buildCopilotInvocation(
     cwd: environment.workspace,
     env: { COPILOT_HOME: environment.copilotHome },
   };
+}
+
+export interface ManualDependencies {
+  provision: (env: EnvName) => Promise<Provisioned>;
+  scenarios: (env: EnvName) => Promise<ManualScenario[]>;
+  launch: (invocation: CopilotInvocation) => Promise<number>;
+  cleanup: (root: string) => Promise<void>;
+  output: (line: string) => void;
+}
+
+function defaultProvision(env: EnvName): Promise<Provisioned> {
+  return provisionEnvironment(env, { repoRoot: REPO_ROOT, label: `manual-${env}` });
+}
+
+function defaultCleanup(root: string): Promise<void> {
+  return rm(root, { recursive: true, force: true });
+}
+
+function printBlock(text: string, output: (line: string) => void, prefix = ""): void {
+  for (const line of text.split("\n")) {
+    output(`${prefix}${line}`);
+  }
+}
+
+function printSession(
+  environment: Provisioned,
+  env: EnvName,
+  scenarios: ManualScenario[],
+  output: (line: string) => void,
+): void {
+  output(`Environment  : ${env}`);
+  output(`OKH_HOME     : ${environment.okhHome}`);
+  output(`COPILOT_HOME : ${environment.copilotHome}`);
+  output(`Workspace    : ${environment.workspace}`);
+  output("");
+  output("Paste a prompt into the Copilot session and verify its checklist:");
+  for (const [index, scenario] of scenarios.entries()) {
+    output("");
+    output(`[${index + 1}] ${scenario.description}`);
+    printBlock(scenario.prompt, output);
+    output("  expected:");
+    for (const item of scenario.checklist) {
+      output(`    - ${item}`);
+    }
+  }
+  output("");
+}
+
+function exitCodeForSignal(code: number | null, signal: NodeJS.Signals | null): number {
+  return code ?? (signal ? 1 : 0);
+}
+
+export function launchCopilot(
+  invocation: CopilotInvocation,
+  spawnChild: typeof spawn = spawn,
+): Promise<number> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawnChild(invocation.command, invocation.args, {
+        cwd: invocation.cwd,
+        env: { ...process.env, ...invocation.env },
+        stdio: "inherit",
+        shell: false,
+      });
+    } catch (error) {
+      rejectPromise(error);
+      return;
+    }
+
+    let settled = false;
+    const onSignal = (signal: NodeJS.Signals): void => {
+      if (!child.killed) {
+        child.kill(signal);
+      }
+    };
+    const onSigint = (): void => onSignal("SIGINT");
+    const onSigterm = (): void => onSignal("SIGTERM");
+    const removeSignalHandlers = (): void => {
+      process.off("SIGINT", onSigint);
+      process.off("SIGTERM", onSigterm);
+    };
+    const settle = (callback: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      removeSignalHandlers();
+      callback();
+    };
+
+    process.on("SIGINT", onSigint);
+    process.on("SIGTERM", onSigterm);
+    child.once("error", (error) => {
+      settle(() => rejectPromise(error));
+    });
+    child.once("close", (code, signal) => {
+      settle(() => resolvePromise(exitCodeForSignal(code, signal)));
+    });
+  });
+}
+
+const defaultDependencies: ManualDependencies = {
+  provision: defaultProvision,
+  scenarios: scenariosForEnv,
+  launch: launchCopilot,
+  cleanup: defaultCleanup,
+  output: console.log,
+};
+
+export async function runManual(
+  argv: string[],
+  dependencies: ManualDependencies = defaultDependencies,
+): Promise<number> {
+  const options = parseManualArgs(argv);
+  const environment = await dependencies.provision(options.env);
+  try {
+    const scenarios = await dependencies.scenarios(options.env);
+    printSession(environment, options.env, scenarios, dependencies.output);
+    return await dependencies.launch(buildCopilotInvocation(environment, options.model));
+  } finally {
+    await dependencies.cleanup(environment.root);
+    dependencies.output(`Cleaned ${environment.root}`);
+  }
+}
+
+const invokedDirectly = !!process.argv[1] && resolve(process.argv[1]) === MODULE_PATH;
+
+if (invokedDirectly) {
+  runManual(process.argv.slice(2))
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
 }

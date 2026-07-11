@@ -1,11 +1,37 @@
+import { EventEmitter } from "node:events";
 import { describe, it, expect } from "vitest";
+import type { Provisioned } from "../eval/environments.js";
 import {
   DEFAULT_MANUAL_ENV,
   buildCopilotInvocation,
+  launchCopilot,
   loadScenarios,
   parseManualArgs,
+  runManual,
   scenariosForEnv,
 } from "../eval/manual.js";
+
+const provisioned: Provisioned = {
+  root: "C:\\temp\\manual-root",
+  okhHome: "C:\\temp\\manual-root\\okh-home",
+  copilotHome: "C:\\temp\\manual-root\\copilot-home",
+  workspace: "C:\\temp\\manual-root\\workspace",
+  containerPath: "C:\\temp\\manual-root\\okh-home\\containers\\kb-hub",
+  fixtureDir: "C:\\repo\\eval\\fixtures\\kb-hub",
+};
+
+class FakeChildProcess extends EventEmitter {
+  killed = false;
+  readonly forwardedSignals: NodeJS.Signals[] = [];
+
+  kill(signal?: NodeJS.Signals): boolean {
+    this.killed = true;
+    if (signal) {
+      this.forwardedSignals.push(signal);
+    }
+    return true;
+  }
+}
 
 describe("manual testing helpers", () => {
   it("defaults to local-and-git", () => {
@@ -55,5 +81,148 @@ describe("manual testing helpers", () => {
       cwd: "C:\\temp\\workspace",
       env: { COPILOT_HOME: "C:\\temp\\copilot-home" },
     });
+  });
+});
+
+describe("runManual", () => {
+  it("provisions the default env, prints prompts, launches Copilot, and cleans up", async () => {
+    const events: string[] = [];
+    const exitCode = await runManual([], {
+      provision: async (env) => {
+        events.push(`provision:${env}`);
+        return provisioned;
+      },
+      scenarios: async () => [{
+        file: "ask/answerable.yaml",
+        description: "answers from stored knowledge",
+        env: "local-and-git",
+        prompt: "What is the deployment process?",
+        checklist: ["tools-called ask"],
+      }],
+      launch: async (invocation) => {
+        events.push(`launch:${JSON.stringify(invocation)}`);
+        return 7;
+      },
+      cleanup: async (root) => {
+        events.push(`cleanup:${root}`);
+      },
+      output: (line) => events.push(`output:${line}`),
+    });
+
+    expect(exitCode).toBe(7);
+    expect(events).toContain("provision:local-and-git");
+    expect(events).toContain(
+      `launch:${JSON.stringify({
+        command: "copilot",
+        args: ["--allow-all"],
+        cwd: provisioned.workspace,
+        env: { COPILOT_HOME: provisioned.copilotHome },
+      })}`,
+    );
+    expect(events).toContain("output:Environment  : local-and-git");
+    expect(events).toContain(`output:OKH_HOME     : ${provisioned.okhHome}`);
+    expect(events).toContain(`output:COPILOT_HOME : ${provisioned.copilotHome}`);
+    expect(events).toContain(`output:Workspace    : ${provisioned.workspace}`);
+    expect(events).toContain("output:[1] answers from stored knowledge");
+    expect(events).toContain("output:What is the deployment process?");
+    expect(events).toContain("output:  expected:");
+    expect(events).toContain("output:    - tools-called ask");
+    expect(events).toContain(`cleanup:${provisioned.root}`);
+    expect(events.at(-1)).toBe(`output:Cleaned ${provisioned.root}`);
+  });
+
+  it("cleans up when Copilot launch fails", async () => {
+    const cleaned: string[] = [];
+    const output: string[] = [];
+    await expect(runManual(["wiki"], {
+      provision: async () => provisioned,
+      scenarios: async () => [],
+      launch: async () => {
+        throw new Error("copilot unavailable");
+      },
+      cleanup: async (root) => {
+        cleaned.push(root);
+      },
+      output: (line) => {
+        output.push(line);
+      },
+    })).rejects.toThrow("copilot unavailable");
+    expect(cleaned).toEqual([provisioned.root]);
+    expect(output.at(-1)).toBe(`Cleaned ${provisioned.root}`);
+  });
+
+  it("rejects invalid arguments before provisioning", async () => {
+    let provisionedCount = 0;
+    await expect(runManual(["bad-env"], {
+      provision: async () => {
+        provisionedCount += 1;
+        return provisioned;
+      },
+      scenarios: async () => [],
+      launch: async () => 0,
+      cleanup: async () => undefined,
+      output: () => undefined,
+    })).rejects.toThrow(/unknown environment/i);
+    expect(provisionedCount).toBe(0);
+  });
+});
+
+describe("launchCopilot", () => {
+  it("forwards signals, uses inherited stdio, and removes listeners on close", async () => {
+    const child = new FakeChildProcess();
+    let spawnCall:
+      | {
+          command: string;
+          args: readonly string[] | undefined;
+          options: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: unknown; shell?: boolean } | undefined;
+        }
+      | undefined;
+    const sigintCount = process.listenerCount("SIGINT");
+    const sigtermCount = process.listenerCount("SIGTERM");
+
+    const spawnChild = ((command: string, args?: readonly string[], options?: {
+      cwd?: string;
+      env?: NodeJS.ProcessEnv;
+      stdio?: unknown;
+      shell?: boolean;
+    }) => {
+      spawnCall = { command, args, options };
+      return child as never;
+    }) as unknown as NonNullable<Parameters<typeof launchCopilot>[1]>;
+
+    const launch = launchCopilot(
+      {
+        command: "copilot",
+        args: ["--allow-all"],
+        cwd: provisioned.workspace,
+        env: { COPILOT_HOME: provisioned.copilotHome },
+      },
+      spawnChild,
+    );
+
+    try {
+      expect(spawnCall).toMatchObject({
+        command: "copilot",
+        args: ["--allow-all"],
+        options: {
+          cwd: provisioned.workspace,
+          stdio: "inherit",
+          shell: false,
+        },
+      });
+      expect(spawnCall?.options?.env?.COPILOT_HOME).toBe(provisioned.copilotHome);
+      expect(process.listenerCount("SIGINT")).toBe(sigintCount + 1);
+      expect(process.listenerCount("SIGTERM")).toBe(sigtermCount + 1);
+
+      const sigintHandler = process.listeners("SIGINT")[sigintCount] as (() => void) | undefined;
+      sigintHandler?.();
+      expect(child.forwardedSignals).toEqual(["SIGINT"]);
+    } finally {
+      child.emit("close", null, "SIGINT");
+    }
+
+    await expect(launch).resolves.toBe(1);
+    expect(process.listenerCount("SIGINT")).toBe(sigintCount);
+    expect(process.listenerCount("SIGTERM")).toBe(sigtermCount);
   });
 });
