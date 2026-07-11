@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { loadScenarios, listEnvironments, scenariosForEnv, setupEnvironment, clean, buildEnterInvocation } from "../eval/okh-eval.js";
+import { loadScenarios, listEnvironments, scenariosForEnv, setupEnvironment, clean, buildEnterInvocation, runManualSession } from "../eval/okh-eval.js";
 import { type RunRecord } from "../eval/run-state.js";
 
 const roots: string[] = [];
@@ -68,5 +68,35 @@ describe("okh-eval manual CLI (environment-centric)", () => {
   it("buildEnterInvocation omits --model when not given", () => {
     const rec: RunRecord = { env: "empty", root: "/r", workspace: "/r/ws", copilotHome: "/r/ch", createdAt: "t" };
     expect(buildEnterInvocation(rec).args).toEqual(["--allow-all"]);
+  });
+
+  it("manual provisions a temp env, runs the session, and cleans up on exit", async () => {
+    let root = "";
+    let existedDuringSession = false;
+    let seenCwd = "";
+    const code = await runManualSession("empty", {
+      onSetup: (res) => { root = res.root; },
+      spawn: async (inv) => {
+        seenCwd = inv.cwd;
+        existedDuringSession = await exists(root);
+        return 7;
+      },
+    });
+    expect(code).toBe(7);
+    expect(existedDuringSession).toBe(true);
+    expect(seenCwd).toBe(join(root, "workspace"));
+    expect(await exists(root)).toBe(false);
+  });
+
+  it("manual cleans up the temp env even when the session errors", async () => {
+    let root = "";
+    await expect(
+      runManualSession("empty", {
+        onSetup: (res) => { root = res.root; },
+        spawn: async () => { throw new Error("boom"); },
+      }),
+    ).rejects.toThrow("boom");
+    expect(root).not.toBe("");
+    expect(await exists(root)).toBe(false);
   });
 });

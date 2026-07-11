@@ -54,7 +54,7 @@ Key files:
 | `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
-| `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`) |
+| `okh-eval.ts` | the manual harness (`npm run eval:setup -- …`, `npm run manual`) |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`, `custom-hub`, `health-hub`, `wiki-hub`) |
 
 ---
@@ -318,6 +318,24 @@ npm run eval:setup -- setup local-and-git  # provision an environment; print its
 npm run eval:setup -- enter                # interactive Copilot session in that environment
 npm run eval:setup -- clean                # delete the temp run
 ```
+
+### One-shot manual session (`npm run manual`)
+
+For a quick hands-on test of **this** working tree, `npm run manual` does it all in one
+command: it **rebuilds** `dist/index.js` (so the current branch's code loads — not another
+worktree's), provisions a throwaway environment, drops you into an interactive Copilot
+session wired to that built server, and **deletes the temp home when you exit**. No paths,
+no cleanup step, and it never touches the shared run-state file.
+
+```powershell
+npm run manual                       # empty env (default), rebuilt + entered, auto-cleaned on exit
+npm run manual -- local-and-git      # pick an environment
+npm run manual -- git --model claude-sonnet-4.5   # env + model override
+```
+
+The session banner prints the exact `OKH server` path so you can confirm which build is
+loaded; `/mcp` inside the session confirms **open-knowledge-hub** is connected.
+
 
 - **`setup <env>`** (`empty` | `git` | `local-and-git` | `custom` | `health` | `wiki`) builds the isolated temp Root and
   prints the Root/Workspace paths, the `enter`/`clean` commands, and — for every test that

@@ -30,6 +30,7 @@
     "eval:validate": "node --import tsx eval/run-scenarios.ts validate",
     "eval:view": "promptfoo view",
     "eval:setup": "tsx eval/okh-eval.ts",
+    "manual": "npm run build && tsx eval/okh-eval.ts manual",
     "build:server": "tsc -p tsconfig.json",
     "build:app": "node scripts/build-todo-app.mjs",
     "typecheck:server": "tsc -p tsconfig.json --noEmit",

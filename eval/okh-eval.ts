@@ -141,6 +141,38 @@ export function buildEnterInvocation(rec: RunRecord, model?: string): EnterInvoc
   return { command: "copilot", args, cwd: rec.workspace, env: { COPILOT_HOME: rec.copilotHome } };
 }
 
+/**
+ * One-shot manual test: provision a throwaway environment, enter an interactive
+ * Copilot session wired to the built OKH server, and delete the temp home when
+ * the session exits (or errors). Never touches the shared run-state file.
+ */
+export async function runManualSession(
+  env: EnvName,
+  opts: {
+    model?: string;
+    spawn?: (inv: EnterInvocation) => Promise<number>;
+    onSetup?: (res: SetupResult) => void;
+  } = {},
+): Promise<number> {
+  if (!isEnvName(env)) throw new Error(`unknown environment "${String(env)}" — use one of: ${listEnvironments().join(", ")}`);
+  const res = await setupEnvironment(env);
+  const rec: RunRecord = {
+    env: res.env,
+    root: res.root,
+    workspace: res.workspace,
+    copilotHome: res.copilotHome,
+    createdAt: new Date().toISOString(),
+  };
+  opts.onSetup?.(res);
+  const runSpawn = opts.spawn ?? spawnInteractive;
+  const inv = buildEnterInvocation(rec, opts.model);
+  try {
+    return await runSpawn(inv);
+  } finally {
+    await clean(res.root);
+  }
+}
+
 /** Remove the temp run (accepts the temp root or the workspace path). */
 export async function clean(workspaceOrRoot: string): Promise<void> {
   const root = workspaceOrRoot.replace(/[\\/]workspace$/, "");
@@ -194,6 +226,32 @@ export async function main(argv: string[]): Promise<number> {
     console.log(`Entering ${rec.env}\n  COPILOT_HOME: ${rec.copilotHome}\n  cwd: ${rec.workspace}\n`);
     return spawnInteractive(inv);
   }
+  if (cmd === "manual") {
+    const mi = rest.indexOf("--model");
+    const model = mi >= 0 ? rest[mi + 1] : undefined;
+    const envArg = rest.find((a, i) => !a.startsWith("--") && rest[i - 1] !== "--model");
+    const env = envArg ?? "empty";
+    if (!isEnvName(env)) throw new Error(`usage: okh-eval manual [env] [--model <m>]   — env one of: ${listEnvironments().join(", ")}`);
+    return runManualSession(env, {
+      model,
+      onSetup: (res) => {
+        console.log(`Manual session : ${res.env}`);
+        console.log(`Workspace      : ${res.workspace}`);
+        console.log(`OKH server     : ${join(REPO_ROOT, "dist", "index.js")}`);
+        console.log(`OKH_HOME       : ${join(res.root, "okh-home")}`);
+        if (res.prompts.length) {
+          console.log(`\nTest prompts for this environment (paste one, eyeball against its checklist):`);
+          res.prompts.forEach((p, i) => {
+            console.log(`\n[${i + 1}] ${p.description}`);
+            console.log(indent(p.prompt));
+            console.log(`  expected:`);
+            for (const c of p.checklist) console.log(`    - ${c}`);
+          });
+        }
+        console.log(`\nEntering interactive session — exit (Ctrl-D or /exit) to auto-clean the temp home.\n`);
+      },
+    });
+  }
   if (cmd === "clean") {
     const arg = rest[0];
     const root = arg && looksLikePath(arg)
@@ -204,7 +262,7 @@ export async function main(argv: string[]): Promise<number> {
     console.log("cleaned");
     return 0;
   }
-  throw new Error(`unknown command: ${cmd ?? "(none)"} — use list | setup | enter | clean`);
+  throw new Error(`unknown command: ${cmd ?? "(none)"} — use list | setup | enter | manual | clean`);
 }
 
 const invokedDirectly = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
