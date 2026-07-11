@@ -226,6 +226,7 @@ function resolveTodoFile(moduleRoot: string, path: string): { absPath: string; r
   const normalized = path.replace(/\\/gu, "/");
   if (
     normalized.length === 0 ||
+    normalized.startsWith("/") ||
     /^[A-Za-z]:/u.test(path) ||
     isAbsolute(path) ||
     !normalized.toLowerCase().endsWith(".md")
