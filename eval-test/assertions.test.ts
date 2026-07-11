@@ -11,6 +11,7 @@ import moduleUnchanged from "../eval/assertions/module-unchanged.js";
 import containerRegistered from "../eval/assertions/container-registered.js";
 import manifestInitialized from "../eval/assertions/manifest-initialized.js";
 import wakePhraseSet from "../eval/assertions/wake-phrase-set.js";
+import llmwikiState from "../eval/assertions/llmwiki-state.js";
 import { isDeepSubset, matchesTool, missingTools } from "../eval/assertions/tool-events.js";
 import type { ToolEvent } from "../eval/copilot.js";
 
@@ -429,5 +430,158 @@ describe("onboarding assertions", () => {
     const r = await wakePhraseSet("", { providerResponse: { metadata: { okhHome: home } }, config: {} });
     expect(r.pass).toBe(false);
     expect(r.reason).toMatch(/invalid preferences\.json/);
+  });
+});
+
+describe("llmwiki-state", () => {
+  async function wikiPair() {
+    const fx = await makeTempDir("wiki-fx-"); cleanups.push(fx);
+    const c = await makeTempDir("wiki-"); cleanups.push(c);
+    return { fx, c };
+  }
+
+  async function scaffoldModule(root: string, module: string, opts?: { extraFiles?: Record<string, string> }) {
+    const dir = join(root, module);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "index.md"), "# Wiki Index\n\nTopics: attention, transformer\n\n* [syntheses/attention-transformer.md](syntheses/attention-transformer.md)\n", "utf8");
+    await writeFile(join(dir, "log.md"), "# Update Log\n\n## 2026-07-01\n\n- Initial setup\n", "utf8");
+    await mkdir(join(dir, "syntheses"), { recursive: true });
+    if (opts?.extraFiles) {
+      for (const [rel, content] of Object.entries(opts.extraFiles)) {
+        const parts = rel.split("/");
+        if (parts.length > 1) await mkdir(join(dir, ...parts.slice(0, -1)), { recursive: true });
+        await writeFile(join(dir, rel), content, "utf8");
+      }
+    }
+  }
+
+  it("passes initialization matching required index text and group indexes with no content pages", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    await scaffoldModule(c, "wiki");
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      requiredIndexText: ["attention", "transformer"],
+      requiredGroupIndexes: ["syntheses"],
+      noContentPages: true,
+    }));
+    expect(r.pass).toBe(true);
+  });
+
+  it("passes write with new synthesis page, terms, root index/log changed, clean health", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    await scaffoldModule(c, "wiki", {
+      extraFiles: {
+        "syntheses/attention-transformer.md":
+          "---\ntype: synthesis\ntitle: Attention and Transformer\n---\n# Attention and Transformer\n\nThe attention mechanism is a key component of the [transformer overview](transformer-overview.md) architecture.\n",
+        "syntheses/transformer-overview.md":
+          "---\ntype: synthesis\ntitle: Transformer Overview\n---\n# Transformer Overview\n\nSee also [attention-transformer](attention-transformer.md).\n",
+      },
+    });
+    // Modify index and log to simulate write; index links to both pages
+    await writeFile(join(c, "wiki", "index.md"), "# Wiki Index\n\nTopics: attention, transformer\n\n* [syntheses/attention-transformer.md](syntheses/attention-transformer.md)\n* [syntheses/transformer-overview.md](syntheses/transformer-overview.md)\n", "utf8");
+    await writeFile(join(c, "wiki", "log.md"), "# Update Log\n\n## 2026-07-10\n\n- Added attention-transformer synthesis\n\n## 2026-07-01\n\n- Initial setup\n", "utf8");
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      expectedNewPage: { folder: "syntheses", type: "synthesis", terms: ["attention", "transformer"] },
+      requireIndexAndLogChanged: true,
+      requireCleanHealth: true,
+    }));
+    expect(r.pass).toBe(true);
+  });
+
+  it("fails when expected type does not match", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    await scaffoldModule(c, "wiki", {
+      extraFiles: {
+        "syntheses/attention-transformer.md":
+          "---\ntype: concept\ntitle: Attention and Transformer\n---\n# Attention and Transformer\n\nAttention transformer content.\n",
+      },
+    });
+    await writeFile(join(c, "wiki", "index.md"), "# Wiki Index\n\nUpdated\n", "utf8");
+    await writeFile(join(c, "wiki", "log.md"), "# Update Log\n\nUpdated\n", "utf8");
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      expectedNewPage: { folder: "syntheses", type: "synthesis", terms: ["attention", "transformer"] },
+      requireIndexAndLogChanged: true,
+    }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/type/i);
+  });
+
+  it("fails when new page is in wrong folder", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    await scaffoldModule(c, "wiki", {
+      extraFiles: {
+        "concepts/attention-transformer.md":
+          "---\ntype: synthesis\ntitle: Attention Transformer\n---\n# Attention Transformer\n\nAttention and transformer content.\n",
+      },
+    });
+    await writeFile(join(c, "wiki", "index.md"), "# Wiki Index\n\nUpdated\n", "utf8");
+    await writeFile(join(c, "wiki", "log.md"), "# Update Log\n\nUpdated\n", "utf8");
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      expectedNewPage: { folder: "syntheses", type: "synthesis", terms: ["attention", "transformer"] },
+      requireIndexAndLogChanged: true,
+    }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/folder|no added.*syntheses/i);
+  });
+
+  it("fails when root index/log not changed", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    await scaffoldModule(c, "wiki", {
+      extraFiles: {
+        "syntheses/attention-transformer.md":
+          "---\ntype: synthesis\ntitle: Attention and Transformer\n---\n# Attention and Transformer\n\nAttention transformer.\n",
+      },
+    });
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      expectedNewPage: { folder: "syntheses", type: "synthesis", terms: ["attention", "transformer"] },
+      requireIndexAndLogChanged: true,
+    }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/index\.md|log\.md/i);
+  });
+
+  it("fails when initialization finds a content page with noContentPages", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    await scaffoldModule(c, "wiki", {
+      extraFiles: { "concepts/topic.md": "---\ntype: concept\n---\n# Topic\n" },
+    });
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      noContentPages: true,
+    }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/content page/i);
+  });
+
+  it("fails when health is not clean", async () => {
+    const { fx, c } = await wikiPair();
+    await scaffoldModule(fx, "wiki");
+    // Add a page with dangling link and missing type to cause health issues
+    await scaffoldModule(c, "wiki", {
+      extraFiles: {
+        "syntheses/attention-transformer.md":
+          "---\ntype: synthesis\ntitle: Attention Transformer\n---\n# Attention Transformer\n\nSee [missing](../nonexistent.md) for attention and transformer details.\n",
+      },
+    });
+    await writeFile(join(c, "wiki", "index.md"), "# Wiki Index\n\nUpdated with [link](syntheses/attention-transformer.md)\n", "utf8");
+    await writeFile(join(c, "wiki", "log.md"), "# Update Log\n\nUpdated\n", "utf8");
+    const r = await llmwikiState("", ctx({ containerPath: c, fixtureDir: fx }, {
+      module: "wiki",
+      expectedNewPage: { folder: "syntheses", type: "synthesis", terms: ["attention", "transformer"] },
+      requireIndexAndLogChanged: true,
+      requireCleanHealth: true,
+    }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/health|dangling|orphan|uncataloged/i);
   });
 });
