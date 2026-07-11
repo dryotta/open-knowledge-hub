@@ -104,7 +104,7 @@ function structuredOf(res: Awaited<ReturnType<Client["callTool"]>>): Record<stri
   );
 }
 
-type FeatureMap = Record<string, { status: string; message: string }>;
+type FeatureMap = Record<string, { status: string; message: string; available: boolean }>;
 
 function featuresOf(res: Awaited<ReturnType<Client["callTool"]>>): FeatureMap {
   return (structuredOf(res).features as FeatureMap | undefined) ?? {};
@@ -161,9 +161,13 @@ describe("capabilities tool — all-supported client", () => {
 
     // Structured content shape: features.roots/sampling/elicitation/apps
     expect(features.roots?.status).toBe("passed");
+    expect(features.roots?.available).toBe(true);
     expect(features.sampling?.status).toBe("passed");
+    expect(features.sampling?.available).toBe(true);
     expect(features.elicitation?.status).toBe("passed");
+    expect(features.elicitation?.available).toBe(true);
     expect(features.apps?.status).toBe("advertised");
+    expect(features.apps?.available).toBe(true);
 
     // Text output must not contain any handler-provided secrets
     const text = textOf(res);
@@ -196,9 +200,13 @@ describe("capabilities tool — no-support client", () => {
     const features = featuresOf(res);
 
     expect(features.roots?.status).toBe("unsupported");
+    expect(features.roots?.available).toBe(false);
     expect(features.sampling?.status).toBe("unsupported");
+    expect(features.sampling?.available).toBe(false);
     expect(features.elicitation?.status).toBe("unsupported");
+    expect(features.elicitation?.available).toBe(false);
     expect(features.apps?.status).toBe("unsupported");
+    expect(features.apps?.available).toBe(false);
   });
 });
 

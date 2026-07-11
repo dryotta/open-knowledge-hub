@@ -7,8 +7,17 @@ export const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 60_000;
 export type CapabilityStatus = "unsupported" | "passed" | "declined" | "failed" | "advertised";
 
 export interface CapabilityFeatureResult {
+  available: boolean;
   status: CapabilityStatus;
   message: string;
+}
+
+function isAvailable(status: CapabilityStatus): boolean {
+  return status !== "unsupported";
+}
+
+function feat(status: CapabilityStatus, message: string): CapabilityFeatureResult {
+  return { available: isAvailable(status), status, message };
 }
 
 export interface CapabilityReport {
@@ -41,51 +50,51 @@ export async function runCapabilityProbes(ops: CapabilityProbeOperations): Promi
   // Roots probe
   let roots: CapabilityFeatureResult;
   if (!caps?.roots) {
-    roots = { status: "unsupported", message: "Roots are not advertised." };
+    roots = feat("unsupported", "Roots are not advertised.");
   } else {
     try {
       await ops.roots();
-      roots = { status: "passed", message: "Roots request succeeded." };
+      roots = feat("passed", "Roots request succeeded.");
     } catch {
-      roots = { status: "failed", message: "Roots request failed." };
+      roots = feat("failed", "Roots request failed.");
     }
   }
 
   // Sampling probe
   let sampling: CapabilityFeatureResult;
   if (!caps?.sampling) {
-    sampling = { status: "unsupported", message: "Sampling is not advertised." };
+    sampling = feat("unsupported", "Sampling is not advertised.");
   } else {
     try {
       await ops.sampling();
-      sampling = { status: "passed", message: "Sampling request succeeded." };
+      sampling = feat("passed", "Sampling request succeeded.");
     } catch {
-      sampling = { status: "failed", message: "Sampling request failed." };
+      sampling = feat("failed", "Sampling request failed.");
     }
   }
 
   // Elicitation probe — form mode only; URL-only clients are treated as unsupported
   let elicitation: CapabilityFeatureResult;
   if (!supportsFormElicitation(caps?.elicitation)) {
-    elicitation = { status: "unsupported", message: "Form elicitation is not advertised." };
+    elicitation = feat("unsupported", "Form elicitation is not advertised.");
   } else {
     try {
       const action = await ops.elicitation();
       if (action === "accept") {
-        elicitation = { status: "passed", message: "Elicitation request succeeded." };
+        elicitation = feat("passed", "Elicitation request succeeded.");
       } else {
-        elicitation = { status: "declined", message: "Elicitation was declined or cancelled." };
+        elicitation = feat("declined", "Elicitation was declined or cancelled.");
       }
     } catch {
-      elicitation = { status: "failed", message: "Elicitation request failed." };
+      elicitation = feat("failed", "Elicitation request failed.");
     }
   }
 
   // Apps probe — passive presence check, no active request
   const apps: CapabilityFeatureResult =
     caps?.extensions?.[MCP_APPS_EXTENSION] !== undefined
-      ? { status: "advertised", message: "MCP Apps extension is advertised." }
-      : { status: "unsupported", message: "MCP Apps is not advertised." };
+      ? feat("advertised", "MCP Apps extension is advertised.")
+      : feat("unsupported", "MCP Apps is not advertised.");
 
   return { features: { roots, sampling, elicitation, apps } };
 }
