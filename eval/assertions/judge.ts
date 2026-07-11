@@ -100,30 +100,30 @@ export default async function judge(
   for (const c of criteria) {
     const r = byId.get(c.id);
     const required = c.required !== false;
+
+    if (c.check) {
+      // Deterministic check is authoritative: always run it, use its verdict regardless of judge.
+      const det = await evaluateCheck(c.check, checkCtx);
+      const judgeVerdict: string = r ? r.verdict : "MISSING";
+      const detVerdict = det.pass ? "PASS" : "FAIL";
+      // Required gates on det; advisory never gates.
+      if (required && !det.pass) pass = false;
+      const border = r?.verdict === "PASS" && r.failVotes > 0 ? " (borderline)" : "";
+      const advisoryTag = required ? "" : " [advisory]";
+      parts.push(`${c.id}: ${detVerdict} det=${detVerdict}(${det.reason}) judge=${judgeVerdict}${border}${advisoryTag}`);
+      continue;
+    }
+
+    // Unchecked semantic criteria: preserve existing required/advisory behaviour.
     if (!r) {
       parts.push(`${c.id}: MISSING`);
       if (required) pass = false;
       continue;
     }
-    let effective: "PASS" | "FAIL" | "UNRELIABLE" = r.verdict;
-    let note = "";
-    if (c.check) {
-      if (r.verdict === "UNRELIABLE") {
-        note = "✗unreliable";
-      } else {
-        const det = await evaluateCheck(c.check, checkCtx);
-        if ((r.verdict === "PASS") !== det.pass) {
-          note = `✗DISAGREE judge=${r.verdict} det=${det.pass ? "PASS" : "FAIL"} (${det.reason})`;
-          pass = false;
-          effective = "FAIL";
-        } else {
-          note = "✓det";
-        }
-      }
-    }
+    const effective: "PASS" | "FAIL" | "UNRELIABLE" = r.verdict;
     if (required && effective !== "PASS") pass = false;
     const border = r.verdict === "PASS" && r.failVotes > 0 ? " (borderline)" : "";
-    parts.push(`${c.id}: ${effective} ${r.passVotes}/${r.validVotes}${note ? " " + note : ""}${border}${required ? "" : " [advisory]"}`);
+    parts.push(`${c.id}: ${effective} ${r.passVotes}/${r.validVotes}${border}${required ? "" : " [advisory]"}`);
   }
   return { pass, score: pass ? 1 : 0, reason: parts.join(" · ") };
 }
