@@ -22,7 +22,7 @@ describe("custom module type end-to-end", () => {
       const addedContainer = await svc.addContainer({ source: containerDir, create: true });
       if (addedContainer.kind !== "applied") throw new Error("expected applied");
       const containerName = addedContainer.entry.name;
-      expect(addedContainer.entry.backend).toBe("local");
+      expect(addedContainer.entry.backend.type).toBe("local");
 
       // 2. Add custom module (type "recipes" is not a builtin)
       const addedModule = await svc.addModule({

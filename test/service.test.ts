@@ -39,10 +39,10 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: origin, name: "my-hub", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.backend).toBe("git");
-    expect(entry.origin).toBe(origin);
+    expect(entry.backend.type).toBe("git");
+    expect(entry.backend.config["origin"]).toBe(origin);
     expect(entry.localPath).toBe(join(paths.containersDir, "my-hub"));
-    expect(entry.sync).toBe("auto");
+    expect(entry.sync.mode).toBe("auto");
   });
 
   it("registers a local folder in place", async () => {
@@ -51,10 +51,10 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: dir, name: "notes", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.backend).toBe("local");
-    expect(entry.origin).toBeUndefined();
+    expect(entry.backend.type).toBe("local");
+    expect(entry.backend.config["origin"]).toBeUndefined();
     expect(entry.localPath).toBe(dir);
-    expect(entry.sync).toBe("auto");
+    expect(entry.sync.mode).toBe("auto");
   });
 
   it("labels an onedrive backend when requested", async () => {
@@ -63,7 +63,7 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: dir, name: "cloud", backend: "onedrive", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.backend).toBe("onedrive");
+    expect(entry.backend.type).toBe("onedrive");
   });
 
   it("derives a name from the source when omitted", async () => {
@@ -81,7 +81,7 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: dir, name: "team", sync: "pr", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.sync).toBe("pr");
+    expect(entry.sync.mode).toBe("shared");
   });
 
   it("rejects a duplicate container name", async () => {

@@ -12,8 +12,8 @@ async function setup() {
   const root = await mkdtemp(join(tmpdir(), "okh-c-"));
   const paths = resolvePaths({ OKH_HOME: home });
   await saveRegistry(paths, {
-    version: 1,
-    containers: [{ name: "h", backend: "local", localPath: root, sync: "auto", addedAt: new Date().toISOString() }],
+    version: 2,
+    containers: [{ name: "h", backend: { type: "local", config: {} }, localPath: root, sync: { mode: "auto", config: {} }, addedAt: new Date().toISOString() }],
   });
   return { root, svc: new ContainerService(paths) };
 }

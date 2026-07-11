@@ -6,12 +6,17 @@ import { OkhError } from "../errors.js";
 import {
   emptyRegistry,
   registrySchema,
+  legacyRegistrySchema,
   type Registry,
   type ContainerEntry,
 } from "./schema.js";
+import { migrateRegistryV1, type RegistryMigrationOptions } from "./migrate.js";
 
-/** Read the registry. Missing file => empty; present-but-invalid => hard error. */
-export async function loadRegistry(paths: OkhPaths): Promise<Registry> {
+/** Read the registry. Missing file => empty; v1 file => migrate+save; invalid => hard error. */
+export async function loadRegistry(
+  paths: OkhPaths,
+  options: RegistryMigrationOptions = {},
+): Promise<Registry> {
   let raw: string;
   try {
     raw = await readFile(paths.registryFile, "utf8");
@@ -29,15 +34,21 @@ export async function loadRegistry(paths: OkhPaths): Promise<Registry> {
       "Fix or delete the file to reset the registry.",
     );
   }
-  const result = registrySchema.safeParse(parsed);
-  if (!result.success) {
-    throw new OkhError(
-      "INVALID_MANIFEST",
-      `Registry at ${paths.registryFile} does not match the expected schema: ${result.error.message}`,
-      "Fix or delete the file to reset the registry.",
-    );
+  const current = registrySchema.safeParse(parsed);
+  if (current.success) return current.data;
+
+  const legacy = legacyRegistrySchema.safeParse(parsed);
+  if (legacy.success) {
+    const migrated = await migrateRegistryV1(legacy.data, options);
+    await saveRegistry(paths, migrated);
+    return migrated;
   }
-  return result.data;
+
+  throw new OkhError(
+    "INVALID_MANIFEST",
+    `Registry at ${paths.registryFile} does not match the expected schema: ${current.error.message}`,
+    "Fix or delete the file to reset the registry.",
+  );
 }
 
 /** Persist atomically (temp file + rename). Validates before writing. */

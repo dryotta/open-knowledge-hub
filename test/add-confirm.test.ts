@@ -98,7 +98,7 @@ describe("addContainer git + existing-hub", () => {
     const { service, paths } = await setup();
     const out = await service.addContainer({ source: origin, name: "gh", create: true });
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.backend).toBe("git");
+    if (out.kind === "applied") expect(out.entry.backend.type).toBe("git");
     expect((await loadRegistry(paths)).containers[0]!.name).toBe("gh");
   });
 
@@ -133,8 +133,8 @@ describe("addContainer git + existing-hub", () => {
     const out = await service.addContainer({ source: dir, name: "sync-applied", sync: "pr", create: true });
 
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.sync).toBe("pr");
-    expect((await loadRegistry(paths)).containers[0]!.sync).toBe("pr");
+    if (out.kind === "applied") expect(out.entry.sync.mode).toBe("shared");
+    expect((await loadRegistry(paths)).containers[0]!.sync.mode).toBe("shared");
   });
 
   it("registers an existing folder with migrated sync in one call", async () => {
@@ -146,6 +146,6 @@ describe("addContainer git + existing-hub", () => {
     const out = await service.addContainer({ source: dir, name: "sync-default", create: true });
 
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.sync).toBe("auto");
+    if (out.kind === "applied") expect(out.entry.sync.mode).toBe("auto");
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { ContainerService } from "../src/container/service.js";
 import { resolvePaths } from "../src/config.js";
 import { loadRegistry, findContainer } from "../src/registry/registry.js";
@@ -15,28 +15,29 @@ async function setup() {
 }
 
 async function registerLegacy(paths: ReturnType<typeof resolvePaths>, root: string, sync: string) {
-  // A legacy container: registry entry (sync defaults to auto) + a legacy .okh/okh.yaml carrying the real sync.
-  const { saveRegistry } = await import("../src/registry/registry.js");
-  await saveRegistry(paths, {
+  // Write a v1 registry JSON directly so loadRegistry can auto-migrate it to v2.
+  await mkdir(dirname(paths.registryFile), { recursive: true });
+  await writeFile(paths.registryFile, JSON.stringify({
     version: 1,
     containers: [{ name: "legacy", backend: "local", localPath: root, sync: "auto", addedAt: new Date().toISOString() }],
-  });
+  }));
   await mkdir(join(root, ".okh"), { recursive: true });
   await mkdir(join(root, "kb"), { recursive: true });
   await writeFile(join(root, ".okh", "okh.yaml"), `name: legacy\nsync: ${sync}\nmodules:\n  - path: kb\n    type: knowledge\n`);
 }
 
-describe("legacy sync is persisted to the registry on read (not silently downgraded)", () => {
-  it("status() migrates a legacy sync: pr into the registry entry", async () => {
+describe("legacy sync is persisted to the registry on read", () => {
+  it("status() migrates a legacy local sync: pr to auto in the registry entry", async () => {
     const { paths, root, svc } = await setup();
     try {
       await registerLegacy(paths, root, "pr");
       const st = await svc.status("legacy");
-      expect(st.sync).toBe("pr");
-      // legacy file is gone, and the pr mode now lives on the registry entry
+      // local backend "pr" migrates to "auto" under v2 rules
+      expect(st.sync).toBe("auto");
+      // legacy file is gone
       await expect(stat(join(root, ".okh", "okh.yaml"))).rejects.toThrow();
       const entry = findContainer(await loadRegistry(paths), "legacy");
-      expect(entry!.sync).toBe("pr");
+      expect(entry!.sync.mode).toBe("auto");
     } finally {
       await rm(paths.home, { recursive: true, force: true });
       await rm(root, { recursive: true, force: true });
@@ -48,9 +49,9 @@ describe("legacy sync is persisted to the registry on read (not silently downgra
     try {
       await registerLegacy(paths, root, "pr");
       const targets = await svc.resolveTargets("legacy");
-      expect(targets[0]!.sync).toBe("pr");
+      expect(targets[0]!.sync).toBe("auto");
       const entry = findContainer(await loadRegistry(paths), "legacy");
-      expect(entry!.sync).toBe("pr");
+      expect(entry!.sync.mode).toBe("auto");
     } finally {
       await rm(paths.home, { recursive: true, force: true });
       await rm(root, { recursive: true, force: true });
@@ -64,8 +65,8 @@ describe("a module cannot be created at the container root", () => {
     try {
       const { saveRegistry } = await import("../src/registry/registry.js");
       await saveRegistry(paths, {
-        version: 1,
-        containers: [{ name: "h", backend: "local", localPath: root, sync: "auto", addedAt: new Date().toISOString() }],
+        version: 2,
+        containers: [{ name: "h", backend: { type: "local", config: {} }, localPath: root, sync: { mode: "auto", config: {} }, addedAt: new Date().toISOString() }],
       });
       await expect(
         svc.addModule({ container: "h", path: ".", type: "knowledge", name: "root", create: true }),

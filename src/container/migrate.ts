@@ -3,12 +3,11 @@ import { join, basename } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { saveModuleManifest, moduleManifestExists } from "../modules/manifest.js";
-import { syncModeSchema, type SyncMode } from "../registry/schema.js";
 
 const LEGACY_REL = join(".okh", "okh.yaml");
 
-const legacySchema = z.object({
-  sync: syncModeSchema.optional(),
+const legacyContainerSchema = z.object({
+  sync: z.enum(["auto", "pr"]).optional(),
   modules: z
     .array(z.object({ path: z.string(), type: z.string(), config: z.record(z.string(), z.unknown()).optional() }))
     .default([]),
@@ -17,10 +16,10 @@ const legacySchema = z.object({
 /**
  * One-time migration: if `<root>/.okh/okh.yaml` exists, write a per-module
  * `<module>/.okh/module.yaml` for each listed module (unless one already exists),
- * delete the legacy file, and return its `sync` mode. Idempotent: no-op when the
- * legacy file is absent.
+ * delete the legacy file, and return the raw legacy sync string. Idempotent: no-op
+ * when the legacy file is absent.
  */
-export async function migrateLegacyContainerManifest(root: string): Promise<SyncMode | undefined> {
+export async function migrateLegacyContainerManifest(root: string): Promise<string | undefined> {
   const legacyPath = join(root, LEGACY_REL);
   let raw: string;
   try {
@@ -35,7 +34,7 @@ export async function migrateLegacyContainerManifest(root: string): Promise<Sync
   } catch {
     return undefined; // leave a syntactically malformed legacy file alone
   }
-  const parsed = legacySchema.safeParse(doc);
+  const parsed = legacyContainerSchema.safeParse(doc);
   if (!parsed.success) return undefined; // leave a schema-invalid legacy file alone
   for (const m of parsed.data.modules) {
     const moduleRoot = join(root, m.path);

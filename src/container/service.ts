@@ -19,14 +19,14 @@ import {
 import {
   containerNameSchema,
   repoUrlSchema,
-  type Backend,
+  type BackendType,
+  type SyncMode,
   type ContainerEntry,
 } from "../registry/schema.js";
 import { discoverModules, type DiscoveredModule } from "../modules/discovery.js";
 import { migrateLegacyContainerManifest } from "./migrate.js";
 import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
 import { type Item, type WikiHealth } from "../modules/types.js";
-import { type SyncMode } from "../registry/schema.js";
 import { getLoader } from "../modules/registry.js";
 import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
 import { resolveSharedSkill as resolveShared } from "../modules/shared.js";
@@ -121,7 +121,7 @@ export interface AddContainerPlan {
   kind: "container";
   actions: ContainerAction[];
   name: string;
-  backend: Backend;
+  backend: BackendType;
   source: string;
   /** Absolute local path to create / clone into / register. */
   target: string;
@@ -181,7 +181,7 @@ export interface ModuleStatus {
 
 export interface ContainerStatus {
   name: string;
-  backend: Backend;
+  backend: BackendType;
   sync?: SyncMode;
   localPath: string;
   manifestValid: boolean;
@@ -195,7 +195,7 @@ export type InspectResult =
       kind: "containers";
       containers: Array<{
         name: string;
-        backend: Backend;
+        backend: BackendType;
         sync?: SyncMode;
         moduleCount: number;
         modules: Array<{ path: string; type: string; name: string }>;
@@ -215,7 +215,7 @@ export type InspectResult =
 
 export interface SyncResult {
   name: string;
-  backend: Backend;
+  backend: BackendType;
   validation: { ok: boolean; issues: string[] };
   action: "committed-pushed" | "pulled" | "up-to-date" | "pr-opened" | "validated" | "skipped" | "error";
   committed?: boolean;
@@ -234,7 +234,7 @@ export interface ResolvedModule {
 
 export interface ResolvedContainer {
   name: string;
-  backend: Backend;
+  backend: BackendType;
   sync: SyncMode;
   root: string;
   modules: ResolvedModule[];
@@ -277,12 +277,16 @@ export class ContainerService {
    * write is never reached re-entrantly.
    */
   private async migrateAndPersistSync(name: string, root: string): Promise<void> {
-    const migratedSync = await migrateLegacyContainerManifest(root).catch(() => undefined);
-    if (migratedSync === undefined) return;
+    const legacyMode = await migrateLegacyContainerManifest(root).catch(() => undefined);
+    if (legacyMode === undefined) return;
     await this.mutex.run(async () => {
       const reg = await loadRegistry(this.paths);
       if (!findContainer(reg, name)) return;
-      await saveRegistry(this.paths, withContainerUpdated(reg, name, (e) => ({ ...e, sync: migratedSync })));
+      await saveRegistry(this.paths, withContainerUpdated(reg, name, (e) => {
+        const mode: SyncMode =
+          e.backend.type === "git" && legacyMode === "pr" ? "shared" : "auto";
+        return { ...e, sync: { mode, config: {} } };
+      }));
     });
   }
 
@@ -305,7 +309,7 @@ export class ContainerService {
     );
 
     let git: GitStatus | undefined;
-    if (entry.backend === "git") {
+    if (entry.backend.type === "git") {
       const [branch, dirty, ab, unpushed] = await Promise.all([
         this.git.currentBranch(root), this.git.isDirty(root),
         this.git.aheadBehind(root), this.git.hasUnpushedCommits(root),
@@ -314,7 +318,7 @@ export class ContainerService {
     }
 
     return {
-      name, backend: entry.backend, sync: entry.sync, localPath: root,
+      name, backend: entry.backend.type, sync: entry.sync.mode, localPath: root,
       manifestValid: invalid.length === 0,
       ...(invalid.length ? { manifestError: invalid.map((d) => `${d.path}: ${d.error}`).join("; ") } : {}),
       modules, git,
@@ -347,7 +351,7 @@ export class ContainerService {
         reg.containers.map(async (c) => {
           const st = await this.status(c.name).catch(() => undefined);
           return {
-            name: c.name, backend: c.backend, sync: st?.sync ?? c.sync,
+            name: c.name, backend: c.backend.type, sync: st?.sync ?? c.sync.mode,
             moduleCount: st?.modules.length ?? 0,
             modules: (st?.modules ?? []).map((m) => ({ path: m.path, type: m.type, name: m.name })),
             manifestValid: st?.manifestValid ?? false,
@@ -428,7 +432,7 @@ export class ContainerService {
         throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
       }
       out.push({
-        name: entry.name, backend: entry.backend, sync: entry.sync, root: entry.localPath,
+        name: entry.name, backend: entry.backend.type, sync: entry.sync.mode, root: entry.localPath,
         modules: discovered.map((d) => ({
           type: d.manifest!.type, path: d.path, name: d.manifest!.name,
           description: d.manifest!.description, absPath: this.moduleRoot(entry.localPath, d.path),
@@ -463,7 +467,7 @@ export class ContainerService {
         }
         results.push({
           name: entry.name,
-          backend: entry.backend,
+          backend: entry.backend.type,
           validation,
           action: "error",
           error: err.message,
@@ -475,11 +479,11 @@ export class ContainerService {
 
   private async syncOne(entry: ContainerEntry, message?: string): Promise<SyncResult> {
     const validation = await this.validate(entry.name);
-    if (entry.backend !== "git") {
-      return { name: entry.name, backend: entry.backend, validation, action: "validated" };
+    if (entry.backend.type !== "git") {
+      return { name: entry.name, backend: entry.backend.type, validation, action: "validated" };
     }
-    return entry.sync === "pr"
-      ? this.syncPr(entry, validation, message)
+    return entry.sync.mode === "shared"
+      ? this.syncShared(entry, validation, message)
       : this.syncAuto(entry, validation, message);
   }
 
@@ -509,7 +513,7 @@ export class ContainerService {
     await this.git.push(root, remote, branch);
     return {
       name: entry.name,
-      backend: entry.backend,
+      backend: entry.backend.type,
       validation,
       action: committed ? "committed-pushed" : "pulled",
       committed,
@@ -517,12 +521,15 @@ export class ContainerService {
     };
   }
 
-  private async syncPr(
+  private async syncShared(
     entry: ContainerEntry,
     validation: { ok: boolean; issues: string[] },
     message?: string,
   ): Promise<SyncResult> {
     const root = entry.localPath;
+    // entry.sync.config.branch holds the persistent shared branch configured during v1->v2 migration.
+    // The Git backend adapter (Task 2+) will use it to rebase and publish an idempotent PR.
+    // This legacy implementation continues to open ephemeral sync branches for backwards compat.
     const base = await this.git.currentBranch(root);
     if (base.startsWith(`okh/${entry.name}/sync-`)) {
       throw new OkhError(
@@ -533,7 +540,7 @@ export class ContainerService {
     const dirty = await this.git.isDirty(root);
     const unpushed = await this.git.hasCurrentBranchUnpushedCommits(root);
     if (!dirty && !unpushed) {
-      return { name: entry.name, backend: entry.backend, validation, action: "up-to-date" };
+      return { name: entry.name, backend: entry.backend.type, validation, action: "up-to-date" };
     }
     const branch = `okh/${entry.name}/sync-${Date.now()}`;
     let createdBranch = false;
@@ -558,7 +565,7 @@ export class ContainerService {
         title: message ?? `okh sync: ${entry.name}`,
         body: "Automated OKH sync.",
       });
-      result = { name: entry.name, backend: entry.backend, validation, action: "pr-opened", committed, pushed: true, prUrl };
+      result = { name: entry.name, backend: entry.backend.type, validation, action: "pr-opened", committed, pushed: true, prUrl };
     } catch (err) {
       operationError = err;
     }
@@ -597,7 +604,8 @@ export class ContainerService {
     if (findContainer(reg, name)) {
       throw new OkhError("ALREADY_EXISTS", `A container named "${name}" already exists.`);
     }
-    const sync: SyncMode = input.sync ?? "auto";
+    const rawSync = input.sync ?? "auto";
+    const sync: SyncMode = rawSync === "pr" ? "shared" : rawSync;
     const syncExplicit = input.sync !== undefined;
     if (isGit) {
       validate(repoUrlSchema, input.source, "source");
@@ -612,7 +620,7 @@ export class ContainerService {
         syncExplicit,
       };
     }
-    const backend: Backend = input.backend ?? "local";
+    const backend: BackendType = input.backend ?? "local";
     const target = resolve(input.source);
     const s = await stat(target).catch(() => null);
     if (s && !s.isDirectory()) {
@@ -647,14 +655,17 @@ export class ContainerService {
     } else {
       await mkdir(plan.target, { recursive: true });
     }
-    const migratedSync = await migrateLegacyContainerManifest(plan.target).catch(() => undefined);
-    const sync: SyncMode = plan.syncExplicit ? plan.sync : (migratedSync ?? plan.sync);
+    const legacyMode = await migrateLegacyContainerManifest(plan.target).catch(() => undefined);
+    const effectiveMode: SyncMode = plan.syncExplicit
+      ? plan.sync
+      : legacyMode === "pr"
+        ? (plan.backend === "git" ? "shared" : "auto")
+        : (legacyMode === "auto" ? "auto" : plan.sync);
     const entry: ContainerEntry = {
       name: plan.name,
-      backend: plan.backend,
-      ...(origin ? { origin } : {}),
+      backend: { type: plan.backend, config: plan.backend === "git" ? { origin: origin! } : {} },
       localPath: plan.target,
-      sync,
+      sync: { mode: effectiveMode, config: {} },
       addedAt: new Date().toISOString(),
     };
     await saveRegistry(this.paths, withContainerAdded(reg, entry));

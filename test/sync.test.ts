@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, readFile, writeFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { rm, readFile, writeFile, stat, mkdir } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import { ContainerService, type AddContainerInput } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
@@ -70,15 +70,15 @@ class FailingCreatePrGh {
   async createPr(): Promise<string> { throw new OkhError("GH_ERROR", "create PR failed"); }
 }
 
-async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: string, sync: "auto" | "pr" = "pr"): Promise<void> {
+async function registerGitContainer(paths: ReturnType<typeof makePaths>, root: string, sync: "auto" | "shared" = "shared"): Promise<void> {
+  await mkdir(dirname(paths.registryFile), { recursive: true });
   await writeFile(paths.registryFile, `${JSON.stringify({
-    version: 1,
+    version: 2,
     containers: [{
       name: "team",
-      backend: "git",
-      origin: "https://example.com/team.git",
+      backend: { type: "git", config: { origin: "https://example.com/team.git" } },
       localPath: root,
-      sync,
+      sync: { mode: sync, config: sync === "shared" ? { branch: "user/test/hub" } : {} },
       addedAt: new Date().toISOString(),
     }],
   })}\n`, "utf8");
