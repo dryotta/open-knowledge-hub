@@ -153,7 +153,7 @@ describe("CapabilityTaskStore", () => {
     store.cleanup();
   });
 
-  it("does not count generic delegate reads for an augmented task", async () => {
+  it("does not count a generic delegate getTask as an external poll", async () => {
     const clientKey = {};
     const runs = new CapabilityRunStore();
     const run = createRun(runs, clientKey);
@@ -165,12 +165,80 @@ describe("CapabilityTaskStore", () => {
     );
 
     await store.getTask(task.taskId);
-    await store.storeTaskResult(task.taskId, "completed", { stale: "delegate-payload" });
-    await store.getTaskResult(task.taskId);
 
     const probes = runs.getSnapshotForClient(clientKey, run.id).report.probes;
     expect(probes.tasksPoll.status).toBe("pending");
     expect(probes.tasksResult.status).toBe("pending");
+    store.cleanup();
+  });
+
+  it("records the result retrieval and returns a fresh report when getTaskResult runs for an augmented scan", async () => {
+    const clientKey = { privateClientKey: "must-not-serialize" };
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const { store } = createStore(runs);
+    const task = await store.createTask(
+      { ttl: null, context: context(clientKey, run.id, "scan") },
+      1,
+      request(true),
+    );
+    await store.storeTaskResult(task.taskId, "completed", { stale: "delegate-payload" });
+
+    const result = await store.getTaskResult(task.taskId);
+
+    const probes = runs.getSnapshotForClient(clientKey, run.id).report.probes;
+    expect(probes.tasksResult.status).toBe("passed");
+    expect(probes.tasksPoll.status).toBe("supported_not_completed");
+    expect(result).toMatchObject({
+      structuredContent: {
+        runId: run.id,
+        probes: { tasksResult: { status: "passed" } },
+      },
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("delegate-payload");
+    expect(serialized).not.toContain("must-not-serialize");
+    store.cleanup();
+  });
+
+  it("delegates getTaskResult verbatim for a non-augmented optional task call", async () => {
+    const clientKey = {};
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const { store } = createStore(runs);
+    const task = await store.createTask(
+      { ttl: null, context: context(clientKey, run.id, "scan") },
+      1,
+      request(false),
+    );
+    await store.storeTaskResult(task.taskId, "completed", { stale: "delegate-payload" });
+
+    const result = await store.getTaskResult(task.taskId);
+
+    expect(result).toEqual({ stale: "delegate-payload" });
+    const probes = runs.getSnapshotForClient(clientKey, run.id).report.probes;
+    expect(probes.tasksResult.status).toBe("not_exercised");
+    expect(probes.tasksPoll.status).toBe("not_exercised");
+    store.cleanup();
+  });
+
+  it("aborts the bound scan run when the scan task is cancelled", async () => {
+    const clientKey = {};
+    const runs = new CapabilityRunStore();
+    const run = createRun(runs, clientKey);
+    const { store } = createStore(runs);
+    const task = await store.createTask(
+      { ttl: null, context: context(clientKey, run.id, "scan") },
+      1,
+      request(true),
+    );
+
+    await store.updateTaskStatus(task.taskId, "cancelled");
+
+    expect(run.signal.aborted).toBe(true);
+    expect(runs.getSnapshotForClient(clientKey, run.id).report.probes.tasksCancel.status).toBe(
+      "not_exercised",
+    );
     store.cleanup();
   });
 

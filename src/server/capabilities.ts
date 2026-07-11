@@ -4,6 +4,7 @@ import type { RequestTaskStore } from "@modelcontextprotocol/sdk/shared/protocol
 import {
   CallToolResultSchema,
   ErrorCode,
+  GetTaskRequestSchema,
   McpError,
   type CallToolResult,
   type Task,
@@ -281,6 +282,13 @@ export async function registerCapabilities(
                 server.server.getClientVersion(),
               ))
           : accessibleRun(runs, clientKey, args.runId);
+        if (
+          args.action === "app_report" &&
+          runs.getSnapshotForClient(clientKey, run.id).report.probes.appInitialize
+            .status === "unsupported"
+        ) {
+          invalid("MCP App reporting is not available for this run.");
+        }
         const task = await extra.taskStore.createTask({
           ttl: args.action === "task_cancel" ? timeouts.cancellationTtlMs : taskTtl(run),
           pollInterval: timeouts.taskPollIntervalMs,
@@ -448,19 +456,28 @@ export async function registerCapabilities(
 
         return { task };
       },
+      // The SDK routes tasks/get and tasks/result through the TaskStore directly
+      // (see setRequestHandler installs in shared/protocol.js), so these handlers
+      // are never invoked. The ToolTaskHandler type still requires them, so keep
+      // them as thin delegators. Live probe accounting happens in the TaskStore
+      // (getTaskResult) and in the tasks/get override registered below.
       getTask: async (_args, extra) => {
-        tasks.markPolled(extra.taskId);
         return extra.taskStore.getTask(extra.taskId);
       },
       getTaskResult: async (_args, extra) => {
-        const dynamic = tasks.markResultRequested(extra.taskId);
-        if (dynamic !== undefined) {
-          return CallToolResultSchema.parse(dynamic);
-        }
         return CallToolResultSchema.parse(
           await extra.taskStore.getTaskResult(extra.taskId),
         );
       },
     },
   );
+
+  server.server.setRequestHandler(GetTaskRequestSchema, async (request, extra) => {
+    tasks.markPolled(request.params.taskId);
+    const task = await tasks.getTask(request.params.taskId, extra.sessionId);
+    if (!task) {
+      throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
+    }
+    return { ...task };
+  });
 }

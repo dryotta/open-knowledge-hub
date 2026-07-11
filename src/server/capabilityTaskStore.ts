@@ -240,7 +240,9 @@ export class CapabilityTaskStore implements TaskStore {
     await this.delegate.storeTaskResult(taskId, status, result, sessionId);
   }
 
-  getTaskResult(taskId: string, sessionId?: string): Promise<Result> {
+  async getTaskResult(taskId: string, sessionId?: string): Promise<Result> {
+    const fresh = this.markResultRequested(taskId);
+    if (fresh !== undefined) return fresh;
     return this.delegate.getTaskResult(taskId, sessionId);
   }
 
@@ -265,6 +267,10 @@ export class CapabilityTaskStore implements TaskStore {
         if (current.report.probes.tasksInput.status === "pending") {
           this.runs.replaceProbe(binding.clientKey, binding.runId, "tasksInput", TASK_PROBES.inputPassed);
         }
+      });
+    } else if (binding.action === "scan" && status === "cancelled") {
+      this.observeRun(() => {
+        this.runs.abortRun(binding.clientKey, binding.runId);
       });
     } else if (binding.action === "task_cancel" && status === "cancelled") {
       this.observeRun(() => {

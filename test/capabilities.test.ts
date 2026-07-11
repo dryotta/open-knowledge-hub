@@ -9,6 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   ErrorCode,
+  CallToolResultSchema,
   type CallToolResult,
   type ClientCapabilities,
   type Request,
@@ -144,6 +145,21 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
 
 function isErrorResult(result: Awaited<ReturnType<Client["callTool"]>>): boolean {
   return resultOf(result).isError === true;
+}
+
+async function taskAugmentedScan(client: Client): Promise<CallToolResult> {
+  const stream = client.experimental.tasks.callToolStream(
+    { name: "capabilities", arguments: {} },
+    CallToolResultSchema,
+    { task: {} },
+  );
+  let final: CallToolResult | undefined;
+  for await (const message of stream) {
+    if (message.type === "error") throw message.error;
+    if (message.type === "result") final = message.result as CallToolResult;
+  }
+  if (final === undefined) throw new Error("Task-augmented scan produced no result.");
+  return final;
 }
 
 function appCapabilities(): ClientCapabilities {
@@ -460,6 +476,48 @@ describe("capabilities actions", () => {
       message: "Task cancellation requires a task-augmented call.",
     });
     expect(fallback).toEqual(cancellation);
+  });
+
+  it("records create, poll, and result task probes as passed for a task-augmented scan", async () => {
+    const { client } = await connect();
+
+    const result = await taskAugmentedScan(client);
+    const report = result.structuredContent as CapabilityReport;
+
+    expect(report.runId).toBe(RUN_ID);
+    expect(report.probes.tasksCreate.status).toBe("passed");
+    expect(report.probes.tasksPoll.status).toBe("passed");
+    expect(report.probes.tasksResult.status).toBe("passed");
+    expect(report.probes.tasksInput.status).toBe("not_exercised");
+    expect(report.probes.tasksCancel.status).toBe("not_exercised");
+    expect(textOf(result)).toBe(formatCapabilityReport(report));
+  });
+
+  it("rejects app_report when MCP Apps are not advertised without reflecting input", async () => {
+    const { client } = await connect();
+    const scan = reportOf(await client.callTool({ name: "capabilities", arguments: {} }));
+    expect(scan.probes.appInitialize.status).toBe("unsupported");
+
+    const rejected = await client.callTool({
+      name: "capabilities",
+      arguments: {
+        action: "app_report",
+        runId: scan.runId,
+        app: { initialized: true, theme: "provided", resize: "observed" },
+      },
+    });
+
+    expect(isErrorResult(rejected)).toBe(true);
+    expect(textOf(rejected)).toBe(
+      `MCP error ${ErrorCode.InvalidParams}: MCP App reporting is not available for this run.`,
+    );
+    expect(JSON.stringify(rejected)).not.toContain("capability-test-client");
+
+    const after = reportOf(await client.callTool({
+      name: "capabilities",
+      arguments: { action: "report", runId: scan.runId },
+    }));
+    expect(after.probes.appInitialize.status).toBe("unsupported");
   });
 });
 
