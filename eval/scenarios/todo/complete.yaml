@@ -1,0 +1,30 @@
+# todo flow — complete one existing task after explicit confirmation.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. In container "kb-hub", module "mem",
+          use the todo skill to mark "Buy milk" complete.
+        turns:
+          - when: '\b(confirm|confirmation|proceed|approve)\b|go ahead|shall i|proposed|proposal|exact proposed|ready to (complete|update|change|write)|before i (complete|update|change|write)'
+            send: "Yes, I explicitly confirm that exact change. Mark only Buy milk complete."
+  tests:
+    - description: Todo - complete - confirms and completes only Buy milk
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config: { expect: [run, todos, update_todo, sync] }
+        - type: javascript
+          value: file://assertions/todo-markdown.ts
+          config:
+            module: mem
+            text: Buy milk
+            status: completed
+            labels: [shopping]
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts: { module: mem }
+            criteria:
+              - id: completed-target-only
+                text: Only the Buy milk todo was completed; unrelated memory content and the Review launch notes todo remain intact and unchanged.
