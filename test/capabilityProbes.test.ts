@@ -614,6 +614,54 @@ describe("runSamplingToolsProbe", () => {
       });
     });
 
+    it("fails when the final assistant response includes a follow-up tool use", async () => {
+      const { store, clientKey, runId } = createRun({ sampling: { tools: {} } });
+      const firstContent = {
+        type: "tool_use",
+        id: "tool-id",
+        name: "capability_echo",
+        input: { value: "secret" },
+      };
+      const secondContent = [
+        { type: "text", text: "private final summary" },
+        {
+          type: "tool_use",
+          id: "follow-up-tool-id",
+          name: "capability_echo",
+          input: { value: "follow-up-secret" },
+        },
+      ];
+      const createMessage = vi
+        .fn()
+        .mockResolvedValueOnce({
+          model: "private-first-model",
+          role: "assistant",
+          content: firstContent,
+        })
+        .mockResolvedValueOnce({
+          model: "private-final-model",
+          role: "assistant",
+          content: secondContent,
+        });
+
+      await runSamplingToolsProbe(
+        makeClient({ createMessage }),
+        store,
+        clientKey,
+        runId,
+        DEFAULT_PROBE_TIMEOUTS,
+      );
+
+      expect(store.getSnapshotForClient(clientKey, runId).report.probes.samplingTools).toEqual({
+        status: "failed",
+        code: "sampling.tools_invalid_follow_up_tool_use",
+        message: "Sampling returned a follow-up tool use in the final response.",
+      });
+      expect(JSON.stringify(store.getSnapshotForClient(clientKey, runId).report.probes.samplingTools)).not.toContain(
+        "follow-up-secret",
+      );
+    });
+
     it.each(["declined", "cancelled"])("maps user %s to supported_not_completed", async (reason) => {
       const { store, clientKey, runId } = createRun({ sampling: { tools: {} } });
       const client = makeClient({

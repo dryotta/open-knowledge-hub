@@ -296,6 +296,31 @@ function hasAssistantText(result: unknown): boolean {
   );
 }
 
+function hasAssistantToolUse(result: unknown): boolean {
+  if (!isRecord(result) || result.role !== "assistant") return false;
+  const content = Array.isArray(result.content) ? result.content : [result.content];
+  return content.some((block) => isRecord(block) && block.type === "tool_use");
+}
+
+function validateSamplingToolsFinalResult(result: unknown): CapabilityProbe {
+  if (hasAssistantToolUse(result)) {
+    return probe(
+      "failed",
+      "sampling.tools_invalid_follow_up_tool_use",
+      "Sampling returned a follow-up tool use in the final response.",
+    );
+  }
+
+  return hasAssistantText(result)
+    ? {
+        status: "passed",
+        code: "sampling.tools_passed",
+        message: "Sampling completed one synthetic tool call.",
+        evidence: { kind: "count", value: 1 },
+      }
+    : probe("failed", "sampling.tools_invalid_final", "Sampling returned an invalid final response.");
+}
+
 export async function runBasicSamplingProbe(
   client: CapabilityProbeClient,
   runs: CapabilityRunStore,
@@ -525,14 +550,7 @@ export async function runSamplingToolsProbe(
       clientKey,
       runId,
       "samplingTools",
-      hasAssistantText(finalResult)
-        ? {
-            status: "passed",
-            code: "sampling.tools_passed",
-            message: "Sampling completed one synthetic tool call.",
-            evidence: { kind: "count", value: 1 },
-          }
-        : probe("failed", "sampling.tools_invalid_final", "Sampling returned an invalid final response."),
+      validateSamplingToolsFinalResult(finalResult),
     );
   } catch (error) {
     runs.updateProbe(
