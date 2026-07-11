@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -10,6 +10,7 @@ import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { savePreferences } from "../src/preferences.js";
+import { TodoService } from "../src/todos/service.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
 class FakeGh {
@@ -37,7 +38,8 @@ async function connect(): Promise<{ client: Client; home: string }> {
   cleanups.push(home);
   const paths = makePaths(home);
   const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
-  const server = await buildServer({ service, paths });
+  const todoService = new TodoService(service, () => new Date("2026-07-10T08:00:00.000Z"));
+  const server = await buildServer({ service, paths, todoService });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   servers.push(server);
@@ -63,10 +65,22 @@ function isErrorResult(res: Awaited<ReturnType<Client["callTool"]>>): boolean {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 9 tools and no prompts", async () => {
+  it("exposes exactly the 11 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["add_container", "add_module", "ask", "config", "context", "inspect", "onboard", "run", "sync"]);
+    expect(tools).toEqual([
+      "add_container",
+      "add_module",
+      "ask",
+      "config",
+      "context",
+      "inspect",
+      "onboard",
+      "run",
+      "sync",
+      "todos",
+      "update_todo",
+    ]);
     expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
 
@@ -181,13 +195,144 @@ describe("MCP server surface", () => {
     expect(byName.sync!.openWorldHint).toBe(true);
     expect(byName.onboard!.readOnlyHint).toBe(true);
     expect(byName.onboard!.openWorldHint).toBe(false);
+    expect(byName.todos!.readOnlyHint).toBe(true);
+    expect(byName.todos!.openWorldHint).toBe(false);
+    expect(byName.update_todo!.readOnlyHint).toBe(false);
+    expect(byName.update_todo!.openWorldHint).toBe(false);
   });
 
-  it("config tool title contains the word 'config' so its call is detectable in transcripts", async () => {
+  it("tool titles remain detectable in transcripts", async () => {
     const { client } = await connect();
-    const tool = (await client.listTools()).tools.find((t) => t.name === "config");
-    const title = tool?.title ?? (tool?.annotations as { title?: string } | undefined)?.title ?? "";
-    expect(title).toMatch(/\bconfig\b/i);
+    const tools = (await client.listTools()).tools;
+    const config = tools.find((t) => t.name === "config");
+    const todos = tools.find((t) => t.name === "todos");
+    const updateTodo = tools.find((t) => t.name === "update_todo");
+    const configTitle = config?.title ?? (config?.annotations as { title?: string } | undefined)?.title ?? "";
+    expect(configTitle).toMatch(/\bconfig\b/i);
+    expect(todos?.title).toBe("Show todo lists");
+    expect(updateTodo?.title).toBe("Update one todo");
+  });
+
+  it("update_todo and todos round-trip through the tool interface with structured results", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+    await writeFile(join(dir, "mem", "warnings.md"), "- [ ] Broken dates #todo 📅 someday 📅 2026-07-12\n", "utf8");
+
+    const created = await client.callTool({
+      name: "update_todo",
+      arguments: {
+        operation: "create",
+        container: "hub",
+        module: "mem",
+        text: "Ship deterministic MCP todos",
+        entrySummary: "Release prep",
+        observation: "Track the adapter rollout.",
+        labels: ["ship", "release"],
+        due: "2026-07-12",
+        priority: "high",
+      },
+    });
+    expect(textOf(created)).toMatch(/created|added/i);
+    const createdStructured = structuredOf(created) as {
+      todo?: { ref: string; text: string; labels: string[]; due?: string; status: string; source: { path: string; line: number } };
+      dirtyContainer?: string;
+    };
+    expect(createdStructured.dirtyContainer).toBe("hub");
+    expect(createdStructured.todo).toMatchObject({
+      text: "Ship deterministic MCP todos",
+      labels: ["ship", "release"],
+      due: "2026-07-12",
+      status: "open",
+      source: { path: "2026-07-10.md", line: 5 },
+    });
+
+    const listed = await client.callTool({
+      name: "todos",
+      arguments: { container: "hub", module: "mem", labels: ["ship"], labelMode: "all" },
+    });
+    expect(textOf(listed)).toContain("Todos: 1 open, 0 completed, 0 custom.");
+    expect(textOf(listed)).toContain("hub/mem");
+    expect(textOf(listed)).toContain("[ ] Ship deterministic MCP todos #ship #release due 2026-07-12 (2026-07-10.md:5)");
+    expect(textOf(listed)).not.toContain("Broken dates");
+    const listedStructured = structuredOf(listed) as {
+      tasks?: Array<{ text: string; labels: string[]; status: string }>;
+      warnings?: Array<{ message: string; source: { path: string; line: number } }>;
+      counts?: { total: number; open: number; completed: number; custom: number };
+    };
+    expect(listedStructured.tasks).toHaveLength(1);
+    expect(listedStructured.tasks?.[0]).toMatchObject({
+      text: "Ship deterministic MCP todos",
+      labels: ["ship", "release"],
+      status: "open",
+    });
+    expect(listedStructured.warnings).toEqual([
+      {
+        source: { container: "hub", module: "mem", path: "warnings.md", line: 1 },
+        message: 'Invalid due date "someday".',
+      },
+      {
+        source: { container: "hub", module: "mem", path: "warnings.md", line: 1 },
+        message: "Duplicate due date metadata found; using the last valid value.",
+      },
+    ]);
+    expect(listedStructured.counts).toEqual({ total: 1, open: 1, completed: 0, custom: 0 });
+
+    const completed = await client.callTool({
+      name: "update_todo",
+      arguments: { operation: "patch", ref: createdStructured.todo!.ref, completed: true },
+    });
+    expect(textOf(completed)).toMatch(/completed/i);
+    expect(structuredOf(completed)).toMatchObject({
+      dirtyContainer: "hub",
+      todo: {
+        text: "Ship deterministic MCP todos",
+        status: "completed",
+        completed: "2026-07-10",
+      },
+    });
+
+    const doneList = await client.callTool({
+      name: "todos",
+      arguments: { container: "hub", module: "mem", status: "completed" },
+    });
+    expect(textOf(doneList)).toContain("Todos: 0 open, 1 completed, 0 custom.");
+    expect(textOf(doneList)).toContain("[x] Ship deterministic MCP todos #ship #release due 2026-07-12 (2026-07-10.md:5)");
+    expect(structuredOf(doneList)).toMatchObject({
+      counts: { total: 1, open: 0, completed: 1, custom: 0 },
+      tasks: [{ text: "Ship deterministic MCP todos", status: "completed" }],
+    });
+  });
+
+  it("surfaces conditional update_todo argument errors as MCP isError results", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+
+    const createError = await client.callTool({
+      name: "update_todo",
+      arguments: { operation: "create", container: "hub", module: "mem", text: "   " },
+    });
+    expect(isErrorResult(createError)).toBe(true);
+    expect(textOf(createError)).toContain("[INVALID_ARGUMENT] text must be a non-blank string.");
+
+    const created = await client.callTool({
+      name: "update_todo",
+      arguments: { operation: "create", container: "hub", module: "mem", text: "Patch me" },
+    });
+    const patchError = await client.callTool({
+      name: "update_todo",
+      arguments: {
+        operation: "patch",
+        ref: (structuredOf(created) as { todo?: { ref: string } }).todo!.ref,
+      },
+    });
+    expect(isErrorResult(patchError)).toBe(true);
+    expect(textOf(patchError)).toContain("[INVALID_ARGUMENT] Todo patch cannot be empty.");
   });
 
   it("add -> inspect round-trips through the tool interface", async () => {
