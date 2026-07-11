@@ -2,7 +2,26 @@ import { describe, it, expect } from "vitest";
 import { BackendRegistry } from "../src/sync/backendRegistry.js";
 import { PassiveBackend } from "../src/sync/passiveBackend.js";
 import type { ContainerEntry } from "../src/registry/schema.js";
+import type { SyncBackend, SyncSelection, ResolveSyncContext, BackendSyncRequest, BackendSyncResult } from "../src/sync/types.js";
 import { OkhError } from "../src/errors.js";
+
+/** A minimal mock backend that echoes any nested sync config back unchanged. */
+class NestedConfigBackend implements SyncBackend {
+  readonly type = "git" as const;
+  readonly modes = ["auto"] as const;
+  resolveBackendConfig(_config: unknown): Record<string, unknown> {
+    return {};
+  }
+  async resolveSync(selection: SyncSelection, _ctx: ResolveSyncContext): Promise<SyncSelection> {
+    return selection;
+  }
+  actions(_selection: SyncSelection): readonly string[] {
+    return [];
+  }
+  async sync(_req: BackendSyncRequest): Promise<BackendSyncResult> {
+    return { mode: "auto", outcome: "validated" };
+  }
+}
 
 function makeEntry(override: Partial<ContainerEntry> = {}): ContainerEntry {
   return {
@@ -190,5 +209,61 @@ describe("BackendRegistry", () => {
       ];
       await expect(registry.validateEntries(entries)).rejects.toThrow(OkhError);
     });
+  });
+});
+
+describe("stableStringify (nested config comparison)", () => {
+  function makeNestedEntry(config: Record<string, unknown>): ContainerEntry {
+    return {
+      name: "nested-hub",
+      backend: { type: "git", config: {} },
+      localPath: "/data/nested-hub",
+      sync: { mode: "auto", config },
+      addedAt: "2026-07-02T00:00:00.000Z",
+    };
+  }
+
+  it("accepts equal nested configs with different key insertion order", async () => {
+    const registry = new BackendRegistry([new NestedConfigBackend()]);
+    // Persisted entry has keys inserted in one order; resolved config returns them in another.
+    // Both represent the same structure — validation must succeed.
+    const config = { z: 1, a: { y: 2, b: 3 } };
+    await expect(registry.validateEntry(makeNestedEntry(config))).resolves.toBeUndefined();
+  });
+
+  it("rejects a changed nested value", async () => {
+    const registry = new BackendRegistry([
+      {
+        type: "git" as const,
+        modes: ["auto"] as const,
+        resolveBackendConfig: () => ({}),
+        async resolveSync(_sel: SyncSelection): Promise<SyncSelection> {
+          // Returns a config with a different nested value than what was stored.
+          return { mode: "auto", config: { a: { b: 99 } } };
+        },
+        actions: () => [],
+        async sync(): Promise<BackendSyncResult> { return { mode: "auto", outcome: "validated" }; },
+      },
+    ]);
+    const entry = makeNestedEntry({ a: { b: 1 } });
+    await expect(registry.validateEntry(entry)).rejects.toThrow(OkhError);
+  });
+
+  it("rejects reordered arrays (array order must be preserved)", async () => {
+    const registry = new BackendRegistry([
+      {
+        type: "git" as const,
+        modes: ["auto"] as const,
+        resolveBackendConfig: () => ({}),
+        async resolveSync(_sel: SyncSelection): Promise<SyncSelection> {
+          // Returns array in different order than what was stored.
+          return { mode: "auto", config: { items: [{ x: 2 }, { x: 1 }] } };
+        },
+        actions: () => [],
+        async sync(): Promise<BackendSyncResult> { return { mode: "auto", outcome: "validated" }; },
+      },
+    ]);
+    const entry = makeNestedEntry({ items: [{ x: 1 }, { x: 2 }] });
+    await expect(registry.validateEntry(entry)).rejects.toThrow(OkhError);
   });
 });
