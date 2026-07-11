@@ -75,13 +75,20 @@ describe("addContainer", () => {
     expect(entry.name).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it("honours an explicit sync mode in the registry entry", async () => {
+  it("maps legacy pr to auto for non-git backends", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     const out = await service.addContainer({ source: dir, name: "team", sync: "pr", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
-    const entry = out.entry;
-    expect(entry.sync.mode).toBe("shared");
+    expect(out.entry.sync.mode).toBe("auto");
+  });
+
+  it("maps legacy pr to shared for git backends", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service } = await setup();
+    const out = await service.addContainer({ source: origin, name: "team-git", sync: "pr", create: true });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    expect(out.entry.sync.mode).toBe("shared");
   });
 
   it("rejects a duplicate container name", async () => {

@@ -607,7 +607,7 @@ export class ContainerService {
       throw new OkhError("ALREADY_EXISTS", `A container named "${name}" already exists.`);
     }
     const rawSync = input.sync ?? "auto";
-    const sync: SyncMode = rawSync === "pr" ? "shared" : rawSync;
+    const sync: SyncMode = rawSync === "pr" && isGit ? "shared" : "auto";
     const syncExplicit = input.sync !== undefined;
     if (isGit) {
       validate(repoUrlSchema, input.source, "source");

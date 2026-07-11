@@ -172,7 +172,7 @@ export async function registerTools(
       if (outcome.kind === "plan") {
         return ok(formatContainerPlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
       }
-      return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
+      return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend.type}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
     }),
   );
 

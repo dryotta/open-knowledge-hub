@@ -560,6 +560,7 @@ describe("MCP server surface", () => {
 
     const applied = await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
     expect(textOf(applied)).toContain('Registered container "hub"');
+    expect(textOf(applied)).toContain("[local]");
   });
 
   it("rejects a module inspect request without a container", async () => {

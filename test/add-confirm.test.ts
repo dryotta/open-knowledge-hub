@@ -124,7 +124,7 @@ describe("addContainer git + existing-hub", () => {
     if (out.kind === "plan") expect(out.plan.actions).toEqual([]);
   });
 
-  it("applies an explicit sync override via the registry entry with create:true", async () => {
+  it("maps legacy pr to auto for non-git backends", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     await mkdir(join(dir, ".okh"), { recursive: true });
     await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-applied\nsync: auto\nmodules: []\n", "utf8");
@@ -133,8 +133,8 @@ describe("addContainer git + existing-hub", () => {
     const out = await service.addContainer({ source: dir, name: "sync-applied", sync: "pr", create: true });
 
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.sync.mode).toBe("shared");
-    expect((await loadRegistry(paths)).containers[0]!.sync.mode).toBe("shared");
+    if (out.kind === "applied") expect(out.entry.sync.mode).toBe("auto");
+    expect((await loadRegistry(paths)).containers[0]!.sync.mode).toBe("auto");
   });
 
   it("registers an existing folder with migrated sync in one call", async () => {
