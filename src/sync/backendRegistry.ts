@@ -2,6 +2,11 @@ import { OkhError } from "../errors.js";
 import type { BackendType, ContainerEntry } from "../registry/schema.js";
 import type { SyncBackend, SyncSelection, ResolveSyncContext } from "./types.js";
 
+/** Stable JSON serialization independent of key insertion order. */
+function stableStringify(obj: Record<string, unknown>): string {
+  return JSON.stringify(obj, Object.keys(obj).sort());
+}
+
 export class BackendRegistry {
   private readonly adapters: ReadonlyMap<BackendType, SyncBackend>;
 
@@ -85,11 +90,14 @@ export class BackendRegistry {
     }
 
     // Validate sync config strictly; compare normalized output to input so that
-    // persisted entries with unapplied defaults are caught.
+    // persisted entries with unapplied defaults or mode coercions are caught.
     const selection: SyncSelection = { mode: entry.sync.mode, config: entry.sync.config };
     const resolved = await backend.resolveSync(selection, { containerName: entry.name });
 
-    if (JSON.stringify(resolved.config) !== JSON.stringify(entry.sync.config)) {
+    if (
+      resolved.mode !== entry.sync.mode ||
+      stableStringify(resolved.config) !== stableStringify(entry.sync.config)
+    ) {
       throw new OkhError(
         "INVALID_ARGUMENT",
         `Persisted sync config for "${entry.backend.type}" container "${entry.name}" has inconsistent values. Re-add or update the container to fix.`,
