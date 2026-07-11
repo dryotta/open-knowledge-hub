@@ -12,10 +12,12 @@ export interface CapabilityFeatureResult {
 }
 
 export interface CapabilityReport {
-  roots: CapabilityFeatureResult;
-  sampling: CapabilityFeatureResult;
-  elicitation: CapabilityFeatureResult;
-  apps: CapabilityFeatureResult;
+  features: {
+    roots: CapabilityFeatureResult;
+    sampling: CapabilityFeatureResult;
+    elicitation: CapabilityFeatureResult;
+    apps: CapabilityFeatureResult;
+  };
 }
 
 export interface CapabilityProbeOperations {
@@ -85,7 +87,7 @@ export async function runCapabilityProbes(ops: CapabilityProbeOperations): Promi
       ? { status: "advertised", message: "MCP Apps extension is advertised." }
       : { status: "unsupported", message: "MCP Apps is not advertised." };
 
-  return { roots, sampling, elicitation, apps };
+  return { features: { roots, sampling, elicitation, apps } };
 }
 
 export function createCapabilityProbeOperations(
@@ -128,10 +130,11 @@ export function createCapabilityProbeOperations(
 }
 
 export function formatCapabilityReport(report: CapabilityReport): string {
+  const { roots, sampling, elicitation, apps } = report.features;
   return [
-    `Roots: ${report.roots.message}`,
-    `Sampling: ${report.sampling.message}`,
-    `Form Elicitation: ${report.elicitation.message}`,
-    `MCP Apps: ${report.apps.message}`,
+    `Roots: ${roots.message}`,
+    `Sampling: ${sampling.message}`,
+    `Form Elicitation: ${elicitation.message}`,
+    `MCP Apps: ${apps.message}`,
   ].join("\n");
 }

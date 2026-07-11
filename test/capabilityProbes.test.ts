@@ -40,10 +40,10 @@ describe("runCapabilityProbes — unsupported features are not called", () => {
     expect(ops.sampling).not.toHaveBeenCalled();
     expect(ops.elicitation).not.toHaveBeenCalled();
 
-    expect(report.roots.status).toBe("unsupported");
-    expect(report.sampling.status).toBe("unsupported");
-    expect(report.elicitation.status).toBe("unsupported");
-    expect(report.apps.status).toBe("unsupported");
+    expect(report.features.roots.status).toBe("unsupported");
+    expect(report.features.sampling.status).toBe("unsupported");
+    expect(report.features.elicitation.status).toBe("unsupported");
+    expect(report.features.apps.status).toBe("unsupported");
   });
 
   it("does not call roots when roots capability is absent", async () => {
@@ -86,12 +86,12 @@ describe("runCapabilityProbes — all advertised and passing", () => {
     const ops = makeOps({ roots: {}, sampling: {}, elicitation: {} });
     const report = await runCapabilityProbes(ops);
 
-    expect(report.roots.status).toBe("passed");
-    expect(report.roots.message).toBe("Roots request succeeded.");
-    expect(report.sampling.status).toBe("passed");
-    expect(report.sampling.message).toBe("Sampling request succeeded.");
-    expect(report.elicitation.status).toBe("passed");
-    expect(report.elicitation.message).toBe("Elicitation request succeeded.");
+    expect(report.features.roots.status).toBe("passed");
+    expect(report.features.roots.message).toBe("Roots request succeeded.");
+    expect(report.features.sampling.status).toBe("passed");
+    expect(report.features.sampling.message).toBe("Sampling request succeeded.");
+    expect(report.features.elicitation.status).toBe("passed");
+    expect(report.features.elicitation.message).toBe("Elicitation request succeeded.");
   });
 });
 
@@ -100,20 +100,20 @@ describe("runCapabilityProbes — MCP Apps", () => {
     const ops = makeOps({ extensions: { [MCP_APPS_EXTENSION]: {} } });
     const report = await runCapabilityProbes(ops);
 
-    expect(report.apps.status).toBe("advertised");
-    expect(report.apps.message).toBe("MCP Apps extension is advertised.");
+    expect(report.features.apps.status).toBe("advertised");
+    expect(report.features.apps.message).toBe("MCP Apps extension is advertised.");
   });
 
   it("reports unsupported when extensions are absent", async () => {
     const ops = makeOps({});
     const report = await runCapabilityProbes(ops);
-    expect(report.apps.status).toBe("unsupported");
+    expect(report.features.apps.status).toBe("unsupported");
   });
 
   it("reports unsupported when UI extension is not present in extensions", async () => {
     const ops = makeOps({ extensions: { "other/extension": {} } });
     const report = await runCapabilityProbes(ops);
-    expect(report.apps.status).toBe("unsupported");
+    expect(report.features.apps.status).toBe("unsupported");
   });
 });
 
@@ -125,8 +125,8 @@ describe("runCapabilityProbes — elicitation decline and cancel", () => {
     );
     const report = await runCapabilityProbes(ops);
 
-    expect(report.elicitation.status).toBe("declined");
-    expect(report.elicitation.message).toBe("Elicitation was declined or cancelled.");
+    expect(report.features.elicitation.status).toBe("declined");
+    expect(report.features.elicitation.message).toBe("Elicitation was declined or cancelled.");
   });
 
   it("reports declined when elicitation action is cancel", async () => {
@@ -136,8 +136,8 @@ describe("runCapabilityProbes — elicitation decline and cancel", () => {
     );
     const report = await runCapabilityProbes(ops);
 
-    expect(report.elicitation.status).toBe("declined");
-    expect(report.elicitation.message).toBe("Elicitation was declined or cancelled.");
+    expect(report.features.elicitation.status).toBe("declined");
+    expect(report.features.elicitation.message).toBe("Elicitation was declined or cancelled.");
   });
 });
 
@@ -150,15 +150,15 @@ describe("runCapabilityProbes — failure isolation", () => {
     );
     const report = await runCapabilityProbes(ops);
 
-    expect(report.roots.status).toBe("failed");
-    expect(report.roots.message).toBe("Roots request failed.");
-    expect(report.roots.message).not.toContain(secretError);
+    expect(report.features.roots.status).toBe("failed");
+    expect(report.features.roots.message).toBe("Roots request failed.");
+    expect(report.features.roots.message).not.toContain(secretError);
 
     expect(ops.sampling).toHaveBeenCalled();
-    expect(report.sampling.status).toBe("passed");
+    expect(report.features.sampling.status).toBe("passed");
 
     expect(ops.elicitation).toHaveBeenCalled();
-    expect(report.elicitation.status).toBe("passed");
+    expect(report.features.elicitation.status).toBe("passed");
   });
 
   it("continues to elicitation when sampling fails", async () => {
@@ -168,12 +168,12 @@ describe("runCapabilityProbes — failure isolation", () => {
     );
     const report = await runCapabilityProbes(ops);
 
-    expect(report.sampling.status).toBe("failed");
-    expect(report.sampling.message).toBe("Sampling request failed.");
-    expect(report.sampling.message).not.toContain("sampling error");
+    expect(report.features.sampling.status).toBe("failed");
+    expect(report.features.sampling.message).toBe("Sampling request failed.");
+    expect(report.features.sampling.message).not.toContain("sampling error");
 
     expect(ops.elicitation).toHaveBeenCalled();
-    expect(report.elicitation.status).toBe("passed");
+    expect(report.features.elicitation.status).toBe("passed");
   });
 
   it("does not echo raw error text from elicitation failure", async () => {
@@ -184,9 +184,9 @@ describe("runCapabilityProbes — failure isolation", () => {
     );
     const report = await runCapabilityProbes(ops);
 
-    expect(report.elicitation.status).toBe("failed");
-    expect(report.elicitation.message).toBe("Elicitation request failed.");
-    expect(report.elicitation.message).not.toContain(secretError);
+    expect(report.features.elicitation.status).toBe("failed");
+    expect(report.features.elicitation.message).toBe("Elicitation request failed.");
+    expect(report.features.elicitation.message).not.toContain(secretError);
   });
 });
 
@@ -196,8 +196,8 @@ describe("runCapabilityProbes — URL-only elicitation is not called", () => {
     const report = await runCapabilityProbes(ops);
 
     expect(ops.elicitation).not.toHaveBeenCalled();
-    expect(report.elicitation.status).toBe("unsupported");
-    expect(report.elicitation.message).toBe("Form elicitation is not advertised.");
+    expect(report.features.elicitation.status).toBe("unsupported");
+    expect(report.features.elicitation.message).toBe("Form elicitation is not advertised.");
   });
 
   it("calls elicitation when both form and url are advertised", async () => {
@@ -205,7 +205,7 @@ describe("runCapabilityProbes — URL-only elicitation is not called", () => {
     const report = await runCapabilityProbes(ops);
 
     expect(ops.elicitation).toHaveBeenCalled();
-    expect(report.elicitation.status).toBe("passed");
+    expect(report.features.elicitation.status).toBe("passed");
   });
 
   it("calls elicitation when empty elicitation capability is advertised (backward compat)", async () => {
@@ -213,17 +213,34 @@ describe("runCapabilityProbes — URL-only elicitation is not called", () => {
     const report = await runCapabilityProbes(ops);
 
     expect(ops.elicitation).toHaveBeenCalled();
-    expect(report.elicitation.status).toBe("passed");
+    expect(report.features.elicitation.status).toBe("passed");
+  });
+});
+
+describe("CapabilityReport shape — structured content compatibility", () => {
+  it("report has a features property, not top-level feature keys", async () => {
+    const ops = makeOps(undefined);
+    const report = await runCapabilityProbes(ops);
+
+    // { features: report.features } is the approved structured-content shape;
+    // { features: report } (the old nesting) would fail this assertion.
+    expect(report).toHaveProperty("features");
+    expect(report).not.toHaveProperty("roots");
+    expect(report).not.toHaveProperty("sampling");
+    expect(report).not.toHaveProperty("elicitation");
+    expect(report).not.toHaveProperty("apps");
   });
 });
 
 describe("formatCapabilityReport", () => {
   it("returns one fixed line per feature", () => {
     const report = {
-      roots: { status: "passed" as const, message: "Roots request succeeded." },
-      sampling: { status: "unsupported" as const, message: "Sampling is not advertised." },
-      elicitation: { status: "failed" as const, message: "Elicitation request failed." },
-      apps: { status: "advertised" as const, message: "MCP Apps extension is advertised." },
+      features: {
+        roots: { status: "passed" as const, message: "Roots request succeeded." },
+        sampling: { status: "unsupported" as const, message: "Sampling is not advertised." },
+        elicitation: { status: "failed" as const, message: "Elicitation request failed." },
+        apps: { status: "advertised" as const, message: "MCP Apps extension is advertised." },
+      },
     };
 
     const output = formatCapabilityReport(report);
@@ -238,10 +255,12 @@ describe("formatCapabilityReport", () => {
 
   it("does not include raw response values", () => {
     const report = {
-      roots: { status: "passed" as const, message: "Roots request succeeded." },
-      sampling: { status: "passed" as const, message: "Sampling request succeeded." },
-      elicitation: { status: "passed" as const, message: "Elicitation request succeeded." },
-      apps: { status: "unsupported" as const, message: "MCP Apps is not advertised." },
+      features: {
+        roots: { status: "passed" as const, message: "Roots request succeeded." },
+        sampling: { status: "passed" as const, message: "Sampling request succeeded." },
+        elicitation: { status: "passed" as const, message: "Elicitation request succeeded." },
+        apps: { status: "unsupported" as const, message: "MCP Apps is not advertised." },
+      },
     };
 
     const output = formatCapabilityReport(report);

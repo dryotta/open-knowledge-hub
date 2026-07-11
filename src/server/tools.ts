@@ -261,7 +261,7 @@ export async function registerTools(
     handler(async () => {
       const ops = createCapabilityProbeOperations(server, options.capabilityProbeTimeoutMs);
       const report = await runCapabilityProbes(ops);
-      return ok(formatCapabilityReport(report), { features: report });
+      return ok(formatCapabilityReport(report), { features: report.features });
     }),
   );
 }
