@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, readFile, stat } from "node:fs/promises";
+import { mkdir, rm, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { provisionEnvironment, environments, isEnvName } from "../eval/environments.js";
 import { makeTempDir, testRun } from "../test/helpers.js";
@@ -42,6 +42,33 @@ describe("environments", () => {
     const verify = await makeTempDir("okh-verify-"); cleanups.push(verify);
     await testRun("git", ["clone", prov.originPath!, join(verify, "c")]);
     expect(await exists(join(verify, "c", "kb"))).toBe(true);
+  });
+
+  it("removes the temp root when git provisioning fails after root creation", async () => {
+    const parent = await makeTempDir("okh-eval-parent-");
+    cleanups.push(parent);
+    const root = join(parent, "known-root");
+    const failure = new Error("git init failed");
+    let makeTempRootCalled = false;
+
+    await expect(
+      provisionEnvironment("git", {
+        repoRoot: "C:/repo",
+        makeTempRoot: async (prefix) => {
+          makeTempRootCalled = true;
+          expect(prefix.replace(/\\/g, "/")).toContain("okh-eval-git-");
+          await mkdir(root);
+          return root;
+        },
+        runner: async (command, args, options) => {
+          if (command === "git" && args[0] === "init") throw failure;
+          return testRun(command, args, options);
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(makeTempRootCalled).toBe(true);
+    expect(await exists(root)).toBe(false);
   });
 
   it("empty leaves an empty registry with an unregistered notes folder in the workspace", async () => {
