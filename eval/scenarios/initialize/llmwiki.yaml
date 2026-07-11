@@ -10,27 +10,41 @@
           menu, tags, source retention, then final confirmation. After we agree, build
           the empty wiki structure and sync it.
         turns:
-          - when: "purpose|goal|audience|who.*read"
+          - id: purpose
+            after: start
+            when: "purpose|goal|audience|who.*read"
             send: |
               This is an engineering handbook for backend developers and coding agents.
               It should help them understand our systems and make safe changes.
-          - when: "specific goals|outcomes.*achieve|what.*achieve"
+          - id: goals
+            after: start
+            when: "specific goals|outcomes.*achieve|what.*achieve"
             send: |
               The complete goal is for backend developers and coding agents to understand
               our systems and make safe changes. Continue to the scope boundaries.
-          - when: "scope|in.?scope|out.?of.?scope|topics"
+          - id: scope
+            after: [purpose, goals]
+            when: "scope|in.?scope|out.?of.?scope|topics"
             send: |
               In scope: backend components, request flows, architecture decisions, and
               engineering terminology. Out of scope: product roadmaps and customer data.
-          - when: "structure|template|encyclopedia|di.taxis|topic tree|codebase|custom"
+          - id: template
+            after: scope
+            when: "structure|template|encyclopedia|di.taxis|topic tree|codebase|custom"
             send: |
               Use the Encyclopedia template: concepts, entities, summaries, and
               syntheses. Use matching singular OKF concept types.
-          - when: "tag|tagging"
+          - id: tags
+            after: template
+            when: "tag|tagging"
             send: "Skip tags; the group structure and links are enough."
-          - when: "source|retain|copies"
+          - id: sources
+            after: tags
+            when: "source|retain|copies"
             send: "Do not retain source copies."
-          - when: "agree with this scope|do you agree|confirm.*(?:scope|decisions)|if yes.*(?:build|create)|proceed.*(?:build|create)|build.*sync|next steps"
+          - id: scope-confirmed
+            after: sources
+            when: "agree with this scope|do you agree|confirm.*(?:scope|decisions)|if yes.*(?:build|create)|proceed.*(?:build|create)|build.*sync|next steps"
             send: |
               These decisions are final: build an engineering handbook for backend
               developers and coding agents; cover backend components, request flows,
@@ -38,8 +52,13 @@
               customer data; use the Encyclopedia groups and matching singular types;
               use no tags and retain no source copies. Build the empty structure and invoke
               sync in this turn without asking for another confirmation.
-          - when: "ready to sync|shall i sync|want me to sync|sync now\\?"
+          - id: sync-confirmed
+            after: scope-confirmed
+            when: "ready to sync|shall i sync|want me to sync|sync now\\?"
             send: "Yes. Invoke sync now."
+        terminal:
+          after: sync-confirmed
+          requiredTools: [run, sync]
   tests:
     - description: Initialize - llmwiki - grills scope and builds template structure
       assert:

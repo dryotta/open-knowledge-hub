@@ -5,6 +5,7 @@ import {
   type CopilotTurnRunner,
   type CopilotTurnResult,
   type ToolEvent,
+  type ConversationScript,
 } from "../eval/copilot.js";
 
 const line = (o: unknown) => JSON.stringify(o);
@@ -169,6 +170,7 @@ describe("runConversation", () => {
         { match: "start", agent: "Which wake phrase would you like?", toolEvents: [okh("c1", "onboard")] },
         { match: "brain", agent: "Show me the plan? Ready to create?", toolEvents: [okh("c2", "config")] },
         { match: "go ahead", agent: "Created. Here is how you use it day to day.", toolEvents: [okh("c3", "add")] },
+        { match: "everyday", agent: "Done!" },
       ],
       seen,
     );
@@ -176,10 +178,11 @@ describe("runConversation", () => {
       {
         initial: "start onboarding",
         responses: [
-          { when: "wake phrase|name", send: "call it brain" },
-          { when: "plan|create|ready", send: "yes go ahead" },
-          { send: "thanks, everyday use?" },
+          { id: "wake", after: "start", when: "wake phrase|name", send: "call it brain" },
+          { id: "plan", after: "wake", when: "plan|create|ready", send: "yes go ahead" },
+          { id: "everyday", after: "plan", send: "thanks, everyday use?" },
         ],
+        terminal: { after: "everyday" },
       },
       ctx(runner),
     );
@@ -220,7 +223,7 @@ describe("runConversation", () => {
       };
     };
     const res = await runConversation(
-      { initial: "initial prompt", responses: [{ send: "follow up" }] },
+      { initial: "initial prompt", responses: [{ id: "follow", after: "start", send: "follow up" }], terminal: { after: "follow" } },
       ctx(runner),
     );
     expect(res.toolCalls).toEqual(["config", "run"]);
@@ -236,9 +239,10 @@ describe("runConversation", () => {
       {
         initial: "start",
         responses: [
-          { when: "wake phrase", send: "WAKE" },
-          { when: "container|folder", send: "CONTAINER" },
+          { id: "wake", after: "start", when: "wake phrase", send: "WAKE" },
+          { id: "container", after: "start", when: "container|folder", send: "CONTAINER" },
         ],
+        terminal: { after: "container" },
       },
       ctx(runner),
     );
@@ -250,18 +254,19 @@ describe("runConversation", () => {
     const seen: string[] = [];
     const runner = fakeRunner([{ match: "start", agent: "unrelated question" }], seen);
     const res = await runConversation(
-      { initial: "start", responses: [{ when: "never-matches", send: "X" }] },
+      { initial: "start", responses: [{ id: "x", after: "start", when: "never-matches", send: "X" }], terminal: { after: "x" } },
       ctx(runner),
     );
     expect(seen).toEqual(["start"]);
     expect(res.turns).toHaveLength(1);
+    expect(res.failure).toBeDefined();
   });
 
   it("caps the conversation at maxTurns", async () => {
     const seen: string[] = [];
     const runner = fakeRunner([], seen); // always empty agent reply
     const res = await runConversation(
-      { initial: "start", responses: [{ send: "a" }, { send: "b" }, { send: "c" }], maxTurns: 2 },
+      { initial: "start", responses: [{ id: "a", after: "start", send: "a" }, { id: "b", after: "a", send: "b" }, { id: "c", after: "b", send: "c" }], terminal: { after: "c" }, maxTurns: 2 },
       ctx(runner),
     );
     expect(res.turns).toHaveLength(2);
@@ -270,8 +275,159 @@ describe("runConversation", () => {
   it("stops on a non-zero exit code", async () => {
     const seen: string[] = [];
     const runner = fakeRunner([{ match: "start", agent: "boom", code: 1 }], seen);
-    const res = await runConversation({ initial: "start", responses: [{ send: "next" }] }, ctx(runner));
+    const res = await runConversation({ initial: "start", responses: [{ send: "next", id: "n", after: "start" }], terminal: { after: "n" } }, ctx(runner));
     expect(seen).toEqual(["start"]);
     expect(res.code).toBe(1);
+  });
+});
+
+describe("runConversation — state machine", () => {
+  it("a container reply cannot fire from start (only after matching predecessor)", async () => {
+    const seen: string[] = [];
+    // Agent turn 1 says something about containers
+    const runner = fakeRunner(
+      [{ match: "start", agent: "Which container do you want?" }],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "start onboarding",
+      responses: [
+        { id: "purpose", after: "start", when: "purpose|goal", send: "purpose reply" },
+        { id: "container", after: "purpose", when: "container", send: "create my-notes" },
+      ],
+      terminal: { after: "container" },
+    };
+    const res = await runConversation(script, ctx(runner));
+    // "container" turn has after:"purpose", so it can't fire from state "start"
+    // even though the agent message matches "container"
+    expect(seen).toEqual(["start onboarding"]);
+    expect(res.failure).toContain("start");
+    expect(res.failure).toContain("container");
+  });
+
+  it("alternatives after:[purpose,goals] work — eligible from multiple predecessors", async () => {
+    const seen: string[] = [];
+    const runner = fakeRunner(
+      [
+        { match: "initial", agent: "What is the purpose?" },
+        { match: "purpose reply", agent: "Now the scope?" },
+      ],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "initial prompt",
+      responses: [
+        { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+        { id: "goals", after: "start", when: "goals", send: "goals reply" },
+        { id: "scope", after: ["purpose", "goals"], when: "scope", send: "scope reply" },
+      ],
+      terminal: { after: "scope" },
+    };
+    const res = await runConversation(script, ctx(runner));
+    // purpose fires from start → state becomes "purpose"
+    // scope has after:["purpose","goals"], so it's eligible from "purpose"
+    expect(seen).toEqual(["initial prompt", "purpose reply", "scope reply"]);
+    expect(res.failure).toBeUndefined();
+  });
+
+  it("unmatched eligible guards return failure containing state and last agent message", async () => {
+    const seen: string[] = [];
+    const runner = fakeRunner(
+      [
+        { match: "start", agent: "What is the purpose?" },
+        { match: "purpose", agent: "Completely unrelated tangent about weather" },
+      ],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "start",
+      responses: [
+        { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+        { id: "scope", after: "purpose", when: "scope|boundary", send: "scope reply" },
+      ],
+      terminal: { after: "scope" },
+    };
+    const res = await runConversation(script, ctx(runner));
+    expect(res.failure).toBeDefined();
+    expect(res.failure).toContain("purpose"); // current state
+    expect(res.failure).toContain("weather"); // last agent message snippet
+  });
+
+  it("terminal state fails when a required successful tool is absent", async () => {
+    const seen: string[] = [];
+    const runner = fakeRunner(
+      [
+        { match: "start", agent: "What is the purpose?", toolEvents: [okh("c1", "run")] },
+        { match: "purpose", agent: "Done!", toolEvents: [okh("c2", "config")] },
+      ],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "start",
+      responses: [
+        { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+      ],
+      terminal: { after: "purpose", requiredTools: ["run", "sync"] },
+    };
+    const res = await runConversation(script, ctx(runner));
+    // terminal.after === state "purpose", but "sync" was never successfully called
+    expect(res.failure).toBeDefined();
+    expect(res.failure).toContain("sync");
+  });
+
+  it("no unguarded terminal reply fires early just because it lacks when", async () => {
+    const seen: string[] = [];
+    // If a turn has no `when`, it should NOT fire unless its `after` matches state
+    const runner = fakeRunner(
+      [
+        { match: "start", agent: "Let me ask about purpose" },
+        { match: "purpose reply", agent: "Great, wrapping up" },
+      ],
+      seen,
+    );
+    const script: ConversationScript = {
+      initial: "start",
+      responses: [
+        { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+        // wrap-up has no `when` but its `after` is "purpose" — it should NOT fire from "start"
+        { id: "wrapup", after: "purpose", send: "wrap-up message" },
+      ],
+      terminal: { after: "wrapup" },
+    };
+    const res = await runConversation(script, ctx(runner));
+    // From state "start", only "purpose" (after:"start") is eligible — wrapup is not
+    // From state "purpose", wrapup (after:"purpose", no when) fires
+    expect(seen).toEqual(["start", "purpose reply", "wrap-up message"]);
+    expect(res.failure).toBeUndefined();
+  });
+
+  it("single-turn scripts with no responses remain valid and complete after turn 1", async () => {
+    const seen: string[] = [];
+    const runner = fakeRunner([{ match: "hello", agent: "world" }], seen);
+    const res = await runConversation({ initial: "hello", responses: [] }, ctx(runner));
+    expect(res.turns).toHaveLength(1);
+    expect(res.failure).toBeUndefined();
+  });
+
+  it("max-turn limit reports nonterminal exhaustion as failure", async () => {
+    const seen: string[] = [];
+    // Agent always says "purpose" so the loop goes on, but maxTurns limits it
+    const runner = fakeRunner([
+      { match: "start", agent: "What is the purpose?" },
+      { match: "purpose", agent: "What is the purpose again?" },
+    ], seen);
+    const script: ConversationScript = {
+      initial: "start",
+      responses: [
+        { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+        { id: "scope", after: "purpose", when: "scope", send: "scope reply" },
+      ],
+      terminal: { after: "scope" },
+      maxTurns: 2,
+    };
+    const res = await runConversation(script, ctx(runner));
+    expect(res.turns).toHaveLength(2);
+    expect(res.failure).toBeDefined();
+    expect(res.failure).toContain("max");
   });
 });

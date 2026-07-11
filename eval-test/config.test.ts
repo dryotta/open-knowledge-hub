@@ -138,4 +138,42 @@ describe("scenario configs", () => {
       }
     }
   });
+
+  it("multi-turn scenarios have unique turn IDs, valid predecessors, and well-formed terminal", async () => {
+    for (const file of await scenarioFiles()) {
+      const doc = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
+      const vars = doc[0].config[0].vars;
+      if (!vars.turns || !Array.isArray(vars.turns) || vars.turns.length === 0) continue;
+
+      const turns = vars.turns as Array<{ id: string; after: string | string[]; send: string; when?: string }>;
+
+      // All turn IDs must be unique
+      const ids = turns.map((t) => t.id);
+      const uniqueIds = new Set(ids);
+      expect(uniqueIds.size, `${file}: turn IDs must be unique`).toBe(ids.length);
+
+      // All predecessors must reference "start" or a declared turn ID
+      const validPreds = new Set(["start", ...ids]);
+      for (const t of turns) {
+        const afters = Array.isArray(t.after) ? t.after : [t.after];
+        for (const a of afters) {
+          expect(validPreds.has(a), `${file}: turn "${t.id}" has predecessor "${a}" not in declared IDs`).toBe(true);
+        }
+      }
+
+      // terminal must exist and terminal.after must reference a declared turn ID
+      expect(vars.terminal, `${file}: multi-turn scenario requires terminal`).toBeDefined();
+      const terminal = vars.terminal as { after: string; requiredTools?: string[] };
+      expect(typeof terminal.after, `${file}: terminal.after is a string`).toBe("string");
+      expect(uniqueIds.has(terminal.after), `${file}: terminal.after "${terminal.after}" must be a declared turn ID`).toBe(true);
+
+      // requiredTools shape validation
+      if (terminal.requiredTools !== undefined) {
+        expect(Array.isArray(terminal.requiredTools), `${file}: terminal.requiredTools is an array`).toBe(true);
+        for (const tool of terminal.requiredTools) {
+          expect(typeof tool, `${file}: each requiredTool is a string`).toBe("string");
+        }
+      }
+    }
+  });
 });

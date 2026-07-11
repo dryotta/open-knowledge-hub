@@ -248,17 +248,30 @@ export const spawnCopilotTurn: CopilotTurnRunner = (opts) =>
   });
 
 export interface Turn {
+  /** Unique identifier for this turn (becomes the state after selection). */
+  id: string;
+  /** Predecessor state(s) from which this turn is eligible. */
+  after: string | string[];
   /** The user message to send. */
   send: string;
-  /** Optional case-insensitive regex matched against the agent's last message. */
+  /** Optional case-insensitive regex matched against the latest agent message. */
   when?: string;
+}
+
+export interface ConversationTerminal {
+  /** The state after which the conversation is considered complete. */
+  after: string;
+  /** OKH tools that must have been successfully called before completion. */
+  requiredTools?: string[];
 }
 
 export interface ConversationScript {
   /** Turn 1 user message (the promptfoo `{{prompt}}`). */
   initial: string;
-  /** Guarded follow-up user messages. */
+  /** Guarded follow-up user messages with state machine annotations. */
   responses: Turn[];
+  /** Terminal condition for conversation completion. */
+  terminal?: ConversationTerminal;
   /** Safety cap on total turns. Default: responses.length + 2. */
   maxTurns?: number;
 }
@@ -281,6 +294,8 @@ export interface ConversationResult {
   cost: number;
   /** Last turn's exit code. */
   code: number | null;
+  /** If set, the conversation ended in a state-machine failure. */
+  failure?: string;
 }
 
 export interface RunConversationCtx {
@@ -300,24 +315,34 @@ function safeMatch(pattern: string, text: string): boolean {
   }
 }
 
-/** Choose the next unsent response: a guard that matches the agent wins; else the first unguarded; else -1. */
-function selectNext(responses: Turn[], sent: boolean[], lastAgent: string): number {
+/** Check if a turn's `after` includes the given state. */
+function isEligible(turn: Turn, state: string): boolean {
+  const afters = Array.isArray(turn.after) ? turn.after : [turn.after];
+  return afters.includes(state);
+}
+
+/** Choose the next unsent response using the state machine: only turns whose `after` includes `state` are eligible. */
+function selectNext(responses: Turn[], sent: boolean[], state: string, lastAgent: string): number {
+  // First pass: guarded turns eligible from current state whose `when` matches
   for (let i = 0; i < responses.length; i++) {
     if (sent[i]) continue;
+    if (!isEligible(responses[i]!, state)) continue;
     const w = responses[i]!.when;
     if (w && safeMatch(w, lastAgent)) return i;
   }
+  // Second pass: unguarded turns (no `when`) eligible from current state
   for (let i = 0; i < responses.length; i++) {
-    if (!sent[i] && !responses[i]!.when) return i;
+    if (sent[i]) continue;
+    if (!isEligible(responses[i]!, state)) continue;
+    if (!responses[i]!.when) return i;
   }
   return -1;
 }
 
 /**
- * Drive a multi-turn Copilot CLI conversation over one resumed session. Turn 1
- * sends `initial`; after each turn the next scripted user message is picked by
- * guard match (falling back to declared order), until no response is eligible,
- * a turn errors, or `maxTurns` is reached.
+ * Drive a multi-turn Copilot CLI conversation over one resumed session.
+ * Uses a state machine: initial state is "start"; selecting a turn advances
+ * state to turn.id. Terminal condition checked after each agent turn.
  */
 export async function runConversation(script: ConversationScript, ctx: RunConversationCtx): Promise<ConversationResult> {
   const sessionId = randomUUID();
@@ -329,6 +354,8 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
   const toolSet = new Set<string>();
   let cost = 0;
   let code: number | null = null;
+  let state = "start";
+  let failure: string | undefined;
 
   const runTurn = async (user: string, resume: boolean): Promise<CopilotTurnResult> => {
     const r = await ctx.runner({
@@ -352,18 +379,62 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
     return r;
   };
 
+  const buildResult = (): ConversationResult => {
+    const transcript = turns
+      .map((t, i) => `=== USER (turn ${i + 1}) ===\n${t.user}\n\n=== AGENT (turn ${i + 1}) ===\n${t.agent}`)
+      .join("\n\n");
+    return { transcript, toolCalls: [...toolSet].sort(), turns, toolEvents: allToolEvents, cost, code, ...(failure ? { failure } : {}) };
+  };
+
+  // Check terminal readiness
+  const checkTerminal = (): boolean => {
+    if (!script.terminal) return false;
+    if (state !== script.terminal.after) return false;
+    if (script.terminal.requiredTools) {
+      const missing = script.terminal.requiredTools.filter((t) => !toolSet.has(t));
+      if (missing.length > 0) {
+        failure = `terminal state "${state}" reached but required tools missing: ${missing.join(", ")}`;
+        return true; // stop the loop (failure is set)
+      }
+    }
+    return true; // terminal reached successfully
+  };
+
   let last = await runTurn(script.initial, false);
+
+  // Single-turn scripts with no responses: complete after turn 1
+  if (responses.length === 0) return buildResult();
+
   while (turns.length < maxTurns) {
     if (last.code !== 0) break;
-    const idx = selectNext(responses, sent, last.lastMessage);
-    if (idx < 0) break;
+
+    // Check terminal after each agent turn
+    if (checkTerminal()) break;
+
+    // Select next turn based on state machine
+    const idx = selectNext(responses, sent, state, last.lastMessage);
+    if (idx < 0) {
+      // No eligible guard matches — explicit failure
+      const snippet = last.lastMessage ? last.lastMessage.slice(0, 120) : "(no agent message)";
+      failure = `unmatched conversation state "${state}": ${snippet}`;
+      break;
+    }
     sent[idx] = true;
+    state = responses[idx]!.id;
     last = await runTurn(responses[idx]!.send, true);
   }
 
-  const transcript = turns
-    .map((t, i) => `=== USER (turn ${i + 1}) ===\n${t.user}\n\n=== AGENT (turn ${i + 1}) ===\n${t.agent}`)
-    .join("\n\n");
+  // After loop: check if we stopped due to maxTurns without reaching terminal
+  if (!failure && last.code === 0 && script.terminal && state !== script.terminal.after) {
+    failure = `max turns (${maxTurns}) exhausted without reaching terminal state "${script.terminal.after}"`;
+  }
+  // Check terminal tool requirements at the end if we reached terminal state
+  if (!failure && last.code === 0 && script.terminal && state === script.terminal.after && script.terminal.requiredTools) {
+    const missing = script.terminal.requiredTools.filter((t) => !toolSet.has(t));
+    if (missing.length > 0) {
+      failure = `terminal state "${state}" reached but required tools missing: ${missing.join(", ")}`;
+    }
+  }
 
-  return { transcript, toolCalls: [...toolSet].sort(), turns, toolEvents: allToolEvents, cost, code };
+  return buildResult();
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { rm, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import CopilotProvider from "../eval/provider/copilotProvider.js";
+import CopilotProvider, { normalizeTurns, parseTerminal } from "../eval/provider/copilotProvider.js";
 import type { CopilotTurnRunner, CopilotTurnResult, ToolEvent } from "../eval/copilot.js";
 
 const cleanups: string[] = [];
@@ -89,13 +89,17 @@ describe("CopilotProvider", () => {
           tools: ["config", "add"],
           toolEvents: [okhEvent("c2", "config", opts.turn), okhEvent("c3", "add", opts.turn)],
         });
-      return turn();
+      return turn({ messages: ["Done."], lastMessage: "Done." });
     };
     const provider = new CopilotProvider({ config: { runner: fake } });
     const res = await provider.callApi("Use the hub and set me up.", {
       vars: {
         env: "empty",
-        turns: [{ when: "wake phrase", send: "call it brain" }, { send: "thanks" }],
+        turns: [
+          { id: "wake", after: "start", when: "wake phrase", send: "call it brain" },
+          { id: "thanks", after: "wake", send: "thanks" },
+        ],
+        terminal: { after: "thanks" },
       },
       test: { description: "onboard-multi-turn" },
     });
@@ -118,5 +122,92 @@ describe("CopilotProvider", () => {
     cleanups.push(res.metadata.workspace);
     const reg = JSON.parse(await readFile(join(res.metadata.okhHome, "registry.json"), "utf8"));
     expect(reg.containers).toHaveLength(0);
+  });
+
+  it("throws when result.failure is set (state-machine failure propagation)", async () => {
+    // Provide turns that will reach an unmatched state so runConversation returns failure
+    const fake: CopilotTurnRunner = async (_opts) =>
+      turn({ messages: ["tangent about weather"], lastMessage: "tangent about weather" });
+    const provider = new CopilotProvider({ config: { runner: fake } });
+    await expect(
+      provider.callApi("start", {
+        vars: {
+          env: "empty",
+          turns: [
+            { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+          ],
+          terminal: { after: "purpose" },
+        },
+      }),
+    ).rejects.toThrow(/unmatched/i);
+  });
+});
+
+describe("normalizeTurns", () => {
+  it("requires non-empty id, after, send", () => {
+    expect(() => normalizeTurns([{ id: "", after: "start", send: "hi" }])).toThrow();
+    expect(() => normalizeTurns([{ id: "x", after: "", send: "hi" }])).toThrow();
+    expect(() => normalizeTurns([{ id: "x", after: "start", send: "" }])).toThrow();
+  });
+
+  it("accepts after as string or non-empty string array", () => {
+    const t1 = normalizeTurns([{ id: "a", after: "start", send: "hi" }]);
+    expect(t1[0].after).toBe("start");
+    const t2 = normalizeTurns([{ id: "a", after: ["start", "other"], send: "hi" }]);
+    expect(t2[0].after).toEqual(["start", "other"]);
+  });
+
+  it("throws on empty after array", () => {
+    expect(() => normalizeTurns([{ id: "a", after: [], send: "hi" }])).toThrow();
+  });
+
+  it("preserves optional when", () => {
+    const t = normalizeTurns([{ id: "a", after: "start", send: "hi", when: "test" }]);
+    expect(t[0].when).toBe("test");
+  });
+
+  it("throws on malformed entries (missing fields)", () => {
+    expect(() => normalizeTurns([{ send: "hi" }])).toThrow();
+    expect(() => normalizeTurns([{ id: "x", send: "hi" }])).toThrow();
+    expect(() => normalizeTurns(["just a string"])).toThrow();
+  });
+});
+
+describe("parseTerminal", () => {
+  it("parses well-formed terminal", () => {
+    const t = parseTerminal({ after: "done" });
+    expect(t).toEqual({ after: "done" });
+  });
+
+  it("parses terminal with requiredTools", () => {
+    const t = parseTerminal({ after: "done", requiredTools: ["run", "sync"] });
+    expect(t).toEqual({ after: "done", requiredTools: ["run", "sync"] });
+  });
+
+  it("throws on missing after", () => {
+    expect(() => parseTerminal({})).toThrow();
+    expect(() => parseTerminal({ requiredTools: ["run"] })).toThrow();
+  });
+
+  it("throws on non-string after", () => {
+    expect(() => parseTerminal({ after: 123 })).toThrow();
+  });
+
+  it("throws on non-array requiredTools", () => {
+    expect(() => parseTerminal({ after: "x", requiredTools: "run" })).toThrow();
+  });
+
+  it("requires terminal when turns are non-empty", () => {
+    const fake: CopilotTurnRunner = async () => turn({ messages: ["ok"], lastMessage: "ok" });
+    const provider = new CopilotProvider({ config: { runner: fake } });
+    return expect(
+      provider.callApi("start", {
+        vars: {
+          env: "empty",
+          turns: [{ id: "a", after: "start", send: "hi" }],
+          // no terminal
+        },
+      }),
+    ).rejects.toThrow(/terminal/i);
   });
 });
