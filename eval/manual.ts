@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import crossSpawn from "cross-spawn";
 import { parse as parseYaml } from "yaml";
 import {
   environments,
@@ -36,6 +37,12 @@ export interface CopilotInvocation {
   cwd: string;
   env: Record<string, string>;
 }
+
+type SpawnChild = (
+  command: string,
+  args?: readonly string[],
+  options?: SpawnOptions,
+) => ChildProcess;
 
 export function parseManualArgs(argv: string[]): ManualOptions {
   let env: EnvName = DEFAULT_MANUAL_ENV;
@@ -193,10 +200,10 @@ function exitCodeForSignal(code: number | null, signal: NodeJS.Signals | null): 
 
 export function launchCopilot(
   invocation: CopilotInvocation,
-  spawnChild: typeof spawn = spawn,
+  spawnChild: SpawnChild = crossSpawn,
 ): Promise<number> {
   return new Promise((resolvePromise, rejectPromise) => {
-    let child: ReturnType<typeof spawn>;
+    let child: ChildProcess;
     try {
       child = spawnChild(invocation.command, invocation.args, {
         cwd: invocation.cwd,

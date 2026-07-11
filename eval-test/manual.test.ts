@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import type { Provisioned } from "../eval/environments.js";
 import {
@@ -245,7 +247,7 @@ describe("runManual", () => {
 });
 
 describe("launchCopilot", () => {
-  it("forwards signals, uses inherited stdio, and removes listeners on close", async () => {
+  it("delegates the bare copilot command and options to the injected spawn implementation", async () => {
     const child = new FakeChildProcess();
     let spawnCall:
       | {
@@ -278,16 +280,19 @@ describe("launchCopilot", () => {
     );
 
     try {
-      expect(spawnCall).toMatchObject({
+      expect(spawnCall).toStrictEqual({
         command: "copilot",
         args: ["--allow-all"],
         options: {
           cwd: provisioned.workspace,
+          env: {
+            ...process.env,
+            COPILOT_HOME: provisioned.copilotHome,
+          },
           stdio: "inherit",
           shell: false,
         },
       });
-      expect(spawnCall?.options?.env?.COPILOT_HOME).toBe(provisioned.copilotHome);
       expect(process.listenerCount("SIGINT")).toBe(sigintCount + 1);
       expect(process.listenerCount("SIGTERM")).toBe(sigtermCount + 1);
 
@@ -301,6 +306,37 @@ describe("launchCopilot", () => {
     await expect(launch).resolves.toBe(1);
     expect(process.listenerCount("SIGINT")).toBe(sigintCount);
     expect(process.listenerCount("SIGTERM")).toBe(sigtermCount);
+  });
+
+  const windowsOnly = process.platform === "win32" ? it : it.skip;
+
+  windowsOnly("resolves a local copilot.cmd shim with the default spawn implementation", async () => {
+    const shimRoot = join(
+      process.cwd(),
+      "eval-test",
+      "runtime",
+      `cross-spawn-shim-${process.pid}-${Date.now()}`,
+    );
+    await mkdir(shimRoot, { recursive: true });
+    await writeFile(
+      join(shimRoot, "copilot.cmd"),
+      "@echo off\r\nexit /b 0\r\n",
+      "utf8",
+    );
+
+    try {
+      await expect(launchCopilot({
+        command: "copilot",
+        args: ["--allow-all"],
+        cwd: shimRoot,
+        env: {
+          COPILOT_HOME: provisioned.copilotHome,
+          PATH: `${shimRoot};${process.env.PATH ?? ""}`,
+        },
+      })).resolves.toBe(0);
+    } finally {
+      await rm(shimRoot, { recursive: true, force: true });
+    }
   });
 
   it("rejects when the child emits error and restores listener counts", async () => {

@@ -42,7 +42,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/cross-spawn": "6.0.6",
     "@types/node": "^22.0.0",
+    "cross-spawn": "7.0.6",
     "esbuild": "0.28.1",
     "promptfoo": "^0.120.5",
     "tsx": "^4.19.0",
