@@ -30,6 +30,7 @@ export const toolShapes = {
   context: { container, task: z.string().optional() },
   run: { container, module: moduleArg, skill: z.string(), input: z.string().optional() },
   todos: {
+    operation: z.enum(["list", "create", "update"]).optional(),
     container,
     module: moduleArg,
     status: z.enum(["open", "completed", "custom", "all"]).optional(),
@@ -40,19 +41,14 @@ export const toolShapes = {
     dueBefore: z.string().optional(),
     overdue: z.boolean().optional(),
     query: z.string().optional(),
-  },
-  update_todo: {
-    operation: z.enum(["create", "patch"]),
-    container: z.string().optional(),
-    module: z.string().optional(),
     text: z.string().optional(),
     entrySummary: z.string().optional(),
     observation: z.string().optional(),
     ref: z.string().optional(),
     completed: z.boolean().optional(),
-    labels: z.array(z.string()).optional(),
     due: z.string().nullable().optional(),
     priority: todoPriority.nullable().optional(),
+    apply: z.boolean().optional(),
   },
 };
 

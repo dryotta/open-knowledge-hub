@@ -7,12 +7,19 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { OkhError } from "../errors.js";
 import { TodoService } from "../todos/service.js";
-import type { TodoPriority, TodoQuery, TodoRecord, TodoUpdateInput } from "../todos/types.js";
+import type {
+  TodoMutationInput,
+  TodoMutationResult,
+  TodoPriority,
+  TodoQuery,
+  TodoRecord,
+} from "../todos/types.js";
 import { handler, ok, toolReg } from "./toolSupport.js";
 
 export const TODO_APP_URI = "ui://open-knowledge-hub/todos";
 
-type TodosArgs = {
+type TodosListArgs = {
+  operation?: "list";
   container?: string;
   module?: string;
   status?: "open" | "completed" | "custom" | "all";
@@ -23,35 +30,69 @@ type TodosArgs = {
   dueBefore?: string;
   overdue?: boolean;
   query?: string;
+  apply?: boolean;
 };
 
-type UpdateTodoArgs =
-  | {
-      operation: "create";
-      container?: string;
-      module?: string;
-      text?: string;
-      entrySummary?: string;
-      observation?: string;
-      ref?: string;
-      completed?: boolean;
-      labels?: string[];
-      due?: string | null;
-      priority?: TodoPriority | null;
-    }
-  | {
-      operation: "patch";
-      container?: string;
-      module?: string;
-      text?: string;
-      entrySummary?: string;
-      observation?: string;
-      ref?: string;
-      completed?: boolean;
-      labels?: string[];
-      due?: string | null;
-      priority?: TodoPriority | null;
-    };
+type TodosCreateArgs = {
+  operation: "create";
+  container?: string;
+  module?: string;
+  text?: string;
+  entrySummary?: string;
+  observation?: string;
+  labels?: string[];
+  due?: string | null;
+  priority?: TodoPriority | null;
+  apply?: boolean;
+};
+
+type TodosUpdateArgs = {
+  operation: "update";
+  ref?: string;
+  completed?: boolean;
+  labels?: string[];
+  due?: string | null;
+  priority?: TodoPriority | null;
+  apply?: boolean;
+};
+
+type TodosArgs = TodosListArgs | TodosCreateArgs | TodosUpdateArgs;
+
+const LIST_ONLY_FIELDS = ["status", "labelMode", "priorities", "dueAfter", "dueBefore", "overdue", "query"] as const;
+const CREATE_ONLY_FIELDS = ["container", "module", "text", "entrySummary", "observation"] as const;
+const UPDATE_ONLY_FIELDS = ["ref", "completed"] as const;
+const MUTATION_SHARED_FIELDS = ["labels", "due", "priority", "apply"] as const;
+
+function providedKeys(args: TodosArgs): string[] {
+  return Object.entries(args)
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => key);
+}
+
+function validateKeys(args: TodosArgs, allowed: readonly string[], operation: "list" | "create" | "update"): void {
+  const allowedSet = new Set(["operation", ...allowed]);
+  const unexpected = providedKeys(args).filter((key) => !allowedSet.has(key));
+  if (unexpected.length > 0) {
+    throw new OkhError(
+      "INVALID_ARGUMENT",
+      `${operation} does not accept: ${unexpected.join(", ")}.`,
+    );
+  }
+}
+
+function validateTodosArgs(args: TodosArgs): "list" | "create" | "update" {
+  const operation = args.operation ?? "list";
+  if (operation === "list") {
+    validateKeys(args, ["container", "module", ...LIST_ONLY_FIELDS, "labels"], "list");
+    return operation;
+  }
+  if (operation === "create") {
+    validateKeys(args, [...CREATE_ONLY_FIELDS, ...MUTATION_SHARED_FIELDS], "create");
+    return operation;
+  }
+  validateKeys(args, [...UPDATE_ONLY_FIELDS, ...MUTATION_SHARED_FIELDS], "update");
+  return operation;
+}
 
 function statusMark(task: TodoRecord): string {
   if (task.status === "open") return "[ ]";
@@ -84,7 +125,7 @@ export function formatTodos(tasks: TodoRecord[], counts: { open: number; complet
   return lines.join("\n");
 }
 
-function toTodoQuery(args: TodosArgs): TodoQuery {
+function toTodoQuery(args: TodosListArgs): TodoQuery {
   return {
     ...(args.container === undefined ? {} : { container: args.container }),
     ...(args.module === undefined ? {} : { module: args.module }),
@@ -99,7 +140,7 @@ function toTodoQuery(args: TodosArgs): TodoQuery {
   };
 }
 
-function toCreateInput(args: Extract<UpdateTodoArgs, { operation: "create" }>): Extract<TodoUpdateInput, { operation: "create" }> {
+function toCreateInput(args: TodosCreateArgs): Extract<TodoMutationInput, { operation: "create" }> {
   if (args.due === null) {
     throw new OkhError("INVALID_ARGUMENT", "due must be a valid YYYY-MM-DD calendar date.");
   }
@@ -117,28 +158,39 @@ function toCreateInput(args: Extract<UpdateTodoArgs, { operation: "create" }>): 
     ...(args.labels === undefined ? {} : { labels: args.labels }),
     ...(args.due === undefined ? {} : { due: args.due }),
     ...(args.priority === undefined ? {} : { priority: args.priority }),
+    ...(args.apply === undefined ? {} : { apply: args.apply }),
   };
 }
 
-function toPatchInput(args: Extract<UpdateTodoArgs, { operation: "patch" }>): Extract<TodoUpdateInput, { operation: "patch" }> {
+function toUpdateInput(args: TodosUpdateArgs): Extract<TodoMutationInput, { operation: "update" }> {
   return {
-    operation: "patch",
+    operation: "update",
     ref: args.ref ?? "",
     ...(args.completed === undefined ? {} : { completed: args.completed }),
     ...(args.labels === undefined ? {} : { labels: args.labels }),
     ...(args.due === undefined ? {} : { due: args.due }),
     ...(args.priority === undefined ? {} : { priority: args.priority }),
+    ...(args.apply === undefined ? {} : { apply: args.apply }),
   };
 }
 
-function describeUpdate(
-  args: UpdateTodoArgs,
-  result: Awaited<ReturnType<TodoService["update"]>>,
+function describeMutationPreview(
+  result: Extract<TodoMutationResult, { applied: false }>,
 ): string {
+  const location = `${result.preview.source.container}/${result.preview.source.module} (${result.preview.source.path}:${result.preview.source.line})`;
+  return `Preview ${result.operation} todo in ${location}: ${result.preview.line}`;
+}
+
+function describeAppliedMutation(result: Extract<TodoMutationResult, { applied: true }>): string {
   const location = `${result.todo.source.container}/${result.todo.source.module} (${result.todo.source.path}:${result.todo.source.line})`;
-  if (args.operation === "create") {
+  if (result.operation === "create") {
     return `Created todo in ${location}: ${result.todo.text}`;
   }
+  return `Updated todo in ${location}: ${result.todo.text}`;
+}
+
+function describeAppliedUpdate(args: TodosUpdateArgs, result: Extract<TodoMutationResult, { applied: true }>): string {
+  const location = `${result.todo.source.container}/${result.todo.source.module} (${result.todo.source.path}:${result.todo.source.line})`;
   if (args.completed === true) {
     return `Marked todo completed in ${location}: ${result.todo.text}`;
   }
@@ -154,30 +206,35 @@ export async function registerTodoTools(server: McpServer, todos: TodoService): 
     "todos",
     {
       ...(await toolReg("todos")),
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, openWorldHint: false },
       _meta: { ui: { resourceUri: TODO_APP_URI, visibility: ["model", "app"] } },
     },
     handler(async (args: TodosArgs) => {
-      const result = await todos.list(toTodoQuery(args));
+      const operation = validateTodosArgs(args);
+      if (operation === "create") {
+        const result = await todos.mutate(toCreateInput(args as TodosCreateArgs));
+        return ok(
+          result.applied ? describeAppliedMutation(result) : describeMutationPreview(result),
+          result as unknown as Record<string, unknown>,
+        );
+      }
+
+      if (operation === "update") {
+        const updateArgs = args as TodosUpdateArgs;
+        const result = await todos.mutate(toUpdateInput(updateArgs));
+        return ok(
+          result.applied ? describeAppliedUpdate(updateArgs, result) : describeMutationPreview(result),
+          result as unknown as Record<string, unknown>,
+        );
+      }
+
+      const result = await todos.list(toTodoQuery(args as TodosListArgs));
       return ok(formatTodos(result.tasks, result.counts), {
+        operation: "list",
         tasks: result.tasks,
         warnings: result.warnings,
         counts: result.counts,
       });
-    }),
-  );
-
-  registerAppTool(
-    server,
-    "update_todo",
-    {
-      ...(await toolReg("update_todo")),
-      annotations: { readOnlyHint: false, openWorldHint: false },
-      _meta: { ui: { visibility: ["model", "app"] } },
-    },
-    handler(async (args: UpdateTodoArgs) => {
-      const result = await todos.update(args.operation === "create" ? toCreateInput(args) : toPatchInput(args));
-      return ok(describeUpdate(args, result), { todo: result.todo, dirtyContainer: result.dirtyContainer });
     }),
   );
 
