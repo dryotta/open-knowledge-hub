@@ -5,7 +5,7 @@ agent-accessible knowledge and capabilities into **containers** made of typed
 **modules**. The **hub** is the system itself; it manages your containers.
 
 It exposes two kinds of surface. **Operational tools** (`inspect`, `add_container`, `add_module`, `sync`,
-`config`, `todos`, `update_todo`) *act* — they read state or change containers. Four **flows** (`ask`,
+`config`, `todos`) *act* — they read state or change containers. Four **flows** (`ask`,
 `context`, `onboard`, `run`) *return instructions*: each hands your agent discipline
 text to follow. A flow never acts on its own — your agent does the reasoning and
 any edits. The server runs **no LLM** — it exposes deterministic tools and injects
@@ -59,8 +59,11 @@ them. Ordinary open and completed statuses are editable; custom checkbox statuse
 are visible but read-only.
 
 Supporting hosts render the unified todo list and filters as an MCP App; other hosts
-receive a text fallback. Changes made through the app or tools remain local until an
-explicit `sync`.
+receive a text fallback. `todos { operation: "create" | "update" }` previews by
+default and only writes when repeated with `apply: true`. Agent-driven mutations
+present the preview, require confirmation, then apply and `sync`; MCP App checkbox
+clicks are explicit authorization and may apply directly. Changes made through the
+app or tools remain local until an explicit `sync`.
 
 ## MCP surface
 
@@ -77,14 +80,13 @@ These read state or change containers directly.
 | `add_module` | `container?`, `path?`, `type?`, `name?`, `description?`, `config?`, `create?` | Returns a step-by-step workflow to add/create/initialize a module; applies on `create:true` (identity args required then). |
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
-| `todos` | `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?` | Read todos across memory modules with optional filters; returns structured, text, or app-backed results. |
-| `update_todo` | safe opaque todo ref plus create/patch fields | Create or patch one todo (complete/reopen, labels, due date, or priority); does not sync automatically. |
+| `todos` | `operation?`, `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?`, `text?`, `entrySummary?`, `observation?`, `ref?`, `completed?`, `due?`, `priority?`, `apply?` | Unified todo API: `list` reads across memory modules, `create` previews or adds one todo, and `update` previews or mutates one todo by opaque `ref`. Writes stay local until `sync`. |
 
 ### Flows (return instructions — they do not act)
 
 Each flow returns **discipline text**: step-by-step instructions your agent
 follows to do the work. A flow never reads or writes your files itself — your
-agent does the reasoning and any edits, then persists with `sync`. All six are
+agent does the reasoning and any edits, then persists with `sync`. All four are
 exposed both as prompt-tools (below) and as MCP prompts (for clients with a
 prompt UI), with identical content.
 
@@ -135,7 +137,9 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 - `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
   folds knowledge in, then `sync { container: "my-notes" }` commits+pushes (or opens a PR).
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
-- `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback); app checkbox changes remain local until `sync`.
+- `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback).
+- `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"] }` → preview the exact todo line; after confirmation, repeat with `apply: true`, then `sync`.
+- `todos { operation: "update", ref: "<opaque-ref>", completed: true }` → preview a completion or reopen change; after confirmation, repeat with `apply: true`. MCP App checkbox clicks may apply this directly, but the change still remains local until `sync`.
 
 ## Wake phrase
 

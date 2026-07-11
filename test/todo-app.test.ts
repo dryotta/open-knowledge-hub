@@ -1,5 +1,8 @@
+import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyAppFilters, type AppFilters } from "../app/todos/model.js";
+import { applyAppFilters, mergeRefreshedTasks, type AppFilters } from "../app/todos/model.js";
 import type { TodoRecord } from "../src/todos/types.js";
 
 const TODAY = "2026-07-10";
@@ -64,7 +67,56 @@ function refs(result: TodoRecord[]): string[] {
   return result.map((task) => task.ref);
 }
 
+function normalizedWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 describe("applyAppFilters", () => {
+  it("uses the unified todos update flow in source and bundled app code", async () => {
+    const root = process.cwd();
+    const sourcePath = join(root, "app", "todos", "main.ts");
+    const bundlePath = join(root, "dist", "apps", "todos.html");
+    const buildScriptPath = join(root, "scripts", "build-todo-app.mjs");
+    const source = normalizedWhitespace(await readFile(sourcePath, "utf8"));
+
+    expect(source).toContain('name: "todos"');
+    expect(source).toContain('operation: "update"');
+    expect(source).toContain("apply: true");
+    expect(source).toContain('operation: "list"');
+    expect(source).not.toContain("update_todo");
+    expect(source).not.toContain('operation: "patch"');
+
+    const build = spawnSync(process.execPath, [buildScriptPath], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(build.status, build.stderr || build.stdout).toBe(0);
+
+    const bundle = await readFile(bundlePath, "utf8");
+    expect(bundle).toMatch(/name:\s*"todos"/);
+    expect(bundle).toMatch(/operation:\s*"update"/);
+    expect(bundle).toMatch(/apply:\s*!0|apply:\s*true/);
+    expect(bundle).toMatch(/operation:\s*"list"/);
+    expect(bundle).not.toMatch(/update_todo/);
+    expect(bundle).not.toMatch(/operation:\s*"patch"/);
+  });
+
+  it("merges a filtered refresh back into the full task list during rollback", () => {
+    const visible = applyAppFilters(tasks, filters({ labels: ["home"] }), TODAY);
+    const refreshed = visible.map((task) => task.ref === "today" ? { ...task, warnings: ["server copy"] } : task);
+
+    const merged = mergeRefreshedTasks(tasks, refreshed, "today");
+
+    expect(merged).not.toBeNull();
+    expect(refs(merged ?? [])).toEqual(refs(tasks));
+    expect(merged?.find((task) => task.ref === "today")?.warnings).toEqual(["server copy"]);
+    expect(merged?.find((task) => task.ref === "overdue")?.text).toBe("Fix release blocker");
+  });
+
+  it("signals when a filtered refresh cannot reconcile the toggled todo", () => {
+    expect(mergeRefreshedTasks(tasks, [], "today")).toBeNull();
+  });
+
   it("supports every status including all", () => {
     expect(refs(applyAppFilters(tasks, filters({ status: "open" }), TODAY))).toEqual(["overdue", "today", "upcoming", "none"]);
     expect(refs(applyAppFilters(tasks, filters({ status: "completed" }), TODAY))).toEqual(["completed"]);

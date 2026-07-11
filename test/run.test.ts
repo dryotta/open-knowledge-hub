@@ -42,16 +42,22 @@ describe("effective skills + resolveSkill", () => {
       /action|commitment|reminder|todo/i,
       "todos",
       /inspect existing labels/i,
-      "update_todo",
       /operation:\s*"create"/i,
+      /entrySummary/i,
+      /observation/i,
+      /omit `apply`/i,
+      /exact returned preview/i,
+      /needsConfirmation/i,
       /labels/i,
       /general/i,
       /confirm/i,
+      /apply:\s*true/i,
       /sync/i,
       /\bIDs?\b/i,
       /recurr/i,
       /dependenc/i,
     ]);
+    expect(s.body).not.toContain("update_todo");
     await expect(svc.resolveSkill("h", "mem", "nope")).rejects.toThrow(/todo/);
   });
 
@@ -62,13 +68,18 @@ describe("effective skills + resolveSkill", () => {
     expectTerms(s.body, [
       /deterministic/i,
       "todos",
-      "update_todo",
+      /operation:\s*"list"/i,
+      /operation:\s*"update"/i,
       /complete/i,
       /reopen/i,
       /labels/i,
       /due/i,
       /priority/i,
+      /omit `apply`/i,
+      /exact returned preview/i,
+      /needsConfirmation/i,
       /confirm/i,
+      /apply:\s*true/i,
       /sync/i,
       /ref/i,
       /\bIDs?\b/i,
@@ -76,6 +87,8 @@ describe("effective skills + resolveSkill", () => {
       /delete/i,
       /recurr/i,
     ]);
+    expect(s.body).not.toContain("update_todo");
+    expect(s.body).not.toMatch(/operation:\s*"patch"/i);
   });
 
   it("knowledge type exposes learn + initialize", async () => {

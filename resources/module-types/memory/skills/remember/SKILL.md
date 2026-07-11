@@ -21,19 +21,14 @@ Maintain valid YAML frontmatter if the file already has one.
 Use this branch when the input includes an explicit action, commitment, reminder, or tracked task.
 
 1. Choose exactly one target memory module.
-2. Call `todos { container, module }` first to inspect existing labels in that module.
+2. Call `todos { operation: "list", container, module }` first to inspect existing labels in that module.
 3. Extract concise task text and keep any factual observation separate.
 4. Normalize any explicit relative due date to `YYYY-MM-DD`.
 5. Infer urgency only when it is implied, and use only `lowest`, `low`, `normal`, `medium`, `high`, or `highest`.
 6. Prefer explicit labels. Otherwise reuse matching existing labels. Otherwise create short lowercase kebab-case labels. Fall back to `general`. Multiple category labels are allowed.
-7. Show the exact proposed checkbox fields and require confirmation before any write:
-   - `text`
-   - `labels`
-   - `due`
-   - `priority`
-   - `entrySummary`
-   - `observation`
-8. After confirmation, call `update_todo` exactly once with `operation: "create"`. Include `entrySummary` and `observation` when factual context belongs in the same memory.
-9. After the confirmed local write, call `sync` for the affected container.
-Never add IDs, recurrence, or dependencies. Do not silently mutate anything before confirmation.
+7. Call `todos` with `operation: "create"`, `container`, `module`, `text`, `entrySummary`, `observation`, `labels`, and optional `due` / `priority`, and omit `apply`.
+8. Present the exact returned preview, surface `needsConfirmation`, and require confirmation before any write.
+9. After confirmation, repeat the identical mutation with `apply: true`. Preserve `entrySummary` and `observation` whenever factual context belongs in the same memory entry.
+10. After the confirmed local write, call `sync` for the affected container.
+
 Never add IDs, recurrence, or dependencies. Do not silently mutate anything before confirmation.

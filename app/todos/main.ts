@@ -1,13 +1,13 @@
 import { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { applyAppFilters, type AppFilters } from "./model.js";
+import { applyAppFilters, mergeRefreshedTasks, type AppFilters } from "./model.js";
 import {
   TODO_PRIORITIES,
   type TodoListResult,
+  type TodoMutationResult,
   type TodoPriority,
   type TodoRecord,
   type TodoSource,
-  type TodoUpdateResult,
   type TodoWarning,
 } from "../../src/todos/types.js";
 
@@ -110,7 +110,9 @@ function isTodoListResult(value: unknown): value is TodoListResult {
     && typeof value.counts.custom === "number";
 }
 
-function isTodoUpdateResult(value: unknown): value is TodoUpdateResult {
+type AppliedTodoMutationResult = Extract<TodoMutationResult, { applied: true }>;
+
+function isAppliedTodoMutationResult(value: unknown): value is AppliedTodoMutationResult {
   return isRecord(value) && isTodoRecord(value.todo) && typeof value.dirtyContainer === "string";
 }
 
@@ -326,16 +328,64 @@ function failureMessage(prefix: string, result?: CallToolResult): string {
   return detail ? `${prefix}: ${detail}` : prefix;
 }
 
-async function refreshAfterFailure(message: string): Promise<void> {
+function refreshArgsFromFilters(): Record<string, unknown> {
+  const args: Record<string, unknown> = { operation: "list" };
+  const trimmedQuery = filters.query.trim();
+  if (filters.status !== "all") args.status = filters.status;
+  if (filters.labels.length > 0) args.labels = [...filters.labels];
+  if (filters.priorities.length > 0) args.priorities = [...filters.priorities];
+  if (filters.dueFrom) args.dueAfter = filters.dueFrom;
+  if (filters.dueTo) args.dueBefore = filters.dueTo;
+  if (trimmedQuery) args.query = trimmedQuery;
+
+  if (filters.source) {
+    const slash = filters.source.indexOf("/");
+    if (slash > 0 && slash < filters.source.length - 1) {
+      args.container = filters.source.slice(0, slash);
+      args.module = filters.source.slice(slash + 1);
+    }
+  }
+
+  const today = todayString();
+  if (filters.due === "overdue") {
+    args.overdue = true;
+  } else if (filters.due === "today") {
+    args.dueAfter = today;
+    args.dueBefore = today;
+  } else if (filters.due === "upcoming") {
+    const tomorrow = new Date(`${today}T00:00:00.000Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    args.dueAfter = tomorrow.toISOString().slice(0, 10);
+  }
+
+  return args;
+}
+
+async function refreshAfterFailure(message: string, expectedRef?: string): Promise<void> {
   try {
-    const refresh = await app.callServerTool({ name: "todos", arguments: {} });
+    const refresh = await app.callServerTool({ name: "todos", arguments: refreshArgsFromFilters() });
     if (refresh.isError) {
       errorMessage = `${message} Refresh failed: ${resultText(refresh) || "the todos tool returned an error."}`;
     } else if (!isTodoListResult(refresh.structuredContent)) {
       errorMessage = `${message} Refresh failed because the todos result was malformed.`;
     } else {
-      replaceList(refresh.structuredContent);
-      errorMessage = `${message} The list was refreshed.`;
+      const merged = mergeRefreshedTasks(tasks, refresh.structuredContent.tasks, expectedRef);
+      if (merged === null) {
+        const fullRefresh = await app.callServerTool({ name: "todos", arguments: { operation: "list" } });
+        if (fullRefresh.isError) {
+          errorMessage = `${message} Refresh failed: ${resultText(fullRefresh) || "the todos tool returned an error."}`;
+        } else if (!isTodoListResult(fullRefresh.structuredContent)) {
+          errorMessage = `${message} Refresh failed because the todos result was malformed.`;
+        } else {
+          replaceList(fullRefresh.structuredContent);
+          errorMessage = `${message} The list was refreshed.`;
+        }
+      } else {
+        tasks = merged;
+        warnings = [...refresh.structuredContent.warnings];
+        receivedInitialResult = true;
+        errorMessage = `${message} The list was refreshed.`;
+      }
     }
   } catch (error: unknown) {
     errorMessage = `${message} Refresh failed: ${error instanceof Error ? error.message : "transport error."}`;
@@ -353,23 +403,23 @@ async function toggleTodo(ref: string, completed: boolean): Promise<void> {
 
   try {
     const result = await app.callServerTool({
-      name: "update_todo",
-      arguments: { operation: "patch", ref, completed },
+      name: "todos",
+      arguments: { operation: "update", ref, completed, apply: true },
     });
     if (result.isError) {
       pendingRefs.delete(ref);
       const message = failureMessage("Could not update the todo", result);
       errorMessage = message;
       render();
-      await refreshAfterFailure(message);
+      await refreshAfterFailure(message, ref);
       return;
     }
-    if (!isTodoUpdateResult(result.structuredContent)) {
+    if (!isAppliedTodoMutationResult(result.structuredContent)) {
       pendingRefs.delete(ref);
       const message = "Could not update the todo because the tool result was malformed.";
       errorMessage = message;
       render();
-      await refreshAfterFailure(message);
+      await refreshAfterFailure(message, ref);
       return;
     }
 
@@ -384,7 +434,7 @@ async function toggleTodo(ref: string, completed: boolean): Promise<void> {
     const message = `Could not update the todo: ${error instanceof Error ? error.message : "transport error."}`;
     errorMessage = message;
     render();
-    await refreshAfterFailure(message);
+    await refreshAfterFailure(message, ref);
   }
 }
 

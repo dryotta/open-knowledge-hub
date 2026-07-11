@@ -52,7 +52,10 @@ and conformance.
 (invoke a named skill on a module). `learn`, `remember`, `reflect`, and `todo` are
 **skills**, not standalone tools — invoke them via
 `run { container, module, skill, input? }`; `todo` handles natural-language memory
-todo changes. `todos` is the direct operational tool for deterministic reads.
+todo management. `todos` is the direct operational tool for deterministic
+list/create/update work. Agent-driven todo mutations preview by default, require
+confirmation, then repeat with `apply: true`; MCP App checkbox clicks may apply
+directly. All todo mutations remain local until `sync`.
 Each flow returns discipline text (instructions the agent follows); a flow never
 reads or writes itself — the agent does. Exposed as both MCP prompts and
 prompt-tools (identical content).
@@ -63,7 +66,7 @@ prompt-tools (identical content).
   `esbuild` is the build-time browser bundler. Run via `npx` on Node.js >= 18.
   Requires `git`; `gh` only for `pr`-mode containers. See ADR-0001, 0002, 0004.
 - Operational tools (act on state): `inspect`, `add_container`, `add_module`, `sync`,
-  `config`, `todos`, `update_todo`.
+  `config`, `todos`.
 - Flows (return discipline/instructions, never act): `ask`, `context`, `onboard`,
   `run`. Each is exposed as a prompt-tool and as an MCP prompt with identical
   content.

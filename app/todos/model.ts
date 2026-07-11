@@ -39,3 +39,27 @@ export function applyAppFilters(tasks: TodoRecord[], filters: AppFilters, today:
     today,
   );
 }
+
+export function mergeRefreshedTasks(
+  existing: TodoRecord[],
+  refreshed: TodoRecord[],
+  expectedRef?: string,
+): TodoRecord[] | null {
+  const refreshedByRef = new Map(refreshed.map((task) => [task.ref, task]));
+  if (expectedRef !== undefined && !refreshedByRef.has(expectedRef)) {
+    return null;
+  }
+
+  const seen = new Set<string>();
+  const merged = existing.map((task) => {
+    const next = refreshedByRef.get(task.ref) ?? task;
+    seen.add(next.ref);
+    return next;
+  });
+
+  for (const task of refreshed) {
+    if (!seen.has(task.ref)) merged.push(task);
+  }
+
+  return merged;
+}
