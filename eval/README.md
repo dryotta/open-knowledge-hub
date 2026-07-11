@@ -273,7 +273,7 @@ insufficient votes) fails.
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
 npm run eval:validate    # structural promptfoo validation
-npm run eval             # full live run (premium usage) — all 25 scenarios, concurrently
+npm run eval             # full live run (premium usage) — all scenarios, concurrently
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
 # a single scenario: filter by description, e.g. promptfoo eval -c eval/promptfooconfig.yaml --filter-pattern "Ask - answerable"
 ```
