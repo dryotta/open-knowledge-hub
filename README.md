@@ -4,12 +4,13 @@ A minimalist [MCP](https://modelcontextprotocol.io) server that organizes all
 agent-accessible knowledge and capabilities into **containers** made of typed
 **modules**. The **hub** is the system itself; it manages your containers.
 
-It exposes two kinds of surface. **Operational tools** (`inspect`, `add_container`, `add_module`, `sync`,
+It exposes three kinds of surface. **Operational tools** (`inspect`, `add_container`, `add_module`, `sync`,
 `config`, `todos`) *act* — they read state or change containers. Four **flows** (`ask`,
 `context`, `onboard`, `run`) *return instructions*: each hands your agent discipline
 text to follow. A flow never acts on its own — your agent does the reasoning and
-any edits. The server runs **no LLM** — it exposes deterministic tools and injects
-discipline text; your agent does all the reasoning.
+any edits. A **diagnostic tool** (`capabilities`) probes which MCP client features are
+active and immediately tests them with live requests. The server runs **no LLM** — it
+exposes deterministic tools and injects discipline text; your agent does all the reasoning.
 
 ## Concepts
 
@@ -67,7 +68,7 @@ app or tools remain local until an explicit `sync`.
 
 ## MCP surface
 
-OKH exposes two kinds of tools plus matching prompts.
+OKH exposes three kinds of tools plus matching prompts.
 
 ### Operational tools (perform actions)
 
@@ -81,6 +82,14 @@ These read state or change containers directly.
 | `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 | `todos` | `operation?`, `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?`, `text?`, `entrySummary?`, `observation?`, `ref?`, `completed?`, `due?`, `priority?`, `apply?` | Unified todo API: `list` reads across memory modules, `create` previews or adds one todo, and `update` previews or mutates one todo by opaque `ref`. Writes stay local until `sync`. |
+
+### Diagnostic tool
+
+| Tool | Args | Purpose |
+| --- | --- | --- |
+| `capabilities` | _(none)_ | Detect and immediately test advertised client roots, sampling, and form elicitation; report MCP Apps extension negotiation. |
+
+> **Note:** `capabilities` is a diagnostic/interactive tool. If sampling is advertised it triggers a small client-model request; if form elicitation is advertised it displays a confirmation prompt. Output never includes returned roots, sampled content, elicited values, extension config, or raw client errors.
 
 ### Flows (return instructions — they do not act)
 
