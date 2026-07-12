@@ -23,8 +23,8 @@ describe("environments", () => {
     const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
     const byName = Object.fromEntries(reg.containers.map((c: { name: string }) => [c.name, c]));
     expect(Object.keys(byName).sort()).toEqual(["git-hub", "kb-hub"]);
-    expect(byName["kb-hub"].backend).toBe("local");
-    expect(byName["git-hub"].backend).toBe("git");
+    expect(byName["kb-hub"].backend.type).toBe("local");
+    expect(byName["git-hub"].backend.type).toBe("git");
     expect(byName["kb-hub"].localPath).toBe(prov.containerPath);
     expect(prov.originPath).toBeUndefined();
     expect(prov.fixtureDir.replace(/\\/g, "/")).toContain("fixtures/kb-hub");
@@ -37,8 +37,8 @@ describe("environments", () => {
     cleanups.push(prov.root);
     expect(prov.originPath).toBeTruthy();
     const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
-    expect(reg.containers[0].backend).toBe("git");
-    expect(reg.containers[0].origin).toBe(prov.originPath);
+    expect(reg.containers[0].backend.type).toBe("git");
+    expect(reg.containers[0].backend.config.origin).toBe(prov.originPath);
     const verify = await makeTempDir("okh-verify-"); cleanups.push(verify);
     await testRun("git", ["clone", prov.originPath!, join(verify, "c")]);
     expect(await exists(join(verify, "c", "kb"))).toBe(true);

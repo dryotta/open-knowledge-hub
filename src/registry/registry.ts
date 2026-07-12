@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { OkhPaths } from "../config.js";
@@ -57,7 +57,17 @@ export async function saveRegistry(paths: OkhPaths, registry: Registry): Promise
   await mkdir(dirname(paths.registryFile), { recursive: true });
   const tmp = `${paths.registryFile}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
   await writeFile(tmp, `${JSON.stringify(validated, null, 2)}\n`, "utf8");
-  await rename(tmp, paths.registryFile);
+  try {
+    await rename(tmp, paths.registryFile);
+  } catch (err) {
+    // On Windows, a concurrent save may have already replaced the destination.
+    // Clean up our temp file and treat the save as successful.
+    if ((err as NodeJS.ErrnoException).code === "EPERM") {
+      await unlink(tmp).catch(() => undefined);
+      return;
+    }
+    throw err;
+  }
 }
 
 export function findContainer(reg: Registry, name: string): ContainerEntry | undefined {

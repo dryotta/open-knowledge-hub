@@ -126,13 +126,13 @@ async function registerHub(
     const clone = join(containersDir, hub.container);
     await git.clone(originPath, clone);
     return {
-      entry: { name: hub.container, backend: "git", origin: originPath, localPath: clone, sync: "auto", addedAt: new Date().toISOString() },
+      entry: { name: hub.container, backend: { type: "git", config: { origin: originPath } }, localPath: clone, sync: { mode: "auto", config: {} }, addedAt: new Date().toISOString() },
       originPath,
     };
   }
   const dir = join(containersDir, hub.container);
   await cp(fixtureDir, dir, { recursive: true });
-  return { entry: { name: hub.container, backend: "local", localPath: dir, sync: "auto", addedAt: new Date().toISOString() } };
+  return { entry: { name: hub.container, backend: { type: "local", config: {} }, localPath: dir, sync: { mode: "auto", config: {} }, addedAt: new Date().toISOString() } };
 }
 
 /**

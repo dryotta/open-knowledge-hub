@@ -88,8 +88,9 @@ describe("legacy sync is persisted to the registry on read", () => {
 
   it("legacy git pr .okh manifest migrates to shared branch and removes file", async () => {
     const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const originParent = dirname(origin);
     const root = await mkdtemp(join(tmpdir(), "okh-git-c-"));
-    const { paths, svc } = await setup("bob");
+    const { paths, root: setupRoot, svc } = await setup("bob");
     try {
       // Clone the origin so the local path is a real git repo
       await new Git(testRun).clone(origin, root);
@@ -104,6 +105,8 @@ describe("legacy sync is persisted to the registry on read", () => {
     } finally {
       await rm(paths.home, { recursive: true, force: true });
       await rm(root, { recursive: true, force: true });
+      await rm(setupRoot, { recursive: true, force: true });
+      await rm(originParent, { recursive: true, force: true });
     }
   });
 
@@ -129,8 +132,9 @@ describe("legacy sync is persisted to the registry on read", () => {
 
   it("legacy git pr .okh migration preserves file on login failure", async () => {
     const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const originParent = dirname(origin);
     const root = await mkdtemp(join(tmpdir(), "okh-git-c-"));
-    const { paths, gh } = await setup("bob");
+    const { paths, root: setupRoot, gh } = await setup("bob");
     gh.currentLogin = async () => { throw new Error("not authenticated"); };
     const svc = new ContainerService(paths, new Git(testRun), gh as unknown as Gh);
     try {
@@ -143,6 +147,8 @@ describe("legacy sync is persisted to the registry on read", () => {
     } finally {
       await rm(paths.home, { recursive: true, force: true });
       await rm(root, { recursive: true, force: true });
+      await rm(setupRoot, { recursive: true, force: true });
+      await rm(originParent, { recursive: true, force: true });
     }
   });
 });

@@ -55,10 +55,12 @@ same phrase (client-specific).
 - **Reflect:** `hub, run reflect on my memory module.`
 - **Todos:** `hub, show my todos.` — the `todos` result includes the hosted browser
   URL for filtering, creating, completing, and reopening tasks.
-- **Sync:** `hub, sync my container.` (commit + push) or `hub, open a PR with my changes.`
+- **Sync:** `hub, sync my container.` (commit + push for `auto`; push to shared branch for `shared`). When ready to publish: `hub, publish my changes as a PR.`
 - **Shared skill (no module):** `hub, run the grilling skill to stress-test my plan.` — shared skills (`grilling`, `okf-writer`, `ingest`) run via `run { skill }` with no container/module.
 - **Ingest documents:** `hub, ingest these lab PDFs into my Health module.` — give file paths/URLs or paste the content (OKH can't see chat attachments). The `ingest` skill extracts each source into cited candidates, proposes a routing plan, then folds them into the target module via `learn`/`remember`, respecting the module's scope contract. A module can opt in (during `initialize`) to **keeping a copy of each ingested document** under `./sources/<YYYY-MM>/`; `ingest` honors that policy and cites the retained copy.
 
 `run` flows (`learn`, `remember`, `reflect`) are module skills — your agent follows
-the returned instructions, edits files locally, and asks before syncing. `sync`
-commits + pushes (`auto` containers) or opens a pull request (`pr` containers).
+the returned instructions, edits files locally, and syncs the result. `sync` commits
+and pushes to origin for `auto`-mode containers, or commits and pushes to the
+configured shared branch (rebased onto origin/main) for `shared`-mode containers.
+Call `sync { action: "publish-pr" }` when ready to open a pull request to main.

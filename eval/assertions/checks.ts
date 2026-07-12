@@ -109,14 +109,14 @@ export async function checkContainer(
   if (!opts.name || !okhHome) return { pass: false, reason: "missing container name or okhHome" };
   const entry = findContainer(await loadRegistry(pathsFor(okhHome)), opts.name);
   if (!entry) return { pass: false, reason: `no container "${opts.name}" registered` };
-  if (opts.backend && entry.backend !== opts.backend) {
-    return { pass: false, reason: `backend ${entry.backend} != expected ${opts.backend}` };
+  if (opts.backend && entry.backend.type !== opts.backend) {
+    return { pass: false, reason: `backend ${entry.backend.type} != expected ${opts.backend}` };
   }
   const modules = await discoverModules(entry.localPath);
   if (opts.module && !modules.some((m) => m.path === opts.module)) {
     return { pass: false, reason: `module "${opts.module}" not present` };
   }
-  return { pass: true, reason: `container "${opts.name}" registered [${entry.backend}]` };
+  return { pass: true, reason: `container "${opts.name}" registered [${entry.backend.type}]` };
 }
 
 export async function checkManifest(okhHome: string | undefined, name?: string): Promise<CheckResult> {
