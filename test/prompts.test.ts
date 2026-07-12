@@ -64,6 +64,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/Stage 1/);
     expect(text).toContain("config { set: { wakePhrase");
     expect(text).not.toContain("onboard { wakePhrase");
+    // Confirmation is only for setup (folders/containers/modules), not ordinary sync
+    expect(text).not.toMatch(/never.*sync.*without.*explicit confirmation/i);
   });
   it("buildInstructions routes deterministic todo work through todos while preserving remember and todo skill distinctions", async () => {
     const text = await buildInstructions({ wakePhrase: "sam" });
@@ -89,6 +91,10 @@ describe("prompt builders", () => {
     expect(text).toContain("mem");
     expect(text).toContain("Write policy");
     expect(text).toContain("Observed X");
+    // Write policy must apply immediately without asking for confirmation
+    expect(text).not.toMatch(/get explicit confirmation|Never persist.*go.?ahead|asks before sync/i);
+    expect(text).toMatch(/without confirmation/i);
+    expect(text).toMatch(/sync.*immediately|immediately.*sync|call.*sync.*immediately/i);
   });
   it("buildRun without a target renders a module-less shared skill", async () => {
     const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
@@ -111,6 +117,8 @@ describe("prompt builders", () => {
     expect(text).toContain("shared");
     expect(text).toContain("user/alice/hub");
     expect(text).not.toContain("[object Object]");
+    // Shared sync must mention publish-pr instead of auto-publishing
+    expect(text).toContain("publish-pr");
   });
   it("buildAddModule injects containers + module types and the workflow discipline", async () => {
     const text = await buildAddModule(targets, ["knowledge", "skills", "memory"]);

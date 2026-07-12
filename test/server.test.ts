@@ -215,18 +215,18 @@ describe("MCP server surface", () => {
     expect(todos?.title).toBeTruthy();
   });
 
-  it("todos metadata preserves active remember/todo discipline and preview/apply sync boundaries", async () => {
+  it("todos metadata describes direct apply+sync for agent writes without confirmation", async () => {
     const { client } = await connect();
     const todos = (await client.listTools()).tools.find((t) => t.name === "todos");
     const description = normalizedWhitespace(todos?.description);
     expect(description).toContain("List, preview, create, or update Markdown todos in memory modules.");
     expect(description).toContain("Create and update return a preview without writing unless `apply: true` is supplied.");
-    expect(description).toContain("Agent-driven requests present that preview and obtain confirmation before applying");
-    expect(description).toContain("MCP App checkbox clicks may apply directly");
+    expect(description).toContain("Ordinary agent-driven writes pass `apply: true` directly and call `sync` afterward");
     expect(description).toContain('explicit remember requests use `skill: "remember"`');
     expect(description).toContain('other todo changes use `skill: "todo"`');
-    expect(description).toContain("Agent-driven writes call `sync` afterward");
-    expect(description).toContain("MCP App changes remain local until explicit sync");
+    // Must not claim agent mutations require preview/confirmation
+    expect(description).not.toContain("obtain confirmation before applying");
+    expect(description).not.toContain("Agent-driven requests present that preview");
   });
 
   it("todos metadata prevents mutation routing from bypassing the active skill", async () => {

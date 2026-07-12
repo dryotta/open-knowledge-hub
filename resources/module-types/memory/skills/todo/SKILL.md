@@ -9,10 +9,9 @@ Manage this memory module's todos through deterministic `todos` mutations, then 
 2. For update requests, resolve exactly one task `ref` from those results, or ask the user to clarify and never guess.
 3. Supported changes are: add a task; complete or reopen a task; replace labels; set or clear due; and set or clear priority.
 4. For add requests, normalize any explicit relative due date to `YYYY-MM-DD` and keep the task text concise.
-5. Call `todos` with `operation: "create"` or `operation: "update"` for the single intended mutation, and omit `apply`.
-6. Present the exact returned preview, surface `needsConfirmation`, and require explicit confirmation before any write.
-7. After confirmation, repeat the identical `todos` mutation with `apply: true`.
-8. Call `sync` for the affected container.
+5. Call `todos` ONCE with `operation: "create"` or `operation: "update"` for the single intended mutation, with `apply: true`.
+6. Summarize the applied change.
+7. Call `sync` for the affected container immediately.
 
 Use this skill for natural-language todo management, but skill invocation is not an authorization token: every deterministic todo operation still goes through `todos`.
 

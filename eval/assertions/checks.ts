@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { isDeepStrictEqual } from "node:util";
 import { loadRegistry, findContainer } from "../../src/registry/registry.js";
 import { discoverModules } from "../../src/modules/discovery.js";
 import type { ToolEvent } from "../copilot.js";
@@ -13,7 +12,7 @@ export type Check =
   | { kind: "wake-phrase"; default?: string }
   | { kind: "transcript-contains"; pattern: string }
   | { kind: "transcript-absent"; pattern: string }
-  | { kind: "todo-preview-apply"; operation: "create" | "update" };
+  | { kind: "todo-apply-sync"; operation: "create" | "update" };
 
 export interface CheckContext {
   okhHome?: string;
@@ -29,11 +28,6 @@ export interface CheckResult {
 
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-}
-
-function stripApply(args: Record<string, unknown>): Record<string, unknown> {
-  const { apply: _apply, ...rest } = args;
-  return rest;
 }
 
 function isSuccessfulTodoMutation(event: ToolEvent, operation: "create" | "update"): event is ToolEvent & {
@@ -54,7 +48,7 @@ function isSuccessfulSync(event: ToolEvent): event is ToolEvent & { success: tru
   return event.server === "open-knowledge-hub" && event.tool === "sync" && event.completed === true && event.success === true;
 }
 
-export async function checkTodoPreviewApply(
+export async function checkTodoApplySync(
   ctx: CheckContext,
   operation: "create" | "update",
 ): Promise<CheckResult> {
@@ -66,48 +60,36 @@ export async function checkTodoPreviewApply(
       index,
       turn: event.turn as number,
       applied: asObject(event.arguments)?.apply === true,
-      args: asObject(event.arguments)!,
-      baseArgs: stripApply(asObject(event.arguments)!),
     }));
+
   if (mutations.length === 0) {
     return { pass: false, reason: `no successful todos ${operation} events found` };
   }
 
-  for (const apply of mutations) {
-    if (!apply.applied) continue;
-    const preview = mutations.find((candidate) =>
-      !candidate.applied &&
-      candidate.turn < apply.turn &&
-      isDeepStrictEqual(candidate.baseArgs, apply.baseArgs));
-    if (!preview) continue;
+  const appliedMutations = mutations.filter((m) => m.applied);
+  if (appliedMutations.length === 0) {
+    return { pass: false, reason: `no applied todos ${operation} found (apply:true required)` };
+  }
 
-    const priorApply = mutations.find((candidate) =>
-      candidate.applied &&
-      candidate.index < apply.index &&
-      isDeepStrictEqual(candidate.baseArgs, apply.baseArgs));
-    if (priorApply) {
-      return {
-        pass: false,
-        reason: `found applied ${operation} before a valid preview/apply pair on turn ${apply.turn}`,
-      };
-    }
-
-    const sync = toolEvents
-      .map((event, index) => ({ event, index }))
-      .find(({ event, index }) => index > apply.index && isSuccessfulSync(event));
-    if (!sync) {
-      return { pass: false, reason: `missing successful sync after applied ${operation}` };
-    }
-
+  if (appliedMutations.length > 1) {
     return {
-      pass: true,
-      reason: `${operation} preview on turn ${preview.turn} matched applied mutation on turn ${apply.turn} before sync`,
+      pass: false,
+      reason: `found ${appliedMutations.length} applied ${operation} mutations; expected exactly one`,
     };
   }
 
+  const apply = appliedMutations[0]!;
+
+  const sync = toolEvents
+    .map((event, index) => ({ event, index }))
+    .find(({ event, index }) => index > apply.index && isSuccessfulSync(event));
+  if (!sync) {
+    return { pass: false, reason: `missing successful sync after applied ${operation}` };
+  }
+
   return {
-    pass: false,
-    reason: `no ${operation} preview/apply pair with matching arguments, later turn, and post-apply sync`,
+    pass: true,
+    reason: `${operation} applied directly with apply:true on turn ${apply.turn}, sync followed`,
   };
 }
 
@@ -195,8 +177,8 @@ export async function evaluateCheck(check: Check, ctx: CheckContext): Promise<Ch
         return { pass: false, reason: `bad pattern /${check.pattern}/` };
       }
     }
-    case "todo-preview-apply":
-      return checkTodoPreviewApply(ctx, check.operation);
+    case "todo-apply-sync":
+      return checkTodoApplySync(ctx, check.operation);
     default:
       return { pass: false, reason: `unknown check kind: ${(check as { kind?: string }).kind ?? "?"}` };
   }
