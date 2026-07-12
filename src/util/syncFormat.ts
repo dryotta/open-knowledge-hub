@@ -3,7 +3,7 @@ export function formatSyncDescriptor(sync: { mode: string; config?: Record<strin
   if (!sync) return "?";
   if (sync.mode === "shared") {
     const branch = sync.config?.["branch"];
-    if (branch) return `shared (branch=${branch})`;
+    if (typeof branch === "string" && branch.length > 0) return `shared (branch=${branch})`;
   }
   return sync.mode;
 }

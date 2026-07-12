@@ -773,4 +773,25 @@ describe("MCP server surface", () => {
     expect(textOf(res)).toMatch(/\[local\/auto\]/);
     expect(isErrorResult(res)).toBe(false);
   });
+
+  it("sync-all formats a backend error message alongside [backend/mode] error", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin({ "README.md": "# hub\n" });
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", create: true },
+    });
+    // Remove the origin so the next fetch will fail with an OkhError
+    await rm(origin, { recursive: true, force: true });
+
+    const res = await client.callTool({ name: "sync", arguments: {} });
+    const text = textOf(res);
+    // The MCP result itself must not be an error — sync-all captures per-container errors
+    expect(isErrorResult(res)).toBe(false);
+    // The line must contain the [backend/mode] prefix and the error outcome
+    expect(text).toMatch(/\[git\/auto\].*error/i);
+    // The backend error message (from git fetch failure) must be surfaced in the output
+    expect(text).toMatch(/git fetch failed|error/i);
+  });
 });
