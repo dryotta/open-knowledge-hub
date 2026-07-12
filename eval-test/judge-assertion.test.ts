@@ -107,23 +107,22 @@ describe("judge assertion", () => {
     expect(r.pass).toBe(true);
     expect(r.reason).toMatch(/det=PASS.*judge=MISSING/);
   });
-  it("uses structured todo-preview-apply evidence when the rendered transcript judge disagrees", async () => {
+  it("uses structured todo-apply-sync evidence when the rendered transcript judge disagrees", async () => {
     const r = await judge(
       "truncated rendered transcript",
       {
         config: {
           criteria: [{
             id: "workflow",
-            text: "uses preview, apply, and sync",
-            check: { kind: "todo-preview-apply", operation: "update" },
+            text: "applies todo with apply:true and syncs immediately",
+            check: { kind: "todo-apply-sync", operation: "update" },
           }],
         },
         providerResponse: {
           metadata: {
             toolEvents: [
-              { turn: 1, callId: "t1", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-              { turn: 2, callId: "t2", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
-              { turn: 2, callId: "t3", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
+              { turn: 1, callId: "t2", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
+              { turn: 1, callId: "t3", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
             ],
           },
         },

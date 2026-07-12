@@ -23,8 +23,9 @@ args:
 ---
 List, preview, create, or update Markdown todos in memory modules. `operation`
 defaults to `list`. Create and update return a preview without writing unless
-`apply: true` is supplied. Agent-driven requests present that preview and obtain
-confirmation before applying; MCP App checkbox clicks may apply directly.
+`apply: true` is supplied. Ordinary agent-driven writes pass `apply: true`
+directly and call `sync` afterward; `apply` may be omitted for explicit preview
+requests or MCP App checkbox interactions, which may apply directly without sync.
 Every result includes the live hosted todo web UI URL when the standard server
 entrypoint is running.
 

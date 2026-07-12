@@ -11,16 +11,13 @@ import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { savePreferences } from "../src/preferences.js";
 import { TodoService } from "../src/todos/service.js";
-import { makePaths, makeTempDir, testRun } from "./helpers.js";
+import { makePaths, makeTempDir, makeOrigin, testRun } from "./helpers.js";
 
 class FakeGh {
-  async createRepo(): Promise<string> {
-    return "x";
-  }
-
-  async createPr(): Promise<string> {
-    return "x";
-  }
+  async currentLogin(): Promise<string> { return "tester"; }
+  async findOpenPr(): Promise<string | undefined> { return undefined; }
+  async createRepo(): Promise<string> { return "x"; }
+  async createPr(): Promise<string> { return "https://github.com/test/x/pull/1"; }
 }
 
 const cleanups: string[] = [];
@@ -218,18 +215,18 @@ describe("MCP server surface", () => {
     expect(todos?.title).toBeTruthy();
   });
 
-  it("todos metadata preserves active remember/todo discipline and preview/apply sync boundaries", async () => {
+  it("todos metadata describes direct apply+sync for agent writes without confirmation", async () => {
     const { client } = await connect();
     const todos = (await client.listTools()).tools.find((t) => t.name === "todos");
     const description = normalizedWhitespace(todos?.description);
     expect(description).toContain("List, preview, create, or update Markdown todos in memory modules.");
     expect(description).toContain("Create and update return a preview without writing unless `apply: true` is supplied.");
-    expect(description).toContain("Agent-driven requests present that preview and obtain confirmation before applying");
-    expect(description).toContain("MCP App checkbox clicks may apply directly");
+    expect(description).toContain("Ordinary agent-driven writes pass `apply: true` directly and call `sync` afterward");
     expect(description).toContain('explicit remember requests use `skill: "remember"`');
     expect(description).toContain('other todo changes use `skill: "todo"`');
-    expect(description).toContain("Agent-driven writes call `sync` afterward");
-    expect(description).toContain("MCP App changes remain local until explicit sync");
+    // Must not claim agent mutations require preview/confirmation
+    expect(description).not.toContain("obtain confirmation before applying");
+    expect(description).not.toContain("Agent-driven requests present that preview");
   });
 
   it("todos metadata prevents mutation routing from bypassing the active skill", async () => {
@@ -560,6 +557,7 @@ describe("MCP server surface", () => {
 
     const applied = await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
     expect(textOf(applied)).toContain('Registered container "hub"');
+    expect(textOf(applied)).toContain("[local]");
   });
 
   it("rejects a module inspect request without a container", async () => {
@@ -634,5 +632,166 @@ describe("MCP server surface", () => {
     expect(text).toContain("User prefers dark mode");
     expect(text).toContain("mem");
     expect(text).toMatch(/append|timestamp/i);
+  });
+
+  it("add_container rejects flat sync:'pr' at MCP schema level", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    const res = await client.callTool({ name: "add_container", arguments: { source: dir, sync: "pr" } });
+    expect(isErrorResult(res)).toBe(true);
+  });
+
+  it("add_container structured shared sync preview shows mode and resolved branch", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    const res = await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } } },
+    });
+    const text = textOf(res);
+    expect(isErrorResult(res)).toBe(false);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(structuredOf(res).needsConfirmation).toBe(true);
+  });
+
+  it("add_container structured shared sync create persists the descriptor", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } }, create: true },
+    });
+    const inspect = await client.callTool({ name: "inspect", arguments: { container: "hub" } });
+    const text = textOf(inspect);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+  });
+
+  it("sync action without container returns INVALID_ARGUMENT", async () => {
+    const { client } = await connect();
+    const res = await client.callTool({ name: "sync", arguments: { action: "publish-pr" } });
+    expect(isErrorResult(res)).toBe(true);
+    expect(textOf(res)).toContain("INVALID_ARGUMENT");
+  });
+
+  it("sync with publish-pr action reaches service and returns PR URL", async () => {
+    const { client, home } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/tester/hub" } }, create: true },
+    });
+    // Write a change so there is something to push
+    const containerPath = join(home, "containers", "hub");
+    await writeFile(join(containerPath, "note.md"), "hello", "utf8");
+    const res = await client.callTool({ name: "sync", arguments: { container: "hub", action: "publish-pr" } });
+    expect(isErrorResult(res)).toBe(false);
+    expect(textOf(res)).toContain("/pull/");
+  });
+
+  it("inspect list shows structured sync mode and actions for shared container", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } }, create: true },
+    });
+    const res = await client.callTool({ name: "inspect", arguments: {} });
+    const text = textOf(res);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).toContain("publish-pr");
+  });
+
+  it("inspect container shows structured sync and available actions", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } }, create: true },
+    });
+    const res = await client.callTool({ name: "inspect", arguments: { container: "hub" } });
+    const text = textOf(res);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).toContain("publish-pr");
+  });
+
+  it("plain shared sync appends publish-pr guidance", async () => {
+    const { client, home } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/tester/hub" } }, create: true },
+    });
+    const containerPath = join(home, "containers", "hub");
+    await writeFile(join(containerPath, "note.md"), "hello", "utf8");
+    const res = await client.callTool({ name: "sync", arguments: { container: "hub" } });
+    const text = textOf(res);
+    expect(text).toContain('call sync with action "publish-pr"');
+    expect(text).toContain("user/tester/hub");
+  });
+
+  it("publish-pr sync result does not append guidance", async () => {
+    const { client, home } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/tester/hub" } }, create: true },
+    });
+    const containerPath = join(home, "containers", "hub");
+    await writeFile(join(containerPath, "note.md"), "hello", "utf8");
+    const res = await client.callTool({ name: "sync", arguments: { container: "hub", action: "publish-pr" } });
+    const text = textOf(res);
+    expect(text).not.toContain('call sync with action "publish-pr"');
+  });
+
+  it("sync result format uses [backend/mode] prefix", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "notes", create: true } });
+    const res = await client.callTool({ name: "sync", arguments: { container: "notes" } });
+    expect(textOf(res)).toMatch(/\[local\/auto\]/);
+  });
+
+  it("sync-all result format uses [backend/mode] prefix", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "notes", create: true } });
+    const res = await client.callTool({ name: "sync", arguments: {} });
+    expect(textOf(res)).toMatch(/\[local\/auto\]/);
+    expect(isErrorResult(res)).toBe(false);
+  });
+
+  it("sync-all formats a backend error message alongside [backend/mode] error", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin({ "README.md": "# hub\n" });
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", create: true },
+    });
+    // Remove the origin so the next fetch will fail with an OkhError
+    await rm(origin, { recursive: true, force: true });
+
+    const res = await client.callTool({ name: "sync", arguments: {} });
+    const text = textOf(res);
+    // The MCP result itself must not be an error — sync-all captures per-container errors
+    expect(isErrorResult(res)).toBe(false);
+    // The line must contain the [backend/mode] prefix and the error outcome
+    expect(text).toMatch(/\[git\/auto\].*error/i);
+    // The backend error message (from git fetch failure) must be surfaced in the output
+    expect(text).toMatch(/git fetch failed|error/i);
   });
 });

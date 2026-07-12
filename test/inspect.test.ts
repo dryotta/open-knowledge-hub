@@ -49,7 +49,7 @@ describe("status", () => {
     await service.addContainer({ source: dir, name: "notes", create: true });
     const st = await service.status("notes");
     expect(st.git).toBeUndefined();
-    expect(st.sync).toBe("auto");
+    expect(st.sync?.mode).toBe("auto");
   });
 });
 

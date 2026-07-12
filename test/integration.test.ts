@@ -40,7 +40,7 @@ describe("end-to-end", () => {
     await writeFile(join(moduleRoot, "auth.md"), "---\ntitle: Auth\ndescription: Login\ntype: Flow\n---\nbody", "utf8");
 
     const [res] = await service.sync("hub");
-    expect(res!.action).toBe("committed-pushed");
+    expect(res!.outcome).toBe("synced");
     expect(res!.validation.ok).toBe(true);
 
     const verify = await checkoutOrigin(origin);
@@ -52,7 +52,7 @@ describe("end-to-end", () => {
     if (inspected.kind === "module") {
       expect(inspected.items.map((i) => i.title)).toContain("Auth");
     }
-    expect(entry.backend).toBe("git");
+    expect(entry.backend.type).toBe("git");
   });
 
   it("local container spanning multiple module types resolves prompt targets", async () => {

@@ -58,12 +58,54 @@ export class Gh {
   async createPr(options: {
     cwd: string;
     base?: string;
+    head?: string;
     title: string;
     body: string;
   }): Promise<string> {
     const args = ["pr", "create", "--title", options.title, "--body", options.body];
     if (options.base) args.push("--base", options.base);
+    if (options.head) args.push("--head", options.head);
     const out = await this.gh(args, options.cwd);
     return out.trim();
+  }
+
+  /** Return the GitHub login of the currently authenticated user. */
+  async currentLogin(): Promise<string> {
+    const out = (await this.gh(["api", "user", "--jq", ".login"])).trim();
+    if (!out) {
+      throw new OkhError("GH_ERROR", "gh api user returned an empty login — is gh authenticated?");
+    }
+    return out;
+  }
+
+  /**
+   * Find the URL of an open PR matching `base` and `head`.
+   * Returns `undefined` when no matching PR exists.
+   */
+  async findOpenPr(options: {
+    cwd: string;
+    base: string;
+    head: string;
+  }): Promise<string | undefined> {
+    const out = (
+      await this.gh(
+        [
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--base",
+          options.base,
+          "--head",
+          options.head,
+          "--json",
+          "url",
+          "--jq",
+          '.[0].url // ""',
+        ],
+        options.cwd,
+      )
+    ).trim();
+    return out || undefined;
   }
 }

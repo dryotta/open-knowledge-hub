@@ -72,4 +72,18 @@ describe("every tool has complete, consistent metadata", () => {
     expect(description).toContain("Create and update return a preview without writing unless `apply: true` is supplied.");
     expect(todos.args.operation).toContain("defaults to `list`");
   });
+
+  it("sync schema includes action arg and metadata describes it", async () => {
+    expect(toolShapes.sync).toHaveProperty("action");
+    const sync = await loadToolMeta("sync");
+    expect(sync.args).toHaveProperty("action");
+    expect(sync.args.action).toMatch(/publish-pr|action|container/i);
+  });
+
+  it("add_container sync arg documents structured {mode, config} form", async () => {
+    const addContainer = await loadToolMeta("add_container");
+    expect(addContainer.args.sync).toMatch(/mode|shared|auto/i);
+    // Must not document the legacy "pr" string as a valid mode value
+    expect(addContainer.args.sync).not.toMatch(/"pr"/);
+  });
 });

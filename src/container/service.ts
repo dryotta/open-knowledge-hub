@@ -19,18 +19,22 @@ import {
 import {
   containerNameSchema,
   repoUrlSchema,
-  type Backend,
+  type BackendType,
+  type SyncMode,
   type ContainerEntry,
+  type BackendDescriptor,
+  type SyncDescriptor,
 } from "../registry/schema.js";
 import { discoverModules, type DiscoveredModule } from "../modules/discovery.js";
-import { migrateLegacyContainerManifest } from "./migrate.js";
+import { migrateLegacyContainerManifest, removeLegacyContainerManifest } from "./migrate.js";
 import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
 import { type Item, type WikiHealth } from "../modules/types.js";
-import { type SyncMode } from "../registry/schema.js";
 import { getLoader } from "../modules/registry.js";
 import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
 import { resolveSharedSkill as resolveShared } from "../modules/shared.js";
 import { vendoredSkills } from "../modules/vendored.js";
+import { BackendRegistry, createBackendRegistry } from "../sync/backendRegistry.js";
+import type { BackendSyncResult, SyncSelection } from "../sync/types.js";
 
 const modulePathString = z
   .string().min(1)
@@ -73,42 +77,11 @@ function deriveName(source: string): string {
   return slug || "container";
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function withPrCleanupFailure(
-  primary: unknown,
-  restore: unknown | undefined,
-  checkout: unknown | undefined,
-  base: string,
-): unknown {
-  const details = [
-    restore ? `Failed to restore pending changes on base branch "${base}": ${errorMessage(restore)}` : undefined,
-    checkout ? `Failed to return to base branch "${base}": ${errorMessage(checkout)}` : undefined,
-  ].filter(Boolean);
-  const cleanupMessage = `Also encountered cleanup failure: ${details.join("; ")}`;
-  if (isOkhError(primary)) {
-    return new OkhError(primary.code, `${primary.message}\n${cleanupMessage}`, primary.hint);
-  }
-  return new AggregateError(
-    [primary, restore, checkout].filter((err) => err !== undefined),
-    `${errorMessage(primary)}\n${cleanupMessage}`,
-  );
-}
-
-function withOpenedPrCheckoutFailure(prUrl: string, checkout: unknown, base: string): OkhError {
-  return new OkhError(
-    "GIT_ERROR",
-    `Opened PR ${prUrl}, but failed to return to base branch "${base}": ${errorMessage(checkout)}`,
-    "The PR was created; manually check out the base branch before retrying.",
-  );
-}
-
 export interface AddContainerInput {
   source: string;
   name?: string;
-  sync?: "auto" | "pr";
+  /** Sync descriptor for the container: `{ mode, config? }`. */
+  sync?: { mode: SyncMode; config?: Record<string, unknown> };
   /** Only meaningful for path sources; distinguishes onedrive from plain local. */
   backend?: "local" | "onedrive";
   /** Authorize side-effectful creation/initialization. Default false => preview only. */
@@ -121,12 +94,13 @@ export interface AddContainerPlan {
   kind: "container";
   actions: ContainerAction[];
   name: string;
-  backend: Backend;
+  /** Structured backend descriptor: type + config. */
+  backend: BackendDescriptor;
   source: string;
   /** Absolute local path to create / clone into / register. */
   target: string;
-  /** Effective sync mode used when initializing a new manifest. */
-  sync: SyncMode;
+  /** Fully resolved sync descriptor (mode + config). */
+  sync: SyncDescriptor;
   /** Whether the caller explicitly set sync (controls overriding an existing manifest). */
   syncExplicit: boolean;
 }
@@ -181,8 +155,9 @@ export interface ModuleStatus {
 
 export interface ContainerStatus {
   name: string;
-  backend: Backend;
-  sync?: SyncMode;
+  backend: BackendType;
+  sync?: SyncDescriptor;
+  syncActions?: string[];
   localPath: string;
   manifestValid: boolean;
   manifestError?: string;
@@ -195,8 +170,9 @@ export type InspectResult =
       kind: "containers";
       containers: Array<{
         name: string;
-        backend: Backend;
-        sync?: SyncMode;
+        backend: BackendType;
+        sync?: SyncDescriptor;
+        syncActions?: string[];
         moduleCount: number;
         modules: Array<{ path: string; type: string; name: string }>;
         manifestValid: boolean;
@@ -213,14 +189,11 @@ export type InspectResult =
       health?: WikiHealth;
     };
 
-export interface SyncResult {
+/** SyncResult extends BackendSyncResult with service-level envelope fields. */
+export interface SyncResult extends BackendSyncResult {
   name: string;
-  backend: Backend;
+  backend: BackendType;
   validation: { ok: boolean; issues: string[] };
-  action: "committed-pushed" | "pulled" | "up-to-date" | "pr-opened" | "validated" | "skipped" | "error";
-  committed?: boolean;
-  pushed?: boolean;
-  prUrl?: string;
   error?: string;
 }
 
@@ -234,8 +207,9 @@ export interface ResolvedModule {
 
 export interface ResolvedContainer {
   name: string;
-  backend: Backend;
-  sync: SyncMode;
+  backend: BackendType;
+  sync: SyncDescriptor;
+  syncActions: string[];
   root: string;
   modules: ResolvedModule[];
 }
@@ -247,15 +221,31 @@ export interface ResolvedContainer {
  */
 export class ContainerService {
   private readonly mutex = new Mutex();
+  private readonly migrationMutex = new Mutex();
+  private readonly backends: BackendRegistry;
+  private readonly gh: Gh;
 
   constructor(
     private readonly paths: OkhPaths,
     private readonly git: Git = new Git(),
-    private readonly gh: Gh = new Gh(),
-  ) {}
+    gh: Gh = new Gh(),
+    backends?: BackendRegistry,
+  ) {
+    this.gh = gh;
+    this.backends = backends ?? createBackendRegistry(git, gh);
+  }
+
+  /**
+   * Load the registry, automatically migrating v1 → v2 using the gh login when
+   * needed. Passes `resolveGitLogin` so legacy git+pr entries are resolved to
+   * `shared` with the correct branch during registry-level migration.
+   */
+  private loadRegistryData() {
+    return loadRegistry(this.paths, { resolveGitLogin: () => this.gh.currentLogin() });
+  }
 
   async list(): Promise<ContainerEntry[]> {
-    return (await loadRegistry(this.paths)).containers;
+    return (await this.loadRegistryData()).containers;
   }
 
   /** Enumerate a module's items, swallowing loader errors to an empty list. */
@@ -269,27 +259,56 @@ export class ContainerService {
 
   /**
    * Migrate a legacy `.okh/okh.yaml` (if present) and persist its `sync` mode onto
-   * the registry entry. The legacy manifest — deleted by migration — was the prior
-   * source of truth for `sync`, so its value must not be lost to the schema default
-   * ("auto"), which would silently drop a PR-only container to direct push. Idempotent:
-   * a no-op once migrated. The registry write is mutex-guarded; callers under the
-   * service mutex (sync's validate path) always pre-migrate first, so the guarded
-   * write is never reached re-entrantly.
+   * the registry entry. Calls `removeLegacyContainerManifest` only after the registry
+   * save succeeds. On resolution/save failure, preserves both the legacy file and the
+   * old registry entry. Does NOT acquire the mutex (avoids reentrancy when called
+   * from paths already inside the outer mutex).
    */
   private async migrateAndPersistSync(name: string, root: string): Promise<void> {
-    const migratedSync = await migrateLegacyContainerManifest(root).catch(() => undefined);
-    if (migratedSync === undefined) return;
-    await this.mutex.run(async () => {
-      const reg = await loadRegistry(this.paths);
-      if (!findContainer(reg, name)) return;
-      await saveRegistry(this.paths, withContainerUpdated(reg, name, (e) => ({ ...e, sync: migratedSync })));
+    return this.migrationMutex.run(async () => {
+      const legacyMode = await migrateLegacyContainerManifest(root).catch(() => undefined);
+      if (legacyMode === undefined) return;
+
+      const reg = await this.loadRegistryData();
+      const entry = findContainer(reg, name);
+      if (!entry) return;
+
+      let mode: SyncMode;
+      let syncConfig: Record<string, unknown> = {};
+
+      if (entry.backend.type === "git" && legacyMode === "pr") {
+        mode = "shared";
+        try {
+          const resolved = await this.backends.resolveSync(
+            "git",
+            { mode: "shared", config: {} },
+            { containerName: name },
+          );
+          syncConfig = resolved.config;
+        } catch {
+          // Cannot resolve (e.g. gh login unavailable) — preserve legacy file and old entry.
+          return;
+        }
+      } else {
+        mode = "auto";
+      }
+
+      try {
+        await saveRegistry(
+          this.paths,
+          withContainerUpdated(reg, name, (e) => ({ ...e, sync: { mode, config: syncConfig } })),
+        );
+        await removeLegacyContainerManifest(root);
+      } catch {
+        // On save failure, preserve legacy file and old registry entry.
+      }
     });
   }
 
   async status(name: string): Promise<ContainerStatus> {
-    const root = requireContainer(await loadRegistry(this.paths), name).localPath;
+    const root = requireContainer(await this.loadRegistryData(), name).localPath;
     await this.migrateAndPersistSync(name, root);
-    const entry = requireContainer(await loadRegistry(this.paths), name);
+    const entry = requireContainer(await this.loadRegistryData(), name);
     const discovered = await discoverModules(root);
     const invalid = discovered.filter((d) => d.error);
     const modules: ModuleStatus[] = await Promise.all(
@@ -305,7 +324,7 @@ export class ContainerService {
     );
 
     let git: GitStatus | undefined;
-    if (entry.backend === "git") {
+    if (entry.backend.type === "git") {
       const [branch, dirty, ab, unpushed] = await Promise.all([
         this.git.currentBranch(root), this.git.isDirty(root),
         this.git.aheadBehind(root), this.git.hasUnpushedCommits(root),
@@ -313,8 +332,10 @@ export class ContainerService {
       git = { branch, dirty, ahead: ab?.ahead ?? 0, behind: ab?.behind ?? 0, hasUnpushedCommits: unpushed };
     }
 
+    const syncActions = this.backends.actions(entry);
+
     return {
-      name, backend: entry.backend, sync: entry.sync, localPath: root,
+      name, backend: entry.backend.type, sync: entry.sync, syncActions: [...syncActions], localPath: root,
       manifestValid: invalid.length === 0,
       ...(invalid.length ? { manifestError: invalid.map((d) => `${d.path}: ${d.error}`).join("; ") } : {}),
       modules, git,
@@ -323,7 +344,7 @@ export class ContainerService {
 
   /** Structural validation: module manifests parse, knowledge has index.md. */
   async validate(name: string): Promise<{ ok: boolean; issues: string[] }> {
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     const entry = requireContainer(reg, name);
     const root = entry.localPath;
     await this.migrateAndPersistSync(name, root);
@@ -341,13 +362,14 @@ export class ContainerService {
   }
 
   async inspect(container?: string, module?: string): Promise<InspectResult> {
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     if (!container) {
       const containers = await Promise.all(
         reg.containers.map(async (c) => {
           const st = await this.status(c.name).catch(() => undefined);
           return {
-            name: c.name, backend: c.backend, sync: st?.sync ?? c.sync,
+            name: c.name, backend: c.backend.type, sync: st?.sync ?? c.sync,
+            syncActions: st?.syncActions ?? [...this.backends.actions(c)],
             moduleCount: st?.modules.length ?? 0,
             modules: (st?.modules ?? []).map((m) => ({ path: m.path, type: m.type, name: m.name })),
             manifestValid: st?.manifestValid ?? false,
@@ -384,7 +406,7 @@ export class ContainerService {
 
   /** The module's effective skill set: vendored (built-in type) ∪ module-local, local overriding by name. */
   async effectiveSkills(container: string, module: string): Promise<Skill[]> {
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     const entry = requireContainer(reg, container);
     const moduleRoot = this.moduleRoot(entry.localPath, module);
     if (!(await moduleManifestExists(moduleRoot))) {
@@ -415,10 +437,10 @@ export class ContainerService {
   }
 
   async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {
-    const reg0 = await loadRegistry(this.paths);
+    const reg0 = await this.loadRegistryData();
     const entries0 = container ? [requireContainer(reg0, container)] : reg0.containers;
     for (const e of entries0) await this.migrateAndPersistSync(e.name, e.localPath);
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     const entries = container ? [requireContainer(reg, container)] : reg.containers;
     const out: ResolvedContainer[] = [];
     for (const entry of entries) {
@@ -428,7 +450,9 @@ export class ContainerService {
         throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
       }
       out.push({
-        name: entry.name, backend: entry.backend, sync: entry.sync, root: entry.localPath,
+        name: entry.name, backend: entry.backend.type, sync: entry.sync,
+        syncActions: [...this.backends.actions(entry)],
+        root: entry.localPath,
         modules: discovered.map((d) => ({
           type: d.manifest!.type, path: d.path, name: d.manifest!.name,
           description: d.manifest!.description, absPath: this.moduleRoot(entry.localPath, d.path),
@@ -438,21 +462,27 @@ export class ContainerService {
     return out;
   }
 
-  async sync(name?: string, message?: string): Promise<SyncResult[]> {
-    const reg = await loadRegistry(this.paths);
+  async sync(name?: string, message?: string, action?: string): Promise<SyncResult[]> {
+    if (action !== undefined && name === undefined) {
+      throw new OkhError(
+        "INVALID_ARGUMENT",
+        `An action ("${action}") requires a named container. Specify a container name.`,
+      );
+    }
+    const reg = await this.loadRegistryData();
     const entries = name ? reg.containers.filter((c) => c.name === name) : reg.containers;
     for (const e of entries) await this.migrateAndPersistSync(e.name, e.localPath);
-    return this.mutex.run(() => this.syncImpl(name, message));
+    return this.mutex.run(() => this.syncImpl(name, message, action));
   }
 
-  private async syncImpl(name: string | undefined, message: string | undefined): Promise<SyncResult[]> {
-    const reg = await loadRegistry(this.paths);
-    if (name) return [await this.syncOne(requireContainer(reg, name), message)];
+  private async syncImpl(name: string | undefined, message: string | undefined, action: string | undefined): Promise<SyncResult[]> {
+    const reg = await this.loadRegistryData();
+    if (name) return [await this.syncOne(requireContainer(reg, name), message, action)];
 
     const results: SyncResult[] = [];
     for (const entry of reg.containers) {
       try {
-        results.push(await this.syncOne(entry, message));
+        results.push(await this.syncOne(entry, message, undefined));
       } catch (err) {
         if (!isOkhError(err)) throw err;
         let validation: SyncResult["validation"];
@@ -463,9 +493,10 @@ export class ContainerService {
         }
         results.push({
           name: entry.name,
-          backend: entry.backend,
+          backend: entry.backend.type,
           validation,
-          action: "error",
+          mode: entry.sync.mode,
+          outcome: "error",
           error: err.message,
         });
       }
@@ -473,153 +504,72 @@ export class ContainerService {
     return results;
   }
 
-  private async syncOne(entry: ContainerEntry, message?: string): Promise<SyncResult> {
+  private async syncOne(entry: ContainerEntry, message?: string, action?: string): Promise<SyncResult> {
     const validation = await this.validate(entry.name);
-    if (entry.backend !== "git") {
-      return { name: entry.name, backend: entry.backend, validation, action: "validated" };
-    }
-    return entry.sync === "pr"
-      ? this.syncPr(entry, validation, message)
-      : this.syncAuto(entry, validation, message);
-  }
-
-  private async syncAuto(
-    entry: ContainerEntry,
-    validation: { ok: boolean; issues: string[] },
-    message?: string,
-  ): Promise<SyncResult> {
-    const root = entry.localPath;
-    await this.git.stageAll(root);
-    let committed = false;
-    if (await this.git.hasStagedChanges(root)) {
-      await this.git.commit(root, message ?? `okh: sync ${entry.name}`);
-      committed = true;
-    }
-    try {
-      await this.git.pull(root);
-    } catch (err) {
-      throw new OkhError(
-        "GIT_ERROR",
-        `sync pull failed for "${entry.name}": ${(err as Error).message}`,
-        "The branch may have diverged from its upstream; resolve it manually.",
-      );
-    }
-    const remote = await this.git.defaultRemote(root);
-    const branch = await this.git.currentBranch(root);
-    await this.git.push(root, remote, branch);
-    return {
-      name: entry.name,
-      backend: entry.backend,
+    const backend = this.backends.require(entry.backend.type);
+    const backendResult = await backend.sync({
+      entry,
       validation,
-      action: committed ? "committed-pushed" : "pulled",
-      committed,
-      pushed: true,
-    };
-  }
-
-  private async syncPr(
-    entry: ContainerEntry,
-    validation: { ok: boolean; issues: string[] },
-    message?: string,
-  ): Promise<SyncResult> {
-    const root = entry.localPath;
-    const base = await this.git.currentBranch(root);
-    if (base.startsWith(`okh/${entry.name}/sync-`)) {
-      throw new OkhError(
-        "GIT_ERROR",
-        `Container "${entry.name}" is on generated sync branch "${base}". Check out the intended base branch before syncing.`,
-      );
-    }
-    const dirty = await this.git.isDirty(root);
-    const unpushed = await this.git.hasCurrentBranchUnpushedCommits(root);
-    if (!dirty && !unpushed) {
-      return { name: entry.name, backend: entry.backend, validation, action: "up-to-date" };
-    }
-    const branch = `okh/${entry.name}/sync-${Date.now()}`;
-    let createdBranch = false;
-    let operationError: unknown;
-    let restoreError: unknown;
-    let checkoutError: unknown;
-    let result: SyncResult | undefined;
-    try {
-      await this.git.createBranch(root, branch);
-      createdBranch = true;
-      await this.git.stageAll(root);
-      let committed = false;
-      if (await this.git.hasStagedChanges(root)) {
-        await this.git.commit(root, message ?? `okh: sync ${entry.name}`);
-        committed = true;
-      }
-      const remote = await this.git.defaultRemote(root);
-      await this.git.push(root, remote, branch);
-      const prUrl = await this.gh.createPr({
-        cwd: root,
-        base,
-        title: message ?? `okh sync: ${entry.name}`,
-        body: "Automated OKH sync.",
-      });
-      result = { name: entry.name, backend: entry.backend, validation, action: "pr-opened", committed, pushed: true, prUrl };
-    } catch (err) {
-      operationError = err;
-    }
-    if (createdBranch) {
-      if (operationError) {
-        try {
-          await this.git.resetSoft(root, base);
-        } catch (err) {
-          restoreError = err;
-        }
-      }
-      try {
-        await this.git.checkout(root, base);
-      } catch (err) {
-        checkoutError = err;
-      }
-    }
-    if (operationError) {
-      throw restoreError || checkoutError
-        ? withPrCleanupFailure(operationError, restoreError, checkoutError, base)
-        : operationError;
-    }
-    if (checkoutError) throw result?.prUrl ? withOpenedPrCheckoutFailure(result.prUrl, checkoutError, base) : checkoutError;
-    return result!;
+      ...(message !== undefined ? { message } : {}),
+      ...(action !== undefined ? { action } : {}),
+    });
+    return { name: entry.name, backend: entry.backend.type, validation, ...backendResult };
   }
 
   addContainer(input: AddContainerInput): Promise<AddContainerOutcome> {
     return this.mutex.run(() => this.addContainerImpl(input));
   }
 
+  /** Normalize the sync input field to a SyncSelection. */
+  private normalizeSyncInput(sync: AddContainerInput["sync"]): SyncSelection {
+    if (sync === undefined) {
+      return { mode: "auto", config: {} };
+    }
+    return { mode: sync.mode, config: sync.config ?? {} };
+  }
+
   /** Resolve what `add` would do, with no side effects. Throws on doomed actions. */
   async planAddContainer(input: AddContainerInput): Promise<AddContainerPlan> {
     const isGit = looksLikeGitUrl(input.source);
     const name = validate(containerNameSchema, input.name ?? deriveName(input.source), "name");
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     if (findContainer(reg, name)) {
       throw new OkhError("ALREADY_EXISTS", `A container named "${name}" already exists.`);
     }
-    const sync: SyncMode = input.sync ?? "auto";
     const syncExplicit = input.sync !== undefined;
     if (isGit) {
       validate(repoUrlSchema, input.source, "source");
+      const backendConfig = this.backends.resolveBackendConfig("git", { origin: input.source });
+      const syncSelection = this.normalizeSyncInput(input.sync);
+      const resolvedSync = await this.backends.resolveSync("git", syncSelection, { containerName: name });
       return {
         kind: "container",
         actions: ["clone"],
         name,
-        backend: "git",
+        backend: { type: "git", config: backendConfig },
         source: input.source,
         target: containerCloneDir(this.paths, name),
-        sync,
+        sync: resolvedSync,
         syncExplicit,
       };
     }
-    const backend: Backend = input.backend ?? "local";
+    const backendType: BackendType = input.backend ?? "local";
+    const syncSelection = this.normalizeSyncInput(input.sync);
+    const backendConfig = this.backends.resolveBackendConfig(backendType, {});
+    const resolvedSync = await this.backends.resolveSync(backendType, syncSelection, { containerName: name });
     const target = resolve(input.source);
     const s = await stat(target).catch(() => null);
     if (s && !s.isDirectory()) {
       throw new OkhError("INVALID_ARGUMENT", `Path "${input.source}" exists but is not a directory.`);
     }
     const actions: ContainerAction[] = s ? [] : ["create-folder"];
-    return { kind: "container", actions, name, backend, source: input.source, target, sync, syncExplicit };
+    return {
+      kind: "container", actions, name,
+      backend: { type: backendType, config: backendConfig },
+      source: input.source, target,
+      sync: resolvedSync,
+      syncExplicit,
+    };
   }
 
   private async addContainerImpl(input: AddContainerInput): Promise<AddContainerOutcome> {
@@ -629,17 +579,15 @@ export class ContainerService {
   }
 
   private async applyAddContainer(plan: AddContainerPlan): Promise<ContainerEntry> {
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     if (findContainer(reg, plan.name)) {
       throw new OkhError("ALREADY_EXISTS", `A container named "${plan.name}" already exists.`);
     }
-    let origin: string | undefined;
-    if (plan.backend === "git") {
-      origin = plan.source;
+    if (plan.backend.type === "git") {
       await this.assertDirAvailable(plan.target);
       await mkdir(this.paths.containersDir, { recursive: true });
       try {
-        await this.git.clone(plan.source, plan.target);
+        await this.git.clone(plan.backend.config["origin"] as string, plan.target);
       } catch (err) {
         await rm(plan.target, { recursive: true, force: true });
         throw err;
@@ -647,17 +595,36 @@ export class ContainerService {
     } else {
       await mkdir(plan.target, { recursive: true });
     }
-    const migratedSync = await migrateLegacyContainerManifest(plan.target).catch(() => undefined);
-    const sync: SyncMode = plan.syncExplicit ? plan.sync : (migratedSync ?? plan.sync);
+    const legacyMode = await migrateLegacyContainerManifest(plan.target).catch(() => undefined);
+    let effectiveSync: SyncDescriptor;
+    if (plan.syncExplicit || legacyMode === undefined) {
+      effectiveSync = plan.sync;
+    } else if (plan.backend.type === "git" && legacyMode === "pr") {
+      // Legacy "pr" from cloned repo: resolve shared branch via adapter.
+      try {
+        effectiveSync = await this.backends.resolveSync(
+          "git",
+          { mode: "shared", config: {} },
+          { containerName: plan.name },
+        );
+      } catch {
+        effectiveSync = plan.sync;
+      }
+    } else {
+      effectiveSync = { mode: "auto", config: {} };
+    }
     const entry: ContainerEntry = {
       name: plan.name,
       backend: plan.backend,
-      ...(origin ? { origin } : {}),
       localPath: plan.target,
-      sync,
+      sync: effectiveSync,
       addedAt: new Date().toISOString(),
     };
     await saveRegistry(this.paths, withContainerAdded(reg, entry));
+    // Remove legacy manifest only after the registry save succeeded.
+    if (legacyMode !== undefined) {
+      await removeLegacyContainerManifest(plan.target).catch(() => undefined);
+    }
     return entry;
   }
 
@@ -667,7 +634,7 @@ export class ContainerService {
 
   async planAddModule(input: AddModuleInput): Promise<AddModulePlan> {
     validate(modulePathString, input.path, "module path");
-    const reg = await loadRegistry(this.paths);
+    const reg = await this.loadRegistryData();
     const container = requireContainer(reg, input.container);
     const root = container.localPath;
     const moduleRoot = this.moduleRoot(root, input.path);

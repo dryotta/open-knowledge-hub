@@ -26,9 +26,8 @@ Use this branch when the input includes an explicit action, commitment, reminder
 4. Normalize any explicit relative due date to `YYYY-MM-DD`.
 5. Infer urgency only when it is implied, and use only `lowest`, `low`, `normal`, `medium`, `high`, or `highest`.
 6. Prefer explicit labels. Otherwise reuse matching existing labels. Otherwise create short lowercase kebab-case labels. Fall back to `general`. Multiple category labels are allowed.
-7. Call `todos` with `operation: "create"`, `container`, `module`, `text`, `entrySummary`, `observation`, `labels`, and optional `due` / `priority`, and omit `apply`.
-8. Present the exact returned preview, surface `needsConfirmation`, and require confirmation before any write.
-9. After confirmation, repeat the identical mutation with `apply: true`. Preserve `entrySummary` and `observation` whenever factual context belongs in the same memory entry.
-10. After the confirmed local write, call `sync` for the affected container.
+7. Call `todos` ONCE with `operation: "create"`, `container`, `module`, `text`, `entrySummary`, `observation`, `labels`, and optional `due` / `priority`, and `apply: true`.
+8. Inspect and summarize the applied todo and memory entry.
+9. Call `sync` for the affected container immediately.
 
-Never add IDs, recurrence, or dependencies. Do not silently mutate anything before confirmation.
+Never add IDs, recurrence, or dependencies.

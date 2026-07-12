@@ -149,9 +149,24 @@ export class Git {
     }
   }
 
+  /** Returns the current HEAD commit SHA. */
+  async currentCommit(cwd: string): Promise<string> {
+    const out = await this.git(["rev-parse", "HEAD"], cwd);
+    return out.trim();
+  }
+
   /** Push `branch` to `remote`, setting upstream. */
   async push(cwd: string, remote: string, branch: string): Promise<void> {
     await this.git(["push", "--set-upstream", remote, branch], cwd);
+  }
+
+  /**
+   * Force-push `branch` to `remote` with lease protection, setting upstream.
+   * Required after rebasing an already-pushed branch so the push is rejected
+   * if the remote ref moved since our last fetch.
+   */
+  async pushForceWithLease(cwd: string, remote: string, branch: string): Promise<void> {
+    await this.git(["push", "--force-with-lease", "--set-upstream", remote, branch], cwd);
   }
 
   /** A short diffstat of `worktree` vs `ref` (default HEAD), for change summaries. */
@@ -166,5 +181,60 @@ export class Git {
       throw new OkhError("GIT_ERROR", "Repository has no configured remote.");
     }
     return remotes.includes("origin") ? "origin" : remotes[0]!;
+  }
+
+  /** True if `branch` is a syntactically valid git branch name. */
+  async isValidBranchName(branch: string): Promise<boolean> {
+    try {
+      await this.git(["check-ref-format", "--branch", branch]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** True if `branch` exists as a local branch in `cwd`. */
+  async localBranchExists(cwd: string, branch: string): Promise<boolean> {
+    try {
+      await this.git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** True if `branch` exists under `remote` in `cwd`. */
+  async remoteBranchExists(cwd: string, remote: string, branch: string): Promise<boolean> {
+    try {
+      await this.git(["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${branch}`], cwd);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Fetch `remote` and prune stale remote-tracking branches. */
+  async fetchRemote(cwd: string, remote: string): Promise<void> {
+    await this.git(["fetch", remote, "--prune"], cwd);
+  }
+
+  /** Create and checkout a new `branch` starting from `startPoint`. */
+  async createBranchFrom(cwd: string, branch: string, startPoint: string): Promise<void> {
+    await this.git(["checkout", "-b", branch, startPoint], cwd);
+  }
+
+  /** Create and checkout `branch` tracking `upstream`. */
+  async checkoutTracking(cwd: string, branch: string, upstream: string): Promise<void> {
+    await this.git(["checkout", "--track", "-b", branch, upstream], cwd);
+  }
+
+  /** Rebase the current branch onto `upstream`. */
+  async rebase(cwd: string, upstream: string): Promise<void> {
+    await this.git(["rebase", upstream], cwd);
+  }
+
+  /** Abort an in-progress rebase. */
+  async abortRebase(cwd: string): Promise<void> {
+    await this.git(["rebase", "--abort"], cwd);
   }
 }

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
@@ -17,7 +18,12 @@ import { dirname, join, resolve } from "node:path";
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
 const CONFIG = join(EVAL_ROOT, "promptfooconfig.yaml");
-const PROMPTFOO = resolve(REPO_ROOT, "node_modules", "promptfoo", "dist", "src", "entrypoint.js");
+// Resolve through Node.js module resolution so the path works whether promptfoo
+// lives in a local node_modules/ or in a parent directory (e.g. git worktrees).
+// _require.resolve("promptfoo") returns the CJS entry (dist/src/index.cjs);
+// entrypoint.js lives in the same directory.
+const _require = createRequire(import.meta.url);
+const PROMPTFOO = join(dirname(_require.resolve("promptfoo")), "entrypoint.js");
 
 function run(mode: "eval" | "validate"): Promise<number> {
   const args = ["--import", "tsx", PROMPTFOO, mode, "-c", CONFIG];

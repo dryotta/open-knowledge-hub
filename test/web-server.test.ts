@@ -158,6 +158,9 @@ describe("hosted web UI", () => {
     expect(containerBody.containers).toEqual([
       expect.objectContaining({
         name: "hub",
+        backend: "local",
+        sync: { mode: "auto", config: {} },
+        syncActions: [],
         modules: expect.arrayContaining([
           expect.objectContaining({ path: "docs", type: "project", name: "Docs" }),
           expect.objectContaining({ path: "memory", type: "memory", name: "Memory" }),

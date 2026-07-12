@@ -11,7 +11,7 @@ async function setup() {
   const home = await mkdtemp(join(tmpdir(), "okh-home-"));
   const root = await mkdtemp(join(tmpdir(), "okh-c-"));
   const paths = resolvePaths({ OKH_HOME: home });
-  await saveRegistry(paths, { version: 1, containers: [{ name: "h", backend: "local", localPath: root, sync: "auto", addedAt: new Date().toISOString() }] });
+  await saveRegistry(paths, { version: 2, containers: [{ name: "h", backend: { type: "local", config: {} }, localPath: root, sync: { mode: "auto", config: {} }, addedAt: new Date().toISOString() }] });
   return { home, root, paths, svc: new ContainerService(paths) };
 }
 
@@ -45,12 +45,8 @@ describe("effective skills + resolveSkill", () => {
       /operation:\s*"create"/i,
       /entrySummary/i,
       /observation/i,
-      /omit `apply`/i,
-      /exact returned preview/i,
-      /needsConfirmation/i,
       /labels/i,
       /general/i,
-      /confirm/i,
       /apply:\s*true/i,
       /sync/i,
       /\bIDs?\b/i,
@@ -58,6 +54,11 @@ describe("effective skills + resolveSkill", () => {
       /dependenc/i,
     ]);
     expect(s.body).not.toContain("update_todo");
+    // No preview/confirmation flow — apply directly then sync
+    expect(s.body).not.toMatch(/omit `apply`/i);
+    expect(s.body).not.toMatch(/needsConfirmation/i);
+    expect(s.body).not.toMatch(/exact returned preview/i);
+    expect(s.body).not.toMatch(/require.*confirmation|await.*confirm|wait.*confirm/i);
     await expect(svc.resolveSkill("h", "mem", "nope")).rejects.toThrow(/todo/);
   });
 
@@ -75,10 +76,6 @@ describe("effective skills + resolveSkill", () => {
       /labels/i,
       /due/i,
       /priority/i,
-      /omit `apply`/i,
-      /exact returned preview/i,
-      /needsConfirmation/i,
-      /confirm/i,
       /apply:\s*true/i,
       /sync/i,
       /ref/i,
@@ -89,6 +86,11 @@ describe("effective skills + resolveSkill", () => {
     ]);
     expect(s.body).not.toContain("update_todo");
     expect(s.body).not.toMatch(/operation:\s*"patch"/i);
+    // No preview/confirmation flow — apply directly then sync
+    expect(s.body).not.toMatch(/omit `apply`/i);
+    expect(s.body).not.toMatch(/needsConfirmation/i);
+    expect(s.body).not.toMatch(/exact returned preview/i);
+    expect(s.body).not.toMatch(/require.*confirmation|await.*confirm|wait.*confirm/i);
   });
 
   it("knowledge type exposes learn + initialize", async () => {

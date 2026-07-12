@@ -39,7 +39,7 @@ description: Project notes   # optional
 # config: {}                 # optional, type-specific
 ```
 
-The container's `name` and `sync` mode (`auto` | `pr`) are set in the **registry
+The container's `name` and `sync` mode (`auto` | `shared`) are set in the **registry
 entry** at `add_container`-time, not in a per-container file.
 
 ### Type skills
@@ -63,10 +63,10 @@ are visible but read-only.
 
 Supporting hosts render the unified todo list and filters as an MCP App. Every
 `todos` result also includes the live browser URL for the hosted todo frontend.
-`todos { operation: "create" | "update" }` previews by default and only writes when
-repeated with `apply: true`. Agent-driven mutations present the preview, require
-confirmation, then apply and `sync`; UI actions may apply directly. Changes made
-through either UI or the tool remain local until an explicit `sync`.
+`todos { operation: "create" | "update" }` writes when `apply: true` is supplied;
+omit it for an explicit preview. Agent-driven mutations pass `apply: true` directly
+and sync immediately. MCP App actions may apply directly and remain local until an
+explicit `sync`.
 
 ## Web UI
 
@@ -94,7 +94,7 @@ These read state or change containers directly.
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
 | `add_container` | `source`, `name?`, `sync?`, `backend?`, `create?` | Register a container. Returns a plan unless `create:true`. |
 | `add_module` | `container?`, `path?`, `type?`, `name?`, `description?`, `config?`, `create?` | Returns a step-by-step workflow to add/create/initialize a module; applies on `create:true` (identity args required then). |
-| `sync` | `container?`, `message?` | Validate + synchronize (commit+push, or PR). |
+| `sync` | `container?`, `message?`, `action?` | Validate + synchronize. `auto`-mode git: commit+push to origin. `shared`-mode git: commit+push shared branch rebased onto origin/main; `action: "publish-pr"` (shared-mode only) opens or returns the existing PR to main. |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 | `todos` | `operation?`, `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?`, `text?`, `entrySummary?`, `observation?`, `ref?`, `completed?`, `due?`, `priority?`, `apply?` | Unified todo API: `list` reads across memory modules, `create` previews or adds one todo, and `update` previews or mutates one todo by opaque `ref`. Writes stay local until `sync`. |
 
@@ -134,8 +134,10 @@ browser frontend.
 
 - **Node.js ≥ 18** (ships with `npx`).
 - **git** — clone/commit/branch/push.
-- **[GitHub CLI](https://cli.github.com/) (`gh`)**, authenticated — only for `pr`-mode
-  containers (opening pull requests). The server stores no credentials.
+- **[GitHub CLI](https://cli.github.com/) (`gh`)**, authenticated — required for git
+  containers using `shared` sync (to resolve the default branch `user/<gh-login>/hub`)
+  and to open pull requests via `sync { action: "publish-pr" }`. The server stores no
+  credentials.
 
 ## Installation
 
@@ -160,12 +162,12 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 - `add_container { source: "https://github.com/me/my-notes.git", name: "my-notes" }` → clone + register a container.
 - `add_module` → returns a step-by-step workflow; after proposing the module, `add_module { container: "my-notes", path: "kb", type: "knowledge", name: "kb", create: true }` adds it.
 - `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
-  folds knowledge in, then `sync { container: "my-notes" }` commits+pushes (or opens a PR).
+  folds knowledge in, then `sync { container: "my-notes" }` commits+pushes.
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
 - `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback).
 - `todos {}` → list todos and return the live hosted `/todos` URL.
-- `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"] }` → preview the exact todo line; after confirmation, repeat with `apply: true`, then `sync`.
-- `todos { operation: "update", ref: "<opaque-ref>", completed: true }` → preview a completion or reopen change; after confirmation, repeat with `apply: true`. MCP App checkbox clicks may apply this directly, but the change still remains local until `sync`.
+- `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"], apply: true }` → write the todo immediately and sync.
+- `todos { operation: "update", ref: "<opaque-ref>", completed: true, apply: true }` → apply a completion immediately and sync. Omit `apply: true` for an explicit preview. MCP App checkbox clicks apply directly; changes remain local until `sync`.
 
 ## Wake phrase
 

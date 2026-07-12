@@ -1,21 +1,16 @@
-# todo flow — complete one existing task after explicit confirmation.
+# todo flow — complete one existing task immediately.
 - config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. In container "kb-hub", module "mem",
-          preview the exact change needed to mark "Buy milk" complete, wait for my
-          confirmation, then apply only that confirmed todo change.
-        turns:
-          - id: confirm
-            after: start
-            when: '\b(confirm|confirmation|proceed|approve)\b|go ahead|shall i|proposed|proposal|exact proposed|ready to (complete|update|change|write)|before i (complete|update|change|write)'
-            send: "Yes, I explicitly confirm that exact change. Mark only Buy milk complete."
+          mark "Buy milk" as complete. Apply the change and sync immediately — do not
+          ask for confirmation first.
         terminal:
-          after: confirm
+          after: start
           requiredTools: [todos, sync]
   tests:
-    - description: Todo - complete - confirms and completes only Buy milk
+    - description: Todo - complete - directly completes only Buy milk and syncs
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
@@ -32,8 +27,8 @@
           config:
             artifacts: { module: mem }
             criteria:
-              - id: confirmed-preview-apply
-                text: The agent previews the exact todo completion on one turn, waits for confirmation, then applies that same mutation and syncs it.
-                check: { kind: todo-preview-apply, operation: update }
+              - id: direct-apply-sync
+                text: The agent applied the todo completion directly with apply:true in a single todos call and immediately called sync without requesting confirmation.
+                check: { kind: todo-apply-sync, operation: update }
               - id: completed-target-only
                 text: Only the Buy milk todo was completed; unrelated memory content and the Review launch notes todo remain intact and unchanged.

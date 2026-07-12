@@ -1,17 +1,23 @@
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { OkhPaths } from "../config.js";
 import { OkhError } from "../errors.js";
 import {
   emptyRegistry,
   registrySchema,
+  legacyRegistrySchema,
   type Registry,
   type ContainerEntry,
 } from "./schema.js";
+import { migrateRegistryV1, type RegistryMigrationOptions } from "./migrate.js";
 
-/** Read the registry. Missing file => empty; present-but-invalid => hard error. */
-export async function loadRegistry(paths: OkhPaths): Promise<Registry> {
+/** Read the registry. Missing file => empty; v1 file => migrate+save; invalid => hard error. */
+export async function loadRegistry(
+  paths: OkhPaths,
+  options: RegistryMigrationOptions = {},
+): Promise<Registry> {
   let raw: string;
   try {
     raw = await readFile(paths.registryFile, "utf8");
@@ -29,15 +35,46 @@ export async function loadRegistry(paths: OkhPaths): Promise<Registry> {
       "Fix or delete the file to reset the registry.",
     );
   }
-  const result = registrySchema.safeParse(parsed);
-  if (!result.success) {
-    throw new OkhError(
-      "INVALID_MANIFEST",
-      `Registry at ${paths.registryFile} does not match the expected schema: ${result.error.message}`,
-      "Fix or delete the file to reset the registry.",
-    );
+  const current = registrySchema.safeParse(parsed);
+  if (current.success) return current.data;
+
+  const legacy = legacyRegistrySchema.safeParse(parsed);
+  if (legacy.success) {
+    const migrated = await migrateRegistryV1(legacy.data, options);
+    await saveRegistry(paths, migrated);
+    return migrated;
   }
-  return result.data;
+
+  throw new OkhError(
+    "INVALID_MANIFEST",
+    `Registry at ${paths.registryFile} does not match the expected schema: ${current.error.message}`,
+    "Fix or delete the file to reset the registry.",
+  );
+}
+
+/**
+ * Returns true iff `rawContentOrReadError` is a string that contains a valid
+ * registry deeply equal to `intended`.  Returns false if it is an Error (read
+ * failed), unparseable JSON, fails schema validation, or differs from
+ * `intended`.  Used to decide whether an EPERM on rename represents a harmless
+ * concurrent write of the same data.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function epermDestinationMatchesIntended(
+  intended: Registry,
+  rawContentOrReadError: string | Error,
+): boolean {
+  if (rawContentOrReadError instanceof Error) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContentOrReadError);
+  } catch {
+    return false;
+  }
+  const result = registrySchema.safeParse(parsed);
+  if (!result.success) return false;
+  return isDeepStrictEqual(intended, result.data);
 }
 
 /** Persist atomically (temp file + rename). Validates before writing. */
@@ -46,7 +83,28 @@ export async function saveRegistry(paths: OkhPaths, registry: Registry): Promise
   await mkdir(dirname(paths.registryFile), { recursive: true });
   const tmp = `${paths.registryFile}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
   await writeFile(tmp, `${JSON.stringify(validated, null, 2)}\n`, "utf8");
-  await rename(tmp, paths.registryFile);
+  try {
+    await rename(tmp, paths.registryFile);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EPERM") {
+      // On Windows a concurrent save may have already committed the same data.
+      // Read back the destination and verify it is deeply equal to what we
+      // intended to write.  Accept only if identical; propagate the original
+      // error for absent, invalid, or different destinations.
+      let rawOrError: string | Error;
+      try {
+        rawOrError = await readFile(paths.registryFile, "utf8");
+      } catch (readErr) {
+        rawOrError = readErr as Error;
+      }
+      const matched = epermDestinationMatchesIntended(validated, rawOrError);
+      // Best-effort cleanup in both paths; never swallow the original error.
+      await unlink(tmp).catch(() => undefined);
+      if (matched) return;
+      throw err;
+    }
+    throw err;
+  }
 }
 
 export function findContainer(reg: Registry, name: string): ContainerEntry | undefined {

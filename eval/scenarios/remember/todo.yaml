@@ -1,22 +1,17 @@
-# remember flow — create a confirmed todo-bearing memory entry.
+# remember flow — create a todo-bearing memory entry and sync immediately.
 - config:
     - vars:
         env: local-and-git
         prompt: |
           Use the open-knowledge-hub MCP tools. In container "kb-hub", module "mem",
           remember that I need to buy printer ink by 2026-07-15. It is high
-          priority and labeled shopping. Preview the exact todo you would create,
-          wait for my confirmation, then apply only that confirmed todo and sync it.
-        turns:
-          - id: confirm
-            after: start
-            when: '\b(confirm|confirmation|proceed|approve)\b|go ahead|shall i|proposed|proposal|exact proposed|ready to (create|add|save|write)|before i (write|create|add)'
-            send: "Yes, I explicitly confirm that exact proposed todo. Go ahead and write it."
+          priority and labeled shopping. Apply the todo and sync immediately — do not
+          ask for confirmation first.
         terminal:
-          after: confirm
+          after: start
           requiredTools: [run, todos, sync]
   tests:
-    - description: Remember - todo - creates confirmed prioritized shopping task
+    - description: Remember - todo - directly applies prioritized shopping task and syncs
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
@@ -38,8 +33,8 @@
               - id: used-remember-skill
                 text: The transcript shows the agent first used the remember skill to extract the observation and entry-summary context for the new memory-backed todo.
                 check: { kind: tool, name: run }
-              - id: confirmed-preview-apply
-                text: The agent previews the exact todo creation on one turn, waits for confirmation, then applies that same mutation and syncs it.
-                check: { kind: todo-preview-apply, operation: create }
-              - id: created-confirmed-todo
-                text: The on-disk memory contains the confirmed open printer-ink todo with shopping label, 2026-07-15 due date, and high priority.
+              - id: direct-apply-sync
+                text: The agent applied the todo creation directly with apply:true in a single todos call and immediately called sync without requesting confirmation.
+                check: { kind: todo-apply-sync, operation: create }
+              - id: created-todo
+                text: The on-disk memory contains the open printer-ink todo with shopping label, 2026-07-15 due date, and high priority.

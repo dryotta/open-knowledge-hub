@@ -1,4 +1,4 @@
-import type { Backend, SyncMode } from "../registry/schema.js";
+import type { BackendType, SyncDescriptor } from "../registry/schema.js";
 
 export interface WebModuleSummary {
   path: string;
@@ -8,8 +8,9 @@ export interface WebModuleSummary {
 
 export interface WebContainerSummary {
   name: string;
-  backend: Backend;
-  sync?: SyncMode;
+  backend: BackendType;
+  sync?: SyncDescriptor;
+  syncActions?: string[];
   moduleCount: number;
   modules: WebModuleSummary[];
   manifestValid: boolean;

@@ -92,9 +92,23 @@ describe("evaluateCheck", () => {
     expect((await evaluateCheck(check, { transcript: reversed })).pass).toBe(false);
   });
 
-  it("todo-preview-apply passes for a valid preview, apply, and sync sequence", async () => {
+  it("todo-apply-sync passes for a direct apply and sync sequence", async () => {
     const result = await evaluateCheck(
-      { kind: "todo-preview-apply", operation: "update" },
+      { kind: "todo-apply-sync", operation: "update" },
+      {
+        transcript: "",
+        toolEvents: [
+          { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
+          { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
+        ],
+      } as any,
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  it("todo-apply-sync passes when apply:true is preceded by a preview call (preview is optional)", async () => {
+    const result = await evaluateCheck(
+      { kind: "todo-apply-sync", operation: "update" },
       {
         transcript: "",
         toolEvents: [
@@ -109,32 +123,20 @@ describe("evaluateCheck", () => {
 
   it.each([
     [
-      "apply:true occurs on turn 1",
+      "no todos events",
+      [],
+    ],
+    [
+      "only non-apply mutation (no apply:true)",
       [
         { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
         { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
       ],
     ],
     [
-      "preview missing",
+      "multiple apply:true mutations (duplicate)",
       [
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
-      ],
-    ],
-    [
-      "mutation fields differ beyond apply",
-      [
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: false, apply: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
-      ],
-    ],
-    [
-      "preview failed",
-      [
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: false },
+        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
         { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
         { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
       ],
@@ -142,7 +144,6 @@ describe("evaluateCheck", () => {
     [
       "apply failed",
       [
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
         { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: false },
         { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
       ],
@@ -150,38 +151,26 @@ describe("evaluateCheck", () => {
     [
       "sync missing",
       [
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
+        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
       ],
     ],
     [
       "sync failed",
       [
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: false },
-      ],
-    ],
-    [
-      "sync precedes apply",
-      [
-        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
-      ],
-    ],
-    [
-      "early applied matching mutation occurs before the preview/apply pair",
-      [
         { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
-        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true }, completed: true, success: true },
-        { turn: 3, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
-        { turn: 3, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
+        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: false },
       ],
     ],
-  ])("todo-preview-apply fails when %s", async (_case, toolEvents) => {
+    [
+      "sync precedes apply (by index)",
+      [
+        { turn: 1, callId: "auto", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
+        { turn: 2, callId: "auto", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", ref: "r1", completed: true, apply: true }, completed: true, success: true },
+      ],
+    ],
+  ])("todo-apply-sync fails when %s", async (_case, toolEvents) => {
     const result = await evaluateCheck(
-      { kind: "todo-preview-apply", operation: "update" },
+      { kind: "todo-apply-sync", operation: "update" },
       { transcript: "", toolEvents } as any,
     );
     expect(result.pass).toBe(false);

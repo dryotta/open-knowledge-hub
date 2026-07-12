@@ -39,7 +39,7 @@ describe("resolveTargets", () => {
 
 describe("prompt builders", () => {
   const targets: ResolvedContainer[] = [
-    { name: "hub", backend: "local", sync: "auto", root: "/c/hub", modules: [
+    { name: "hub", backend: "local", sync: { mode: "auto", config: {} }, syncActions: [], root: "/c/hub", modules: [
       { type: "knowledge", path: "kb", name: "kb", description: "", absPath: "/c/hub/kb" },
       { type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" },
     ] },
@@ -64,6 +64,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/Stage 1/);
     expect(text).toContain("config { set: { wakePhrase");
     expect(text).not.toContain("onboard { wakePhrase");
+    // Confirmation is only for setup (folders/containers/modules), not ordinary sync
+    expect(text).not.toMatch(/never.*sync.*without.*explicit confirmation/i);
   });
   it("buildInstructions routes deterministic todo work through todos while preserving remember and todo skill distinctions", async () => {
     const text = await buildInstructions({ wakePhrase: "sam" });
@@ -89,6 +91,10 @@ describe("prompt builders", () => {
     expect(text).toContain("mem");
     expect(text).toContain("Write policy");
     expect(text).toContain("Observed X");
+    // Write policy must apply immediately without asking for confirmation
+    expect(text).not.toMatch(/get explicit confirmation|Never persist.*go.?ahead|asks before sync/i);
+    expect(text).toMatch(/without confirmation/i);
+    expect(text).toMatch(/sync.*immediately|immediately.*sync|call.*sync.*immediately/i);
   });
   it("buildRun without a target renders a module-less shared skill", async () => {
     const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
@@ -98,6 +104,22 @@ describe("prompt builders", () => {
     expect(text).toContain("Draft the auth pack");
     expect(text).not.toContain("**Module:**");
   });
+  it("buildRun with shared sync renders branch not [object Object]", async () => {
+    const sharedTarget: ResolvedContainer = {
+      name: "hub", backend: "git",
+      sync: { mode: "shared", config: { branch: "user/alice/hub" } },
+      syncActions: ["publish-pr"], root: "/c/hub",
+      modules: [{ type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" }],
+    };
+    const mod = sharedTarget.modules[0]!;
+    const skill: Skill = { name: "remember", description: "Record", body: "Append.", source: "vendored" };
+    const text = await buildRun(skill, undefined, sharedTarget, mod);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).not.toContain("[object Object]");
+    // Shared sync must mention publish-pr instead of auto-publishing
+    expect(text).toContain("publish-pr");
+  });
   it("buildAddModule injects containers + module types and the workflow discipline", async () => {
     const text = await buildAddModule(targets, ["knowledge", "skills", "memory"]);
     expect(text).toContain("/c/hub/kb");            // injected container/module path
@@ -105,5 +127,30 @@ describe("prompt builders", () => {
     expect(text).toContain('<discipline name="add_module">');
     expect(text).toContain("create: true");          // step 3 names the apply call
     expect(text).toMatch(/initialize/);              // step 4 names initialize
+  });
+});
+
+describe("renderTargets sync formatting", () => {
+  it("formats auto sync without showing [object Object]", async () => {
+    const targets: ResolvedContainer[] = [
+      { name: "hub", backend: "local", sync: { mode: "auto", config: {} }, syncActions: [], root: "/c/hub", modules: [] },
+    ];
+    const text = await buildAsk(targets, "test");
+    expect(text).toContain("auto");
+    expect(text).not.toContain("[object Object]");
+  });
+
+  it("formats shared sync showing the branch name", async () => {
+    const targets: ResolvedContainer[] = [
+      {
+        name: "hub", backend: "git",
+        sync: { mode: "shared", config: { branch: "user/alice/hub" } },
+        syncActions: ["publish-pr"], root: "/c/hub", modules: [],
+      },
+    ];
+    const text = await buildAsk(targets, "test");
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).not.toContain("[object Object]");
   });
 });

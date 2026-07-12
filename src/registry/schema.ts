@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** Registry schema version. Bump + migrate on breaking on-disk changes. */
-export const REGISTRY_VERSION = 1;
+export const REGISTRY_VERSION = 2;
 
 /** A container name: lowercase alphanumerics and single dashes, 1-64 chars. */
 export const containerNameSchema = z
@@ -26,32 +26,38 @@ export const repoUrlSchema = z
     "refusing a git remote-helper URL (e.g. 'ext::'); use https://, ssh://, git@host:path or file://",
   );
 
-export const backendSchema = z.enum(["git", "local", "onedrive"]);
-export type Backend = z.infer<typeof backendSchema>;
+export const backendTypeSchema = z.enum(["git", "local", "onedrive"]);
+export type BackendType = z.infer<typeof backendTypeSchema>;
 
-export const syncModeSchema = z.enum(["auto", "pr"]);
+export const syncModeSchema = z.enum(["auto", "shared"]);
 export type SyncMode = z.infer<typeof syncModeSchema>;
 
+const configSchema = z.record(z.string(), z.unknown());
+
+export const backendDescriptorSchema = z
+  .object({ type: backendTypeSchema, config: configSchema.default({}) })
+  .strict();
+export type BackendDescriptor = z.infer<typeof backendDescriptorSchema>;
+
+export const syncDescriptorSchema = z
+  .object({ mode: syncModeSchema.default("auto"), config: configSchema.default({}) })
+  .strict();
+export type SyncDescriptor = z.infer<typeof syncDescriptorSchema>;
+
 /**
- * A registered container. `origin` is required for git backends (the clone
- * source) and absent otherwise. `localPath` is the absolute path to the
- * container root on disk (the managed clone dir for git, the in-place folder
- * for local/onedrive).
+ * A registered container (v2). `backend.config.origin` holds the clone URL
+ * for git backends. `localPath` is the absolute path to the container root on
+ * disk.
  */
 export const containerEntrySchema = z
   .object({
     name: containerNameSchema,
-    backend: backendSchema,
-    origin: repoUrlSchema.optional(),
+    backend: backendDescriptorSchema,
     localPath: z.string().min(1),
-    sync: syncModeSchema.default("auto"),
+    sync: syncDescriptorSchema.default({ mode: "auto", config: {} }),
     addedAt: z.string().datetime(),
   })
-  .strict()
-  .refine((e) => e.backend !== "git" || !!e.origin, {
-    message: "git containers must record an origin",
-    path: ["origin"],
-  });
+  .strict();
 export type ContainerEntry = z.infer<typeof containerEntrySchema>;
 
 export const registrySchema = z
@@ -61,6 +67,25 @@ export const registrySchema = z
   })
   .strict();
 export type Registry = z.infer<typeof registrySchema>;
+
+/** Strict v1 schema used only for detecting and migrating legacy registry files. */
+export const legacyRegistrySchema = z
+  .object({
+    version: z.literal(1),
+    containers: z.array(
+      z
+        .object({
+          name: containerNameSchema,
+          backend: backendTypeSchema,
+          origin: repoUrlSchema.optional(),
+          localPath: z.string().min(1),
+          sync: z.enum(["auto", "pr"]).default("auto"),
+          addedAt: z.string().datetime(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 
 export function emptyRegistry(): Registry {
   return { version: REGISTRY_VERSION, containers: [] };

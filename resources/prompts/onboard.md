@@ -70,6 +70,6 @@ phrase (shown here as `<wake>`):
 Point them at USAGE.md for the full list. Finally, ask them to restart their agent
 (MCP client) so the new wake phrase and any config changes load properly.
 
-Never create folders, initialize manifests, or sync without explicit confirmation.
+Never create folders, initialize manifests, or configure containers without explicit confirmation. Ordinary content writes and todo changes are applied and synced immediately without another confirmation step.
 
 </discipline>

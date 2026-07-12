@@ -401,14 +401,13 @@ happened before you exit; the harness cleans the temp Root automatically.
 Then run `copilot` anywhere and use `ask` / `context` / `learn` / `remember` / `reflect`
 plus `inspect` / `add` / `sync` against your own containers (`/mcp` confirms it loaded).
 
-### PR-mode `sync` (manual only)
+### Shared-mode `sync` and `publish-pr` (manual only)
 
-Automated e2e can't open real pull requests. To test `pr`-mode by hand:
+Automated e2e can't open real pull requests. To test `shared`-mode by hand:
 
-1. Create/register a `pr`-mode git container against a repo you can push to.
-2. `hub, learn this: <fact>` then confirm; `hub, open a PR with my changes.`
-3. Verify `sync` created a branch `okh/<name>/sync-*`, pushed it, opened a PR via `gh`, and
-   returned you to the base branch.
+1. Create/register a `shared`-mode git container against a repo you can push to.
+2. `hub, learn this: <fact>` — the agent edits files and calls `sync`, committing and pushing to the shared branch (e.g. `user/<login>/hub`).
+3. `hub, publish my changes as a PR.` → `sync { action: "publish-pr" }` opens or returns the existing PR from the shared branch to main via `gh`.
 
 ---
 

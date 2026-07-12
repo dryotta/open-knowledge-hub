@@ -98,7 +98,7 @@ describe("addContainer git + existing-hub", () => {
     const { service, paths } = await setup();
     const out = await service.addContainer({ source: origin, name: "gh", create: true });
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.backend).toBe("git");
+    if (out.kind === "applied") expect(out.entry.backend.type).toBe("git");
     expect((await loadRegistry(paths)).containers[0]!.name).toBe("gh");
   });
 
@@ -118,23 +118,23 @@ describe("addContainer git + existing-hub", () => {
     await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-gated\nsync: auto\nmodules: []\n", "utf8");
     const { service } = await setup();
 
-    const out = await service.addContainer({ source: dir, name: "sync-gated", sync: "pr" });
+    const out = await service.addContainer({ source: dir, name: "sync-gated" });
 
     expect(out.kind).toBe("plan");
     if (out.kind === "plan") expect(out.plan.actions).toEqual([]);
   });
 
-  it("applies an explicit sync override via the registry entry with create:true", async () => {
+  it("registers existing folder with explicit auto sync in one call with create:true", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     await mkdir(join(dir, ".okh"), { recursive: true });
     await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-applied\nsync: auto\nmodules: []\n", "utf8");
     const { service, paths } = await setup();
 
-    const out = await service.addContainer({ source: dir, name: "sync-applied", sync: "pr", create: true });
+    const out = await service.addContainer({ source: dir, name: "sync-applied", sync: { mode: "auto" }, create: true });
 
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.sync).toBe("pr");
-    expect((await loadRegistry(paths)).containers[0]!.sync).toBe("pr");
+    if (out.kind === "applied") expect(out.entry.sync.mode).toBe("auto");
+    expect((await loadRegistry(paths)).containers[0]!.sync.mode).toBe("auto");
   });
 
   it("registers an existing folder with migrated sync in one call", async () => {
@@ -146,6 +146,6 @@ describe("addContainer git + existing-hub", () => {
     const out = await service.addContainer({ source: dir, name: "sync-default", create: true });
 
     expect(out.kind).toBe("applied");
-    if (out.kind === "applied") expect(out.entry.sync).toBe("auto");
+    if (out.kind === "applied") expect(out.entry.sync.mode).toBe("auto");
   });
 });

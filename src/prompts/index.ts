@@ -2,6 +2,7 @@ import type { ResolvedContainer, ResolvedModule } from "../container/service.js"
 import { skillResourcePaths } from "../modules/shared.js";
 import type { Skill } from "../modules/skills.js";
 import { renderTemplate } from "./templates.js";
+import { formatSyncDescriptor } from "../util/syncFormat.js";
 
 const NONE = "(none provided — clarify with the user)";
 
@@ -10,7 +11,7 @@ function renderTargets(targets: ResolvedContainer[]): string {
   if (targets.length === 0) return "_No containers are registered. Use the `add_container` tool first._";
   return targets
     .map((c) => {
-      const header = `- **${c.name}** (${c.backend}, sync: ${c.sync}) — \`${c.root}\``;
+      const header = `- **${c.name}** (${c.backend}, sync: ${formatSyncDescriptor(c.sync)}) — \`${c.root}\``;
       const mods = c.modules.length
         ? c.modules.map((m) => `    - ${m.type}: \`${m.path}\` → \`${m.absPath}\``).join("\n")
         : "    - _(no modules)_";
@@ -57,7 +58,7 @@ export async function buildRun(
   const targetBlock =
     target && module
       ? `**Module:** ${module.type} · ${module.name} (\`${module.path}\`) → \`${module.absPath}\`\n` +
-        `**Container:** ${target.name} (${target.backend}, sync: ${String(target.sync)}) — \`${target.root}\`\n`
+        `**Container:** ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n`
       : "";
   return renderTemplate("run", {
     vars: {

@@ -9,7 +9,14 @@ import { loadModuleManifest, moduleManifestExists } from "../src/modules/manifes
 import { makePaths, makeTempDir, makeOrigin, testRun } from "./helpers.js";
 
 class FakeGh {
+  loginResult: string = "testuser";
+  loginThrows: Error | undefined;
   prCalls: unknown[] = [];
+  async currentLogin(): Promise<string> {
+    if (this.loginThrows) throw this.loginThrows;
+    return this.loginResult;
+  }
+  async findOpenPr(): Promise<string | undefined> { return undefined; }
   async createRepo(): Promise<string> { return "https://github.com/test/x"; }
   async createPr(opts: unknown): Promise<string> { this.prCalls.push(opts); return "https://github.com/test/x/pull/1"; }
 }
@@ -39,10 +46,10 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: origin, name: "my-hub", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.backend).toBe("git");
-    expect(entry.origin).toBe(origin);
+    expect(entry.backend.type).toBe("git");
+    expect(entry.backend.config["origin"]).toBe(origin);
     expect(entry.localPath).toBe(join(paths.containersDir, "my-hub"));
-    expect(entry.sync).toBe("auto");
+    expect(entry.sync.mode).toBe("auto");
   });
 
   it("registers a local folder in place", async () => {
@@ -51,10 +58,10 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: dir, name: "notes", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.backend).toBe("local");
-    expect(entry.origin).toBeUndefined();
+    expect(entry.backend.type).toBe("local");
+    expect(entry.backend.config["origin"]).toBeUndefined();
     expect(entry.localPath).toBe(dir);
-    expect(entry.sync).toBe("auto");
+    expect(entry.sync.mode).toBe("auto");
   });
 
   it("labels an onedrive backend when requested", async () => {
@@ -63,7 +70,7 @@ describe("addContainer", () => {
     const out = await service.addContainer({ source: dir, name: "cloud", backend: "onedrive", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
-    expect(entry.backend).toBe("onedrive");
+    expect(entry.backend.type).toBe("onedrive");
   });
 
   it("derives a name from the source when omitted", async () => {
@@ -73,15 +80,6 @@ describe("addContainer", () => {
     if (out.kind !== "applied") throw new Error("expected applied");
     const entry = out.entry;
     expect(entry.name).toMatch(/^[a-z0-9-]+$/);
-  });
-
-  it("honours an explicit sync mode in the registry entry", async () => {
-    const dir = await makeTempDir(); cleanups.push(dir);
-    const { service } = await setup();
-    const out = await service.addContainer({ source: dir, name: "team", sync: "pr", create: true });
-    if (out.kind !== "applied") throw new Error("expected applied");
-    const entry = out.entry;
-    expect(entry.sync).toBe("pr");
   });
 
   it("rejects a duplicate container name", async () => {
@@ -168,5 +166,86 @@ describe("moduleRoot", () => {
     const service = new TestService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
 
     expect(() => service.exposeModuleRoot("C:\\container", "D:\\escape")).toThrow(OkhError);
+  });
+});
+
+describe("addContainer sync descriptors", () => {
+  it("resolves auto sync descriptor for git backend", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service } = await setup();
+    const out = await service.addContainer({ source: origin, name: "hub", create: true });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    expect(out.entry.sync.mode).toBe("auto");
+    expect(out.entry.sync.config).toEqual({});
+  });
+
+  it("resolves auto sync descriptor for local backend", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    const out = await service.addContainer({ source: dir, name: "notes", create: true });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    expect(out.entry.sync.mode).toBe("auto");
+    expect(out.entry.sync.config).toEqual({});
+  });
+
+  it("resolves shared sync with explicit branch for git backend", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service } = await setup();
+    const out = await service.addContainer({
+      source: origin, name: "team",
+      sync: { mode: "shared", config: { branch: "my/team/branch" } },
+      create: true,
+    });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    expect(out.entry.sync.mode).toBe("shared");
+    expect(out.entry.sync.config["branch"]).toBe("my/team/branch");
+  });
+
+  it("resolves shared sync using login-derived branch when no branch given", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service, gh } = await setup();
+    gh.loginResult = "alice";
+    const out = await service.addContainer({
+      source: origin, name: "team",
+      sync: { mode: "shared", config: {} },
+      create: true,
+    });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    expect(out.entry.sync.mode).toBe("shared");
+    expect(out.entry.sync.config["branch"]).toBe("user/alice/hub");
+  });
+
+  it("resolves shared sync with login-derived branch when config has no branch (structured input)", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service, gh } = await setup();
+    gh.loginResult = "testuser";
+    const out = await service.addContainer({ source: origin, name: "team-git", sync: { mode: "shared", config: {} }, create: true });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    expect(out.entry.sync.mode).toBe("shared");
+    expect(out.entry.sync.config["branch"]).toBe("user/testuser/hub");
+  });
+
+  it("fails shared sync without branch when gh login is unavailable", async () => {
+    const origin = await makeOrigin({ "README.md": "# origin\n" });
+    const { service, gh } = await setup();
+    gh.loginThrows = new Error("not authenticated");
+    await expect(service.addContainer({
+      source: origin, name: "team",
+      sync: { mode: "shared", config: {} },
+    })).rejects.toMatchObject({ code: "GH_ERROR" });
+  });
+
+  it("rejects shared sync on a local backend before side effects", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await expect(service.addContainer({
+      source: dir, name: "team",
+      sync: { mode: "shared", config: {} },
+    })).rejects.toBeInstanceOf(OkhError);
+    // folder must NOT have been created
+    const stat2 = await stat(dir).catch(() => null);
+    // dir already existed (makeTempDir), so we check nothing was registered
+    const list = await service.list();
+    expect(list).toHaveLength(0);
   });
 });
