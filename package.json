@@ -32,7 +32,7 @@
     "eval:validate": "node --import tsx eval/run-scenarios.ts validate",
     "eval:view": "promptfoo view",
     "build:server": "tsc -p tsconfig.json",
-    "build:app": "node scripts/build-todo-app.mjs",
+    "build:app": "node scripts/build-apps.mjs",
     "typecheck:server": "tsc -p tsconfig.json --noEmit",
     "typecheck:app": "tsc -p tsconfig.app.json"
   },

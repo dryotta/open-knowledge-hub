@@ -25,6 +25,8 @@ List, preview, create, or update Markdown todos in memory modules. `operation`
 defaults to `list`. Create and update return a preview without writing unless
 `apply: true` is supplied. Agent-driven requests present that preview and obtain
 confirmation before applying; MCP App checkbox clicks may apply directly.
+Every result includes the live hosted todo web UI URL when the standard server
+entrypoint is running.
 
 Use this directly only when asked to show, review, or filter a todo list, or when
 an active memory-module skill already directed a deterministic todo mutation. For

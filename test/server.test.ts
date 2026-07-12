@@ -33,13 +33,18 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-async function connect(): Promise<{ client: Client; home: string }> {
+async function connect(options: { todoWebUrl?: string } = {}): Promise<{ client: Client; home: string }> {
   const home = await makeTempDir();
   cleanups.push(home);
   const paths = makePaths(home);
   const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
   const todoService = new TodoService(service, () => new Date("2026-07-10T08:00:00.000Z"));
-  const server = await buildServer({ service, paths, todoService });
+  const server = await buildServer({
+    service,
+    paths,
+    todoService,
+    ...(options.todoWebUrl !== undefined ? { todoWebUrl: options.todoWebUrl } : {}),
+  });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   servers.push(server);
@@ -258,6 +263,19 @@ describe("MCP server surface", () => {
     expect("text" in content! ? content.text : "").not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
   });
 
+  it("links todos results to the hosted todo web UI", async () => {
+    const webUrl = "http://127.0.0.1:43123/todos";
+    const { client } = await connect({ todoWebUrl: webUrl });
+
+    const result = await client.callTool({ name: "todos", arguments: {} });
+
+    expect(textOf(result)).toContain(`Todo web UI: ${webUrl}`);
+    expect(structuredOf(result)).toMatchObject({
+      operation: "list",
+      webUrl,
+    });
+  });
+
   it("todos previews then applies create and update operations with structured results", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();
@@ -279,6 +297,7 @@ describe("MCP server surface", () => {
     });
     expect(textOf(preview)).toMatch(/preview/i);
     expect(textOf(preview)).toContain("- [ ] Ship unified todos #todo #release ➕ 2026-07-10");
+    expect(textOf(preview)).toContain("Explicit confirmation is required before applying this preview.");
     const previewStructured = structuredOf(preview) as {
       operation?: string;
       applied?: boolean;
@@ -332,6 +351,7 @@ describe("MCP server surface", () => {
       status: "open",
       source: { path: "2026-07-10.md", line: 3 },
     });
+    expect(textOf(created)).toContain('Local change pending sync for container "hub". Agent-driven workflows must call sync now;');
     expect(await readFile(target, "utf8")).toContain("- [ ] Ship unified todos #todo #release ➕ 2026-07-10");
 
     const listed = await client.callTool({

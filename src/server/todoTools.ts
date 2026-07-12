@@ -18,6 +18,10 @@ import { handler, ok, toolReg } from "./toolSupport.js";
 
 export const TODO_APP_URI = "ui://open-knowledge-hub/todos";
 
+export interface RegisterTodoToolsOptions {
+  webUrl?: string;
+}
+
 type TodosListArgs = {
   operation?: "list";
   container?: string;
@@ -200,7 +204,33 @@ function describeAppliedUpdate(args: TodosUpdateArgs, result: Extract<TodoMutati
   return `Updated todo in ${location}: ${result.todo.text}`;
 }
 
-export async function registerTodoTools(server: McpServer, todos: TodoService): Promise<void> {
+function withWebLink(text: string, webUrl: string | undefined): string {
+  return webUrl ? `${text}\n\nTodo web UI: ${webUrl}` : text;
+}
+
+function withPendingSync(
+  text: string,
+  result: Extract<TodoMutationResult, { applied: true }>,
+): string {
+  return `${text}\n\nLocal change pending sync for container "${result.dirtyContainer}". Agent-driven workflows must call sync now; web UI changes remain local until the user explicitly syncs.`;
+}
+
+function withRequiredConfirmation(text: string): string {
+  return `${text}\n\nExplicit confirmation is required before applying this preview.`;
+}
+
+function withWebUrl(
+  structured: Record<string, unknown>,
+  webUrl: string | undefined,
+): Record<string, unknown> {
+  return webUrl ? { ...structured, webUrl } : structured;
+}
+
+export async function registerTodoTools(
+  server: McpServer,
+  todos: TodoService,
+  options: RegisterTodoToolsOptions = {},
+): Promise<void> {
   registerAppTool(
     server,
     "todos",
@@ -214,8 +244,13 @@ export async function registerTodoTools(server: McpServer, todos: TodoService): 
       if (operation === "create") {
         const result = await todos.mutate(toCreateInput(args as TodosCreateArgs));
         return ok(
-          result.applied ? describeAppliedMutation(result) : describeMutationPreview(result),
-          result as unknown as Record<string, unknown>,
+          withWebLink(
+            result.applied
+              ? withPendingSync(describeAppliedMutation(result), result)
+              : withRequiredConfirmation(describeMutationPreview(result)),
+            options.webUrl,
+          ),
+          withWebUrl(result as unknown as Record<string, unknown>, options.webUrl),
         );
       }
 
@@ -223,18 +258,23 @@ export async function registerTodoTools(server: McpServer, todos: TodoService): 
         const updateArgs = args as TodosUpdateArgs;
         const result = await todos.mutate(toUpdateInput(updateArgs));
         return ok(
-          result.applied ? describeAppliedUpdate(updateArgs, result) : describeMutationPreview(result),
-          result as unknown as Record<string, unknown>,
+          withWebLink(
+            result.applied
+              ? withPendingSync(describeAppliedUpdate(updateArgs, result), result)
+              : withRequiredConfirmation(describeMutationPreview(result)),
+            options.webUrl,
+          ),
+          withWebUrl(result as unknown as Record<string, unknown>, options.webUrl),
         );
       }
 
       const result = await todos.list(toTodoQuery(args as TodosListArgs));
-      return ok(formatTodos(result.tasks, result.counts), {
+      return ok(withWebLink(formatTodos(result.tasks, result.counts), options.webUrl), withWebUrl({
         operation: "list",
         tasks: result.tasks,
         warnings: result.warnings,
         counts: result.counts,
-      });
+      }, options.webUrl));
     }),
   );
 
