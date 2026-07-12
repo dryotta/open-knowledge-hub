@@ -10,6 +10,7 @@ import {
   withContainerAdded,
   withContainerRemoved,
   withContainerUpdated,
+  epermDestinationMatchesIntended,
 } from "../src/registry/registry.js";
 import { emptyRegistry, type ContainerEntry, containerEntrySchema } from "../src/registry/schema.js";
 import { OkhError } from "../src/errors.js";
@@ -208,5 +209,47 @@ describe("container entry sync", () => {
       name: "h", backend: { type: "local", config: {} }, localPath: "/x", addedAt: new Date().toISOString(),
       sync: { mode: "nope" },
     })).toThrow();
+  });
+});
+
+describe("EPERM concurrent save — epermDestinationMatchesIntended", () => {
+  it("returns true when destination contains the identical serialised registry", () => {
+    const reg = emptyRegistry();
+    const raw = `${JSON.stringify(reg, null, 2)}\n`;
+    expect(epermDestinationMatchesIntended(reg, raw)).toBe(true);
+  });
+
+  it("returns true with a non-empty registry serialised identically", () => {
+    const reg = withContainerAdded(emptyRegistry(), entry());
+    const raw = `${JSON.stringify(reg, null, 2)}\n`;
+    expect(epermDestinationMatchesIntended(reg, raw)).toBe(true);
+  });
+
+  it("returns false when destination has fewer containers than intended", () => {
+    const intended = withContainerAdded(emptyRegistry(), entry());
+    const different = emptyRegistry();
+    expect(epermDestinationMatchesIntended(intended, `${JSON.stringify(different, null, 2)}\n`)).toBe(false);
+  });
+
+  it("returns false when destination has a different container entry", () => {
+    const intended = withContainerAdded(emptyRegistry(), entry());
+    const different = withContainerAdded(emptyRegistry(), entry({ name: "other-hub" }));
+    expect(epermDestinationMatchesIntended(intended, `${JSON.stringify(different, null, 2)}\n`)).toBe(false);
+  });
+
+  it("returns false for invalid JSON in the destination", () => {
+    expect(epermDestinationMatchesIntended(emptyRegistry(), "not-json")).toBe(false);
+  });
+
+  it("returns false when destination schema validation fails (wrong version)", () => {
+    expect(epermDestinationMatchesIntended(
+      emptyRegistry(),
+      '{"version":99,"containers":[]}',
+    )).toBe(false);
+  });
+
+  it("returns false when the read itself failed (Error passed)", () => {
+    const readError = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
+    expect(epermDestinationMatchesIntended(emptyRegistry(), readError)).toBe(false);
   });
 });

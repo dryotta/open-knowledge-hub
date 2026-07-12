@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { OkhPaths } from "../config.js";
 import { OkhError } from "../errors.js";
 import {
@@ -51,6 +52,31 @@ export async function loadRegistry(
   );
 }
 
+/**
+ * Returns true iff `rawContentOrReadError` is a string that contains a valid
+ * registry deeply equal to `intended`.  Returns false if it is an Error (read
+ * failed), unparseable JSON, fails schema validation, or differs from
+ * `intended`.  Used to decide whether an EPERM on rename represents a harmless
+ * concurrent write of the same data.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function epermDestinationMatchesIntended(
+  intended: Registry,
+  rawContentOrReadError: string | Error,
+): boolean {
+  if (rawContentOrReadError instanceof Error) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContentOrReadError);
+  } catch {
+    return false;
+  }
+  const result = registrySchema.safeParse(parsed);
+  if (!result.success) return false;
+  return isDeepStrictEqual(intended, result.data);
+}
+
 /** Persist atomically (temp file + rename). Validates before writing. */
 export async function saveRegistry(paths: OkhPaths, registry: Registry): Promise<void> {
   const validated = registrySchema.parse(registry);
@@ -60,11 +86,22 @@ export async function saveRegistry(paths: OkhPaths, registry: Registry): Promise
   try {
     await rename(tmp, paths.registryFile);
   } catch (err) {
-    // On Windows, a concurrent save may have already replaced the destination.
-    // Clean up our temp file and treat the save as successful.
     if ((err as NodeJS.ErrnoException).code === "EPERM") {
+      // On Windows a concurrent save may have already committed the same data.
+      // Read back the destination and verify it is deeply equal to what we
+      // intended to write.  Accept only if identical; propagate the original
+      // error for absent, invalid, or different destinations.
+      let rawOrError: string | Error;
+      try {
+        rawOrError = await readFile(paths.registryFile, "utf8");
+      } catch (readErr) {
+        rawOrError = readErr as Error;
+      }
+      const matched = epermDestinationMatchesIntended(validated, rawOrError);
+      // Best-effort cleanup in both paths; never swallow the original error.
       await unlink(tmp).catch(() => undefined);
-      return;
+      if (matched) return;
+      throw err;
     }
     throw err;
   }

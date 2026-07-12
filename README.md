@@ -94,7 +94,7 @@ These read state or change containers directly.
 | `inspect` | `container?`, `module?` | List containers / a container's modules+status / a module's items. |
 | `add_container` | `source`, `name?`, `sync?`, `backend?`, `create?` | Register a container. Returns a plan unless `create:true`. |
 | `add_module` | `container?`, `path?`, `type?`, `name?`, `description?`, `config?`, `create?` | Returns a step-by-step workflow to add/create/initialize a module; applies on `create:true` (identity args required then). |
-| `sync` | `container?`, `message?`, `action?` | Validate + synchronize. `auto`-mode git: commit+push to origin. `shared`-mode git: commit+push shared branch rebased onto origin/main; `action: "publish-pr"` opens or returns the existing PR to main. |
+| `sync` | `container?`, `message?`, `action?` | Validate + synchronize. `auto`-mode git: commit+push to origin. `shared`-mode git: commit+push shared branch rebased onto origin/main; `action: "publish-pr"` (shared-mode only) opens or returns the existing PR to main. |
 | `config` | `set?` | View configuration (no args) or change it, e.g. `{ set: { wakePhrase: "brain" } }`. |
 | `todos` | `operation?`, `container?`, `module?`, `status?`, `labels?`, `labelMode?`, `priorities?`, `dueAfter?`, `dueBefore?`, `overdue?`, `query?`, `text?`, `entrySummary?`, `observation?`, `ref?`, `completed?`, `due?`, `priority?`, `apply?` | Unified todo API: `list` reads across memory modules, `create` previews or adds one todo, and `update` previews or mutates one todo by opaque `ref`. Writes stay local until `sync`. |
 
