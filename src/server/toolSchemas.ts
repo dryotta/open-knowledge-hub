@@ -4,13 +4,18 @@ const container = z.string().optional();
 const moduleArg = z.string().optional();
 const todoPriority = z.enum(["lowest", "low", "normal", "medium", "high", "highest"]);
 
+const syncSelection = z.object({
+  mode: z.enum(["auto", "shared"]),
+  config: z.record(z.string(), z.unknown()).optional(),
+}).strict();
+
 /** Bare Zod arg shapes for every tool; descriptions come from resources/tool-meta/<name>.md. */
 export const toolShapes = {
   inspect: { container, module: moduleArg },
   add_container: {
     source: z.string(),
     name: z.string().optional(),
-    sync: z.enum(["auto", "pr"]).optional(),
+    sync: syncSelection.optional(),
     backend: z.enum(["local", "onedrive"]).optional(),
     create: z.boolean().optional(),
   },
@@ -23,7 +28,7 @@ export const toolShapes = {
     config: z.record(z.string(), z.unknown()).optional(),
     create: z.boolean().optional(),
   },
-  sync: { container, message: z.string().optional() },
+  sync: { container, message: z.string().optional(), action: z.string().min(1).optional() },
   config: { set: z.record(z.string(), z.unknown()).optional() },
   onboard: {},
   ask: { container, module: moduleArg, question: z.string().optional() },

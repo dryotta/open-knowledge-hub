@@ -80,17 +80,8 @@ function deriveName(source: string): string {
 export interface AddContainerInput {
   source: string;
   name?: string;
-  /**
-   * Sync descriptor for the container.
-   *
-   * Structured form: `{ mode, config? }`.
-   *
-   * Legacy string aliases (temporary, normalized immediately):
-   * - `"auto"` → `{ mode: "auto", config: {} }` for all backends.
-   * - `"pr"` → `{ mode: "shared", config: {} }` for git (branch resolved via gh login);
-   *   → `{ mode: "auto", config: {} }` for local/onedrive (non-git compatibility shim).
-   */
-  sync?: { mode: SyncMode; config?: Record<string, unknown> } | "auto" | "pr";
+  /** Sync descriptor for the container: `{ mode, config? }`. */
+  sync?: { mode: SyncMode; config?: Record<string, unknown> };
   /** Only meaningful for path sources; distinguishes onedrive from plain local. */
   backend?: "local" | "onedrive";
   /** Authorize side-effectful creation/initialization. Default false => preview only. */
@@ -529,19 +520,10 @@ export class ContainerService {
     return this.mutex.run(() => this.addContainerImpl(input));
   }
 
-  /** Normalize the sync input field to a SyncSelection, applying legacy string aliases. */
-  private normalizeSyncInput(
-    sync: AddContainerInput["sync"],
-    isGit: boolean,
-  ): SyncSelection {
-    if (sync === undefined || sync === "auto") {
+  /** Normalize the sync input field to a SyncSelection. */
+  private normalizeSyncInput(sync: AddContainerInput["sync"]): SyncSelection {
+    if (sync === undefined) {
       return { mode: "auto", config: {} };
-    }
-    if (sync === "pr") {
-      // Legacy alias: git → shared (branch resolved via gh login), non-git → auto.
-      return isGit
-        ? { mode: "shared", config: {} }
-        : { mode: "auto", config: {} };
     }
     return { mode: sync.mode, config: sync.config ?? {} };
   }
@@ -558,7 +540,7 @@ export class ContainerService {
     if (isGit) {
       validate(repoUrlSchema, input.source, "source");
       const backendConfig = this.backends.resolveBackendConfig("git", { origin: input.source });
-      const syncSelection = this.normalizeSyncInput(input.sync, true);
+      const syncSelection = this.normalizeSyncInput(input.sync);
       const resolvedSync = await this.backends.resolveSync("git", syncSelection, { containerName: name });
       return {
         kind: "container",
@@ -572,7 +554,7 @@ export class ContainerService {
       };
     }
     const backendType: BackendType = input.backend ?? "local";
-    const syncSelection = this.normalizeSyncInput(input.sync, false);
+    const syncSelection = this.normalizeSyncInput(input.sync);
     const backendConfig = this.backends.resolveBackendConfig(backendType, {});
     const resolvedSync = await this.backends.resolveSync(backendType, syncSelection, { containerName: name });
     const target = resolve(input.source);

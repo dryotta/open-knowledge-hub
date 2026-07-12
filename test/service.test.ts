@@ -82,22 +82,6 @@ describe("addContainer", () => {
     expect(entry.name).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it("maps legacy pr to auto for non-git backends", async () => {
-    const dir = await makeTempDir(); cleanups.push(dir);
-    const { service } = await setup();
-    const out = await service.addContainer({ source: dir, name: "team", sync: "pr", create: true });
-    if (out.kind !== "applied") throw new Error("expected applied");
-    expect(out.entry.sync.mode).toBe("auto");
-  });
-
-  it("maps legacy pr to shared for git backends", async () => {
-    const origin = await makeOrigin({ "README.md": "# origin\n" });
-    const { service } = await setup();
-    const out = await service.addContainer({ source: origin, name: "team-git", sync: "pr", create: true });
-    if (out.kind !== "applied") throw new Error("expected applied");
-    expect(out.entry.sync.mode).toBe("shared");
-  });
-
   it("rejects a duplicate container name", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
@@ -231,11 +215,11 @@ describe("addContainer sync descriptors", () => {
     expect(out.entry.sync.config["branch"]).toBe("user/alice/hub");
   });
 
-  it("maps legacy pr to shared with login-derived branch for git backends", async () => {
+  it("resolves shared sync with login-derived branch when config has no branch (structured input)", async () => {
     const origin = await makeOrigin({ "README.md": "# origin\n" });
     const { service, gh } = await setup();
     gh.loginResult = "testuser";
-    const out = await service.addContainer({ source: origin, name: "team-git", sync: "pr", create: true });
+    const out = await service.addContainer({ source: origin, name: "team-git", sync: { mode: "shared", config: {} }, create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     expect(out.entry.sync.mode).toBe("shared");
     expect(out.entry.sync.config["branch"]).toBe("user/testuser/hub");

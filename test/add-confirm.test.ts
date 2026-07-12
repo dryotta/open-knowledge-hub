@@ -118,19 +118,19 @@ describe("addContainer git + existing-hub", () => {
     await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-gated\nsync: auto\nmodules: []\n", "utf8");
     const { service } = await setup();
 
-    const out = await service.addContainer({ source: dir, name: "sync-gated", sync: "pr" });
+    const out = await service.addContainer({ source: dir, name: "sync-gated" });
 
     expect(out.kind).toBe("plan");
     if (out.kind === "plan") expect(out.plan.actions).toEqual([]);
   });
 
-  it("maps legacy pr to auto for non-git backends", async () => {
+  it("registers existing folder with explicit auto sync in one call with create:true", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     await mkdir(join(dir, ".okh"), { recursive: true });
     await writeFile(join(dir, ".okh", "okh.yaml"), "name: sync-applied\nsync: auto\nmodules: []\n", "utf8");
     const { service, paths } = await setup();
 
-    const out = await service.addContainer({ source: dir, name: "sync-applied", sync: "pr", create: true });
+    const out = await service.addContainer({ source: dir, name: "sync-applied", sync: { mode: "auto" }, create: true });
 
     expect(out.kind).toBe("applied");
     if (out.kind === "applied") expect(out.entry.sync.mode).toBe("auto");

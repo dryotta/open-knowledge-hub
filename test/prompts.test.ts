@@ -39,7 +39,7 @@ describe("resolveTargets", () => {
 
 describe("prompt builders", () => {
   const targets: ResolvedContainer[] = [
-    { name: "hub", backend: "local", sync: "auto", root: "/c/hub", modules: [
+    { name: "hub", backend: "local", sync: { mode: "auto", config: {} }, syncActions: [], root: "/c/hub", modules: [
       { type: "knowledge", path: "kb", name: "kb", description: "", absPath: "/c/hub/kb" },
       { type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" },
     ] },
@@ -98,6 +98,20 @@ describe("prompt builders", () => {
     expect(text).toContain("Draft the auth pack");
     expect(text).not.toContain("**Module:**");
   });
+  it("buildRun with shared sync renders branch not [object Object]", async () => {
+    const sharedTarget: ResolvedContainer = {
+      name: "hub", backend: "git",
+      sync: { mode: "shared", config: { branch: "user/alice/hub" } },
+      syncActions: ["publish-pr"], root: "/c/hub",
+      modules: [{ type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" }],
+    };
+    const mod = sharedTarget.modules[0]!;
+    const skill: Skill = { name: "remember", description: "Record", body: "Append.", source: "vendored" };
+    const text = await buildRun(skill, undefined, sharedTarget, mod);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).not.toContain("[object Object]");
+  });
   it("buildAddModule injects containers + module types and the workflow discipline", async () => {
     const text = await buildAddModule(targets, ["knowledge", "skills", "memory"]);
     expect(text).toContain("/c/hub/kb");            // injected container/module path
@@ -105,5 +119,30 @@ describe("prompt builders", () => {
     expect(text).toContain('<discipline name="add_module">');
     expect(text).toContain("create: true");          // step 3 names the apply call
     expect(text).toMatch(/initialize/);              // step 4 names initialize
+  });
+});
+
+describe("renderTargets sync formatting", () => {
+  it("formats auto sync without showing [object Object]", async () => {
+    const targets: ResolvedContainer[] = [
+      { name: "hub", backend: "local", sync: { mode: "auto", config: {} }, syncActions: [], root: "/c/hub", modules: [] },
+    ];
+    const text = await buildAsk(targets, "test");
+    expect(text).toContain("auto");
+    expect(text).not.toContain("[object Object]");
+  });
+
+  it("formats shared sync showing the branch name", async () => {
+    const targets: ResolvedContainer[] = [
+      {
+        name: "hub", backend: "git",
+        sync: { mode: "shared", config: { branch: "user/alice/hub" } },
+        syncActions: ["publish-pr"], root: "/c/hub", modules: [],
+      },
+    ];
+    const text = await buildAsk(targets, "test");
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).not.toContain("[object Object]");
   });
 });

@@ -11,16 +11,13 @@ import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { savePreferences } from "../src/preferences.js";
 import { TodoService } from "../src/todos/service.js";
-import { makePaths, makeTempDir, testRun } from "./helpers.js";
+import { makePaths, makeTempDir, makeOrigin, testRun } from "./helpers.js";
 
 class FakeGh {
-  async createRepo(): Promise<string> {
-    return "x";
-  }
-
-  async createPr(): Promise<string> {
-    return "x";
-  }
+  async currentLogin(): Promise<string> { return "tester"; }
+  async findOpenPr(): Promise<string | undefined> { return undefined; }
+  async createRepo(): Promise<string> { return "x"; }
+  async createPr(): Promise<string> { return "https://github.com/test/x/pull/1"; }
 }
 
 const cleanups: string[] = [];
@@ -635,5 +632,145 @@ describe("MCP server surface", () => {
     expect(text).toContain("User prefers dark mode");
     expect(text).toContain("mem");
     expect(text).toMatch(/append|timestamp/i);
+  });
+
+  it("add_container rejects flat sync:'pr' at MCP schema level", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    const res = await client.callTool({ name: "add_container", arguments: { source: dir, sync: "pr" } });
+    expect(isErrorResult(res)).toBe(true);
+  });
+
+  it("add_container structured shared sync preview shows mode and resolved branch", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    const res = await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } } },
+    });
+    const text = textOf(res);
+    expect(isErrorResult(res)).toBe(false);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(structuredOf(res).needsConfirmation).toBe(true);
+  });
+
+  it("add_container structured shared sync create persists the descriptor", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } }, create: true },
+    });
+    const inspect = await client.callTool({ name: "inspect", arguments: { container: "hub" } });
+    const text = textOf(inspect);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+  });
+
+  it("sync action without container returns INVALID_ARGUMENT", async () => {
+    const { client } = await connect();
+    const res = await client.callTool({ name: "sync", arguments: { action: "publish-pr" } });
+    expect(isErrorResult(res)).toBe(true);
+    expect(textOf(res)).toContain("INVALID_ARGUMENT");
+  });
+
+  it("sync with publish-pr action reaches service and returns PR URL", async () => {
+    const { client, home } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/tester/hub" } }, create: true },
+    });
+    // Write a change so there is something to push
+    const containerPath = join(home, "containers", "hub");
+    await writeFile(join(containerPath, "note.md"), "hello", "utf8");
+    const res = await client.callTool({ name: "sync", arguments: { container: "hub", action: "publish-pr" } });
+    expect(isErrorResult(res)).toBe(false);
+    expect(textOf(res)).toContain("/pull/");
+  });
+
+  it("inspect list shows structured sync mode and actions for shared container", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } }, create: true },
+    });
+    const res = await client.callTool({ name: "inspect", arguments: {} });
+    const text = textOf(res);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).toContain("publish-pr");
+  });
+
+  it("inspect container shows structured sync and available actions", async () => {
+    const { client } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/alice/hub" } }, create: true },
+    });
+    const res = await client.callTool({ name: "inspect", arguments: { container: "hub" } });
+    const text = textOf(res);
+    expect(text).toContain("shared");
+    expect(text).toContain("user/alice/hub");
+    expect(text).toContain("publish-pr");
+  });
+
+  it("plain shared sync appends publish-pr guidance", async () => {
+    const { client, home } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/tester/hub" } }, create: true },
+    });
+    const containerPath = join(home, "containers", "hub");
+    await writeFile(join(containerPath, "note.md"), "hello", "utf8");
+    const res = await client.callTool({ name: "sync", arguments: { container: "hub" } });
+    const text = textOf(res);
+    expect(text).toContain('call sync with action "publish-pr"');
+    expect(text).toContain("user/tester/hub");
+  });
+
+  it("publish-pr sync result does not append guidance", async () => {
+    const { client, home } = await connect();
+    const origin = await makeOrigin();
+    cleanups.push(origin);
+    await client.callTool({
+      name: "add_container",
+      arguments: { source: origin, name: "hub", sync: { mode: "shared", config: { branch: "user/tester/hub" } }, create: true },
+    });
+    const containerPath = join(home, "containers", "hub");
+    await writeFile(join(containerPath, "note.md"), "hello", "utf8");
+    const res = await client.callTool({ name: "sync", arguments: { container: "hub", action: "publish-pr" } });
+    const text = textOf(res);
+    expect(text).not.toContain('call sync with action "publish-pr"');
+  });
+
+  it("sync result format uses [backend/mode] prefix", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "notes", create: true } });
+    const res = await client.callTool({ name: "sync", arguments: { container: "notes" } });
+    expect(textOf(res)).toMatch(/\[local\/auto\]/);
+  });
+
+  it("sync-all result format uses [backend/mode] prefix", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "notes", create: true } });
+    const res = await client.callTool({ name: "sync", arguments: {} });
+    expect(textOf(res)).toMatch(/\[local\/auto\]/);
+    expect(isErrorResult(res)).toBe(false);
   });
 });

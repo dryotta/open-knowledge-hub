@@ -26,14 +26,17 @@ import {
   runCapabilityProbes,
   formatCapabilityReport,
 } from "./capabilityProbes.js";
+import { formatSyncDescriptor } from "../util/syncFormat.js";
 
 function formatInspect(r: InspectResult): string {
   if (r.kind === "containers") {
     if (r.containers.length === 0) return "No containers registered. Use add_container { source } to register one.";
     return r.containers
       .map((c) => {
+        const syncLabel = `Sync: ${formatSyncDescriptor(c.sync)}`;
+        const actionsLabel = c.syncActions?.length ? ` Actions: ${c.syncActions.join(", ")}` : "";
         const head =
-          `- ${c.name} [${c.backend}] sync=${c.sync?.mode ?? "?"} modules=${c.moduleCount}` +
+          `- ${c.name} [${c.backend}] ${syncLabel}${actionsLabel} modules=${c.moduleCount}` +
           `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`;
         const mods = c.modules.length
           ? c.modules.map((m) => `    · ${m.type} · ${m.name} (${m.path})`).join("\n")
@@ -46,7 +49,7 @@ function formatInspect(r: InspectResult): string {
     const s = r.status;
     const lines = [
       `Container: ${s.name} [${s.backend}]`,
-      `Sync: ${s.sync?.mode ?? "?"}`,
+      `Sync: ${formatSyncDescriptor(s.sync)}`,
       `Path: ${s.localPath}`,
       `Manifest valid: ${s.manifestValid}${s.manifestError ? ` (${s.manifestError})` : ""}`,
       "Modules:",
@@ -54,6 +57,9 @@ function formatInspect(r: InspectResult): string {
         ? s.modules.map((m) => `  - ${m.type} · ${m.name}${m.description ? ` — ${m.description}` : ""}: ${m.path} (${m.items} items)`)
         : ["  (none)"]),
     ];
+    if (s.syncActions?.length) {
+      lines.push(`Actions: ${s.syncActions.join(", ")}`);
+    }
     if (s.git) {
       lines.push(
         `Git: branch=${s.git.branch} dirty=${s.git.dirty} ahead/behind=${s.git.ahead}/${s.git.behind} unpushed=${s.git.hasUnpushedCommits}`,
@@ -95,7 +101,7 @@ function formatContainerPlan(plan: AddContainerPlan): string {
   if (plan.actions.includes("create-folder")) lines.push(`- Create folder: ${plan.target}`);
   if (plan.actions.includes("clone"))
     lines.push(`- Clone ${plan.source} → ${plan.target}`);
-  lines.push(`- Register container "${plan.name}" [${plan.backend.type}]`);
+  lines.push(`- Register container "${plan.name}" [${plan.backend.type}] sync=${formatSyncDescriptor(plan.sync)}`);
   return lines.join("\n");
 }
 
@@ -104,8 +110,19 @@ function formatSync(rs: SyncResult[]): string {
   return rs
     .map((r) => {
       const v = r.validation.ok ? "valid" : `INVALID: ${r.validation.issues.join("; ")}`;
-      const extra = r.prUrl ? ` PR: ${r.prUrl}` : "";
-      return `- ${r.name} [${r.backend}] ${r.outcome} (${v})${extra}`;
+      const tag = r.error !== undefined
+        ? ` error: ${r.error}`
+        : r.prUrl
+        ? ` PR: ${r.prUrl}`
+        : r.branch && r.mode === "shared"
+        ? ` branch=${r.branch}`
+        : "";
+      const line = `- ${r.name} [${r.backend}/${r.mode}] ${r.outcome} (${v})${tag}`;
+      const guidance =
+        r.mode === "shared" && r.outcome === "synced" && !r.requestedAction && r.branch
+          ? `\n  Changes are on ${r.branch}. When ready to publish, call sync with action "publish-pr".`
+          : "";
+      return line + guidance;
     })
     .join("\n");
 }
@@ -160,7 +177,7 @@ export async function registerTools(
   server.registerTool(
     "add_container",
     { ...(await toolReg("add_container")), annotations: { openWorldHint: true } },
-    handler(async (args: { source: string; name?: string; sync?: "auto" | "pr"; backend?: "local" | "onedrive"; create?: boolean }) => {
+    handler(async (args: { source: string; name?: string; sync?: { mode: "auto" | "shared"; config?: Record<string, unknown> }; backend?: "local" | "onedrive"; create?: boolean }) => {
       if (isBlank(args.source)) return fail("source cannot be empty.");
       const outcome = await service.addContainer({
         source: args.source,
@@ -210,9 +227,9 @@ export async function registerTools(
   server.registerTool(
     "sync",
     { ...(await toolReg("sync")), annotations: { openWorldHint: true } },
-    handler(async (args: { container?: string; message?: string }) => {
+    handler(async (args: { container?: string; message?: string; /** Named action. Currently supports "publish-pr" for shared-mode containers. */ action?: string }) => {
       if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
-      const results = await service.sync(args.container, args.message);
+      const results = await service.sync(args.container, args.message, args.action);
       return ok(formatSync(results), { results });
     }),
   );
