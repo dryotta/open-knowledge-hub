@@ -132,6 +132,7 @@ function describeConfigError(err: z.ZodError): string {
 
 export interface RegisterToolsOptions {
   capabilityProbeTimeoutMs?: number;
+  todoWebUrl?: string;
 }
 
 /** Register the operational tools (`inspect`, `add_container`, `add_module`, `sync`, `config`) plus the flows. */
@@ -253,7 +254,9 @@ export async function registerTools(
   );
 
   await registerFlowTools(server, service);
-  await registerTodoTools(server, todoService);
+  await registerTodoTools(server, todoService, {
+    ...(options.todoWebUrl !== undefined ? { webUrl: options.todoWebUrl } : {}),
+  });
 
   server.registerTool(
     "capabilities",

@@ -11,6 +11,7 @@ export interface BuildServerOptions {
   service?: ContainerService;
   todoService?: TodoService;
   capabilityProbeTimeoutMs?: number;
+  todoWebUrl?: string;
 }
 
 /** Construct the fully-wired MCP server. Dependencies are injectable for tests. */
@@ -30,6 +31,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Mcp
     todoService,
     {
       ...(options.capabilityProbeTimeoutMs !== undefined ? { capabilityProbeTimeoutMs: options.capabilityProbeTimeoutMs } : {}),
+      ...(options.todoWebUrl !== undefined ? { todoWebUrl: options.todoWebUrl } : {}),
     },
   );
   return server;

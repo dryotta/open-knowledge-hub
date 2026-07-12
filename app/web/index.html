@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Open Knowledge Hub</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell" data-app="open-knowledge-hub-web">
+    <header class="topbar">
+      <a class="brand" href="/browse" data-route>
+        <span class="brand-mark" aria-hidden="true">OKH</span>
+        <span>
+          <strong>Open Knowledge Hub</strong>
+          <small>Local workspace</small>
+        </span>
+      </a>
+      <nav id="feature-nav" class="feature-nav" aria-label="Features"></nav>
+      <div id="global-status" class="global-status" role="status" aria-live="polite"></div>
+    </header>
+    <main id="feature-root" class="feature-root" tabindex="-1"></main>
+  </div>
+  <script type="module" src="/assets/app.js"></script>
+</body>
+</html>

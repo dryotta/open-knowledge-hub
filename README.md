@@ -9,8 +9,10 @@ It exposes three kinds of surface. **Operational tools** (`inspect`, `add_contai
 `context`, `onboard`, `run`) *return instructions*: each hands your agent discipline
 text to follow. A flow never acts on its own — your agent does the reasoning and
 any edits. A **diagnostic tool** (`capabilities`) probes which MCP client features are
-active and immediately tests them with live requests. The server runs **no LLM** — it
-exposes deterministic tools and injects discipline text; your agent does all the reasoning.
+active and immediately tests them with live requests. The same process also hosts a
+loopback-only web UI for browsing modules/files and managing todos. The server runs
+**no LLM** — it exposes deterministic tools and injects discipline text; your agent
+does all the reasoning.
 
 ## Concepts
 
@@ -59,12 +61,25 @@ due dates (`📅 YYYY-MM-DD`), created dates (`➕ YYYY-MM-DD`), and completion 
 them. Ordinary open and completed statuses are editable; custom checkbox statuses
 are visible but read-only.
 
-Supporting hosts render the unified todo list and filters as an MCP App; other hosts
-receive a text fallback. `todos { operation: "create" | "update" }` previews by
-default and only writes when repeated with `apply: true`. Agent-driven mutations
-present the preview, require confirmation, then apply and `sync`; MCP App checkbox
-clicks are explicit authorization and may apply directly. Changes made through the
-app or tools remain local until an explicit `sync`.
+Supporting hosts render the unified todo list and filters as an MCP App. Every
+`todos` result also includes the live browser URL for the hosted todo frontend.
+`todos { operation: "create" | "update" }` previews by default and only writes when
+repeated with `apply: true`. Agent-driven mutations present the preview, require
+confirmation, then apply and `sync`; UI actions may apply directly. Changes made
+through either UI or the tool remain local until an explicit `sync`.
+
+## Web UI
+
+Each running MCP server instance hosts a web UI on `127.0.0.1`. The default port is
+assigned dynamically to avoid conflicts; call `todos` to get the current `/todos`
+URL. The UI provides:
+
+- `/browse` — containers, modules, directory navigation, and text-file previews.
+- `/todos` — todo filters, creation, completion/reopen, and unsynced-change notices.
+
+Set `OKH_WEB_PORT` to a specific port when a stable local URL is needed, for example
+`"env": { "OKH_WEB_PORT": "8787" }`. The server intentionally rejects non-loopback,
+cross-origin, and DNS-rebound requests because the UI can read local module files.
 
 ## MCP surface
 
@@ -111,8 +126,9 @@ same four flows, for clients with a prompt UI. Content matches the prompt-tools
 exactly. `container`/`module` are optional filters: omit them to span every
 registered container (the whole hub).
 
-**Resources:** `ui://open-knowledge-hub/todos` provides the interactive unified
-memory-todo list for MCP App-capable hosts.
+**Resources:** `ui://open-knowledge-hub/todos` provides the embedded unified
+memory-todo list for MCP App-capable hosts. Tool results also link to the hosted
+browser frontend.
 
 ## Prerequisites
 
@@ -147,6 +163,7 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
   folds knowledge in, then `sync { container: "my-notes" }` commits+pushes (or opens a PR).
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
 - `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback).
+- `todos {}` → list todos and return the live hosted `/todos` URL.
 - `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"] }` → preview the exact todo line; after confirmation, repeat with `apply: true`, then `sync`.
 - `todos { operation: "update", ref: "<opaque-ref>", completed: true }` → preview a completion or reopen change; after confirmation, repeat with `apply: true`. MCP App checkbox clicks may apply this directly, but the change still remains local until `sync`.
 

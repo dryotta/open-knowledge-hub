@@ -73,3 +73,6 @@ prompt-tools (identical content).
 - App resource: `ui://open-knowledge-hub/todos` renders the unified todo list and
   filters in app-capable hosts; other hosts receive a text fallback. App and tool
   mutations remain local/dirty until an explicit `sync`.
+- Hosted UI: the same MCP process binds a loopback-only HTTP server on a dynamic
+  port (or `OKH_WEB_PORT`). `/browse` navigates containers/modules/files and
+  `/todos` manages the unified todo list. `todos` results include the live URL.

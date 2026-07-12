@@ -21,6 +21,9 @@ npm test           # vitest (real git against temp repos)
 npm run dev        # run from source via tsx
 ```
 
+`npm run dev` prints the loopback web UI origin to stderr. The default port is
+dynamic; set `OKH_WEB_PORT=8787` before launch when a fixed local port is useful.
+
 ## Eval (live, optional)
 
 The `eval/` harness runs the built server in Copilot CLI, so **rebuild before
@@ -71,5 +74,7 @@ the client after changes. Point `OKH_HOME` at a scratch dir to isolate dev data.
 
 ## Architecture
 
-Layering: `exec` → `git`/`gh` → `registry` → `container` → `modules` → `prompts`
-→ `server`. See **[CONTEXT.md](./CONTEXT.md)** and **[docs/adr/](./docs/adr/)**.
+Layering: `exec` → `git`/`gh` → `registry` → `container` → `modules` →
+`prompts`/`todos` → MCP and loopback web servers. Browser features live under
+`app/web/features/` and register in `app/web/main.ts`. See
+**[CONTEXT.md](./CONTEXT.md)** and **[docs/adr/](./docs/adr/)**.

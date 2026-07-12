@@ -30,7 +30,9 @@ Add OKH to your MCP client (runs from GitHub via `npx`, builds on first launch):
 
 Copilot CLI: add it to `~/.copilot/mcp-config.json`, run `copilot`, confirm with
 `/mcp`. `OKH_HOME` sets where the registry and cloned containers live (default
-`~/.open-knowledge-hub`).
+`~/.open-knowledge-hub`). Each instance also starts a loopback web UI on a dynamic
+port. Call `todos` to receive its current URL; set `OKH_WEB_PORT` in the MCP server
+environment only when a fixed local port is required.
 
 ## Onboard
 

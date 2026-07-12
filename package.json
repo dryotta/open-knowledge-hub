@@ -31,7 +31,7 @@
     "eval:view": "promptfoo view",
     "eval:setup": "tsx eval/okh-eval.ts",
     "build:server": "tsc -p tsconfig.json",
-    "build:app": "node scripts/build-todo-app.mjs",
+    "build:app": "node scripts/build-apps.mjs",
     "typecheck:server": "tsc -p tsconfig.json --noEmit",
     "typecheck:app": "tsc -p tsconfig.app.json"
   },
