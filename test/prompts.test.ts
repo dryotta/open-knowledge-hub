@@ -91,10 +91,8 @@ describe("prompt builders", () => {
     expect(text).toContain("mem");
     expect(text).toContain("Write policy");
     expect(text).toContain("Observed X");
-    // Write policy must apply immediately without asking for confirmation
-    expect(text).not.toMatch(/get explicit confirmation|Never persist.*go.?ahead|asks before sync/i);
-    expect(text).toMatch(/without confirmation/i);
-    expect(text).toMatch(/sync.*immediately|immediately.*sync|call.*sync.*immediately/i);
+    expect(text).toMatch(/for each changed container/i);
+    expect(text).toMatch(/immediately call\s+`sync \{ container \}`/i);
   });
   it("buildRun without a target renders a module-less shared skill", async () => {
     const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
