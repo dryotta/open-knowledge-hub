@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverModuleSkills, mergeSkills, MODULE_SKILL_ROOTS, readSkill, type Skill } from "../src/modules/skills.js";
+import { discoverModuleSkills, mergeSkills, MODULE_SKILL_ROOTS, readSkill, skillRootsForType, type Skill } from "../src/modules/skills.js";
 import { vendoredSkills } from "../src/modules/vendored.js";
 
 async function skill(root: string, rel: string, name: string, description: string, body = "do it"): Promise<void> {
@@ -56,6 +56,27 @@ describe("module skills", () => {
       expect(dup).toHaveLength(1);
       expect(dup[0]!.description).toBe("native");
       expect(dup[0]!.source).toBe(".okh/skills");
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("skillRootsForType adds the module root only for the skills type", () => {
+    expect(skillRootsForType("skills")).toEqual([...MODULE_SKILL_ROOTS, ""]);
+    expect(skillRootsForType("knowledge")).toEqual([...MODULE_SKILL_ROOTS]);
+    expect(skillRootsForType("recipes")).toEqual([...MODULE_SKILL_ROOTS]);
+  });
+
+  it("discovers module-root skills when the root is included (skills-type layout)", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(mod, "ado", "ado", "ADO CLI");
+      await skill(mod, join(".okh", "skills", "nested"), "nested", "nested one");
+      const rootOnly = await discoverModuleSkills(mod);
+      expect(rootOnly.map((s) => s.name)).toEqual(["nested"]); // default roots ignore the module root
+      const withRoot = await discoverModuleSkills(mod, skillRootsForType("skills"));
+      expect(withRoot.map((s) => s.name).sort()).toEqual(["ado", "nested"]);
+      expect(withRoot.find((s) => s.name === "ado")!.source).toBe("module-root");
     } finally {
       await rm(mod, { recursive: true, force: true });
     }

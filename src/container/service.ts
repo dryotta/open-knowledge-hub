@@ -30,7 +30,7 @@ import { migrateLegacyContainerManifest, removeLegacyContainerManifest } from ".
 import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
 import { type Item, type WikiHealth } from "../modules/types.js";
 import { getLoader } from "../modules/registry.js";
-import { discoverModuleSkills, mergeSkills, type Skill } from "../modules/skills.js";
+import { discoverModuleSkills, mergeSkills, skillRootsForType, type Skill } from "../modules/skills.js";
 import { resolveSharedSkill as resolveShared } from "../modules/shared.js";
 import { vendoredSkills } from "../modules/vendored.js";
 import { BackendRegistry, createBackendRegistry } from "../sync/backendRegistry.js";
@@ -415,7 +415,7 @@ export class ContainerService {
     const manifest = await loadModuleManifest(moduleRoot);
     const [vendored, local] = await Promise.all([
       vendoredSkills(manifest.type),
-      discoverModuleSkills(moduleRoot),
+      discoverModuleSkills(moduleRoot, skillRootsForType(manifest.type)),
     ]);
     return mergeSkills(vendored, local);
   }

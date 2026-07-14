@@ -45,7 +45,7 @@ async function createFixture(): Promise<{
   await mkdir(containerRoot, { recursive: true });
   const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
   await service.addContainer({ source: containerRoot, name: "hub", create: true });
-  await service.addModule({ container: "hub", path: "docs", type: "project", name: "Docs", create: true });
+  await service.addModule({ container: "hub", path: "docs", type: "docs", name: "Docs", create: true });
   await service.addModule({ container: "hub", path: "memory", type: "memory", name: "Memory", create: true });
   await mkdir(join(containerRoot, "docs", "nested"), { recursive: true });
   await writeFile(join(containerRoot, "docs", "README.md"), "# Documentation\n", "utf8");
@@ -162,7 +162,7 @@ describe("hosted web UI", () => {
         sync: { mode: "auto", config: {} },
         syncActions: [],
         modules: expect.arrayContaining([
-          expect.objectContaining({ path: "docs", type: "project", name: "Docs" }),
+          expect.objectContaining({ path: "docs", type: "docs", name: "Docs" }),
           expect.objectContaining({ path: "memory", type: "memory", name: "Memory" }),
         ]),
       }),

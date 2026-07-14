@@ -16,6 +16,24 @@ export interface Skill {
  * earlier root (native `.okh/skills`) wins over a later one (external `.claude/skills`). */
 export const MODULE_SKILL_ROOTS = [".okh/skills", ".claude/skills"] as const;
 
+/** Sentinel skill root meaning "the module folder itself" (skills live at
+ * `<module>/<name>/SKILL.md`). Used for `skills`-type modules, whose primary
+ * layout places each skill directly under the module root. */
+export const MODULE_ROOT_SKILL_ROOT = "";
+
+/**
+ * The skill roots to scan for a module of `moduleType`. A `skills`-type module
+ * additionally treats its own folder as a skill root, so a skill authored at the
+ * module root (the Copilot/Claude `skills/` convention, and what the skills loader
+ * enumerates) is both discoverable and runnable. The nested `.okh/skills` /
+ * `.claude/skills` roots keep precedence so an explicit override still wins.
+ */
+export function skillRootsForType(moduleType: string): readonly string[] {
+  return moduleType === "skills"
+    ? [...MODULE_SKILL_ROOTS, MODULE_ROOT_SKILL_ROOT]
+    : MODULE_SKILL_ROOTS;
+}
+
 async function subdirNames(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir, { withFileTypes: true });
@@ -39,16 +57,20 @@ export async function readSkill(dir: string, source: string): Promise<Skill | un
   return { name, description: stringField(data, "description") ?? "", body: body.trim(), source, dir };
 }
 
-/** Discover module-local skills across all known skill roots inside a module.
- * Earlier roots take precedence: a skill name found in `.okh/skills` shadows the
- * same name in a later root such as `.claude/skills`. */
-export async function discoverModuleSkills(moduleRoot: string): Promise<Skill[]> {
+/** Discover module-local skills across the given skill roots inside a module.
+ * Earlier roots take precedence: a skill name found in an earlier root shadows the
+ * same name in a later root (e.g. `.okh/skills` over `.claude/skills`). An empty
+ * root string means the module folder itself (skills at `<module>/<name>/SKILL.md`). */
+export async function discoverModuleSkills(
+  moduleRoot: string,
+  roots: readonly string[] = MODULE_SKILL_ROOTS,
+): Promise<Skill[]> {
   const out: Skill[] = [];
   const seen = new Set<string>();
-  for (const root of MODULE_SKILL_ROOTS) {
-    const base = join(moduleRoot, root);
+  for (const root of roots) {
+    const base = root ? join(moduleRoot, root) : moduleRoot;
     for (const name of await subdirNames(base)) {
-      const s = await readSkill(join(base, name), root);
+      const s = await readSkill(join(base, name), root || "module-root");
       if (s && !seen.has(s.name)) {
         seen.add(s.name);
         out.push(s);

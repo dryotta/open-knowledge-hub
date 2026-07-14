@@ -115,6 +115,26 @@ describe("effective skills + resolveSkill", () => {
     const skills = await svc.effectiveSkills("h", "recipes");
     expect(skills.map((s) => s.name)).toEqual(["cook"]);
   });
+
+  it("skills type exposes tool-skills authored at the module root, and they are runnable", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "cli"), { type: "skills", name: "CLI Tools", description: "" });
+    // A tool-skill = a SKILL.md skill that launches a CLI, authored at the module root.
+    await mkdir(join(root, "cli", "ado", "lib"), { recursive: true });
+    await writeFile(join(root, "cli", "ado", "SKILL.md"), "---\nname: ado\ndescription: Read-only ADO work items via CLI\n---\n\nRun `python -m tools.ado get-work-item`.\n");
+    await writeFile(join(root, "cli", "ado", "cli.py"), "print('ado')\n");
+    await writeFile(join(root, "cli", "ado", "lib", "client.py"), "print('client')\n");
+
+    // Discoverable: the tool description is visible without loading how-to-run.
+    const inspected = await svc.inspect("h", "cli");
+    if (inspected.kind !== "module") throw new Error("expected module inspect result");
+    const listed = inspected.skills.find((s) => s.name === "ado");
+    expect(listed?.description).toBe("Read-only ADO work items via CLI");
+
+    // Runnable: the how-to-run body loads only when the skill is resolved.
+    const resolved = await svc.resolveSkill("h", "cli", "ado");
+    expect(resolved.body).toMatch(/python -m tools\.ado/);
+  });
 });
 
 describe("shared skills", () => {

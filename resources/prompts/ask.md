@@ -7,7 +7,7 @@
 
 Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
 relevant module(s), starting from each module's overview (knowledge/llmwiki: index.md;
-skills/tools: the listing; memory/project: recent files). Return a distilled,
+skills: the listing; memory: recent files). Return a distilled,
 **cited** answer. Do not load whole modules into this context.
 
 <discipline name="ask">

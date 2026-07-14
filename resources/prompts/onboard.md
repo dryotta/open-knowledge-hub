@@ -18,7 +18,7 @@ phrase and registered containers are injected above — use them.
 ## Stage 1 — Name your hub (required)
 
 In one sentence: Open Knowledge Hub gives your agent a persistent store of your
-knowledge, skills, tools, and memory — kept in folders you own — that it can
+knowledge, skills, and memory — kept in folders you own — that it can
 search and update on request.
 
 Ask the user to choose a **wake phrase** — a short name they'll use to address the
@@ -40,7 +40,7 @@ Introduce the two terms they'll use:
 - **Container** — a repo/workspace/folder that holds your content: a local folder,
   an OS-synced (OneDrive) folder, or a git repository.
 - **Module** — a typed subfolder inside a container: `knowledge`, `skills`,
-  `tools`, `memory`, `project`, or `llmwiki`.
+  `memory`, or `llmwiki`.
 
 Then offer to set up their first container. Ask which they want:
 - an existing folder they already have,

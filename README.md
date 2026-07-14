@@ -28,12 +28,13 @@ does all the reasoning.
   `.okh/module.yaml` manifest (`type`, `name`, `description`, optional `config`).
   The hub auto-discovers modules by scanning the container for these manifests.
   Built-in types: `knowledge` (OKF markdown), `llmwiki` (OKF-backed living wiki),
-  `memory`. Custom types (any other string) use a generic file-listing loader;
+  `memory`, and `skills` (a folder of `SKILL.md` skills; a skill can also launch/run
+  a CLI tool). Custom types (any other string) use a generic file-listing loader;
   skills come entirely from the module.
 
 ### Module manifest (`<module>/.okh/module.yaml`)
 ```yaml
-type: knowledge   # built-in (knowledge, llmwiki, memory, …) or any custom string
+type: knowledge   # built-in (knowledge, skills, memory, llmwiki) or any custom string
 name: my-kb
 description: Project notes   # optional
 # config: {}                 # optional, type-specific

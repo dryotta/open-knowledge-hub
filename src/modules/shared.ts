@@ -23,12 +23,34 @@ export async function resolveSharedSkill(name: string): Promise<Skill> {
   return found;
 }
 
-/** Absolute paths of a skill's sibling resource files (everything but SKILL.md). */
+/** Subfolders never surfaced as skill resources (VCS/build/cache noise). */
+const RESOURCE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+
+/** Absolute paths of a skill's bundled resource files — everything under the
+ * skill folder except its top-level `SKILL.md`. Recurses into subfolders so a
+ * tool-skill that bundles its CLI as a package (e.g. `lib/*.py`) has every file
+ * reachable; only paths are returned, so the details load only when the agent
+ * opens one. Dotfiles/dot-dirs and common noise dirs are skipped. */
 export async function skillResourcePaths(skill: Skill): Promise<string[]> {
-  if (!skill.dir) return [];
-  const entries = await readdir(skill.dir, { withFileTypes: true }).catch(() => []);
-  return entries
-    .filter((e) => e.isFile() && e.name !== "SKILL.md")
-    .map((e) => join(skill.dir!, e.name))
-    .sort();
+  const rootDir = skill.dir;
+  if (!rootDir) return [];
+  const out: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (RESOURCE_SKIP_DIRS.has(e.name)) continue;
+        await walk(full);
+      } else if (e.isFile()) {
+        if (dir === rootDir && e.name === "SKILL.md") continue;
+        out.push(full);
+      }
+    }
+  }
+
+  await walk(rootDir);
+  return out.sort();
 }

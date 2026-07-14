@@ -4,9 +4,7 @@ import { join } from "node:path";
 import { makeTempDir } from "./helpers.js";
 import { knowledgeLoader } from "../src/modules/loaders/knowledge.js";
 import { skillsLoader } from "../src/modules/loaders/skills.js";
-import { toolsLoader } from "../src/modules/loaders/tools.js";
 import { memoryLoader } from "../src/modules/loaders/memory.js";
-import { projectLoader } from "../src/modules/loaders/project.js";
 import { llmwikiLoader } from "../src/modules/loaders/llmwiki.js";
 import { getLoader } from "../src/modules/registry.js";
 
@@ -195,39 +193,7 @@ describe("skills loader", () => {
   });
 });
 
-describe("tools loader", () => {
-  it("enumerates tool folders via README.md (title from heading, desc from first line)", async () => {
-    const root = await tmp();
-    await write(root, "csv2json/README.md", "# CSV to JSON\n\nConvert CSV files to JSON.\n");
-    await write(root, "csv2json/run.py", "print('x')\n");
-
-    const items = await toolsLoader.enumerate(root);
-
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      path: "csv2json/README.md",
-      title: "CSV to JSON",
-      description: "Convert CSV files to JSON.",
-      type: "tool",
-    });
-  });
-
-  it("skips subsequent markdown headings when choosing README description", async () => {
-    const root = await tmp();
-    await write(root, "reporter/README.md", "# Reporter\n\n## Usage\n\nGenerates reports.\n");
-    const items = await toolsLoader.enumerate(root);
-    expect(items[0]).toMatchObject({ title: "Reporter", description: "Generates reports." });
-  });
-
-  it("falls back to the folder name when README has no heading", async () => {
-    const root = await tmp();
-    await write(root, "widget/README.md", "Does widget things.\n");
-    const items = await toolsLoader.enumerate(root);
-    expect(items[0]).toMatchObject({ title: "widget", description: "Does widget things." });
-  });
-});
-
-describe("memory/project loaders (thin file listing)", () => {
+describe("memory loader (thin file listing)", () => {
   it("lists files (excluding README.md) and prepends README in overview", async () => {
     const root = await tmp();
     await write(root, "README.md", "How this memory works.");
@@ -248,18 +214,11 @@ describe("memory/project loaders (thin file listing)", () => {
     await mkdir(join(root, "README.md"), { recursive: true });
     await expect(memoryLoader.overview(root)).rejects.toBeTruthy();
   });
-
-  it("project loader tags items as project", async () => {
-    const root = await tmp();
-    await write(root, "spec.md", "x");
-    const items = await projectLoader.enumerate(root);
-    expect(items[0]).toMatchObject({ path: "spec.md", type: "project" });
-  });
 });
 
 describe("getLoader dispatch", () => {
   it("returns a loader for every module type", () => {
-    for (const t of ["knowledge", "skills", "tools", "memory", "project", "llmwiki"] as const) {
+    for (const t of ["knowledge", "skills", "memory", "llmwiki"] as const) {
       expect(typeof getLoader(t).enumerate).toBe("function");
       expect(typeof getLoader(t).overview).toBe("function");
     }
@@ -278,6 +237,17 @@ describe("type registry", () => {
   it("recognises llmwiki as a built-in type", () => {
     expect(isBuiltinType("llmwiki")).toBe(true);
     expect(BUILTIN_MODULE_TYPES).toContain("llmwiki");
+  });
+
+  it("treats retired types (tools, project) as custom", () => {
+    expect(isBuiltinType("tools")).toBe(false);
+    expect(isBuiltinType("project")).toBe(false);
+    expect(BUILTIN_MODULE_TYPES).not.toContain("tools");
+    expect(BUILTIN_MODULE_TYPES).not.toContain("project");
+    for (const t of ["tools", "project"]) {
+      expect(typeof getLoader(t).enumerate).toBe("function");
+      expect(typeof getLoader(t).overview).toBe("function");
+    }
   });
 
   it("falls back to a file-listing loader for a custom type", async () => {
