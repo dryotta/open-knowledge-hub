@@ -99,4 +99,10 @@ async function health(moduleRoot: string): Promise<WikiHealth> {
   return { orphans, danglingLinks, uncataloged, missingType };
 }
 
-export const llmwikiLoader: Loader = { enumerate, overview, scaffold, health };
+export const llmwikiLoader: Loader = {
+  enumerate,
+  overview,
+  requiredFiles: ["index.md"],
+  scaffold,
+  health,
+};

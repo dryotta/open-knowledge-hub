@@ -148,9 +148,9 @@ name.
 
 Fixtures (`fixtures/`):
 
-- **`kb-hub`** — a rich container: `kb` knowledge (an Auth concept), a `debugging` skill,
-  a `csv2json` tool, and a `mem` module with two dated entries about a recurring
-  token-refresh / clock-skew issue.
+- **`kb-hub`** — a rich container: `kb` knowledge (an Auth concept), a nested
+  `engineering/testing/debugging` skill, a `csv2json` tool, and a `mem` module with
+  two dated entries about a recurring token-refresh / clock-skew issue.
 - **`git-hub`** — a `kb` knowledge module (used as the git-backed hub; appears alone or alongside `kb-hub`).
 - **`plain-notes`** — a minimal folder used as the unregistered `notes` hub.
 - **`custom-hub`** — a container with a `recipes` custom module including a `cook` skill.
@@ -343,7 +343,7 @@ $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
   > …assemble a working set for this task in container "kb-hub": debug a failing test that
   > parses a CSV file. Include every module type that helps and cite each by path.
 
-  Expect: selects the `debugging` skill and the `csv2json` tool, not just knowledge.
+  Expect: selects the nested `debugging` skill and the `csv2json` tool, not just knowledge.
 
 - **learn** (env `git`):
   > Learn the following into container "git-hub" and persist it: "Session tokens are signed

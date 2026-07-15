@@ -2,7 +2,15 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverModuleSkills, mergeSkills, MODULE_SKILL_ROOTS, readSkill, skillRootsForType, type Skill } from "../src/modules/skills.js";
+import {
+  discoverModuleSkills,
+  mergeSkills,
+  MODULE_SKILL_ROOTS,
+  readSkill,
+  skillRootsForType,
+  validateModuleSkills,
+  type Skill,
+} from "../src/modules/skills.js";
 import { vendoredSkills } from "../src/modules/vendored.js";
 
 async function skill(root: string, rel: string, name: string, description: string, body = "do it"): Promise<void> {
@@ -20,6 +28,31 @@ describe("module skills", () => {
       expect(skills.map((s) => s.name).sort()).toEqual(["remember", "summarize"]);
       expect(skills.find((s) => s.name === "remember")!.body).toContain("do it");
       expect(MODULE_SKILL_ROOTS).toContain(".claude/skills");
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("discovers arbitrary-depth groups and stops descending at a skill leaf", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(
+        mod,
+        join(".okh", "skills", "engineering", "testing", "debug"),
+        "debug",
+        "debug failures",
+      );
+      await skill(
+        mod,
+        join(".okh", "skills", "engineering", "testing", "debug", "resources", "hidden"),
+        "hidden",
+        "must stay a resource",
+      );
+
+      const skills = await discoverModuleSkills(mod);
+
+      expect(skills.map((s) => s.name)).toEqual(["debug"]);
+      expect(skills[0]!.path).toBe("engineering/testing/debug/SKILL.md");
     } finally {
       await rm(mod, { recursive: true, force: true });
     }
@@ -70,13 +103,35 @@ describe("module skills", () => {
   it("discovers module-root skills when the root is included (skills-type layout)", async () => {
     const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
     try {
-      await skill(mod, "ado", "ado", "ADO CLI");
+      await skill(mod, join("platform", "azure", "ado"), "ado", "ADO CLI");
       await skill(mod, join(".okh", "skills", "nested"), "nested", "nested one");
       const rootOnly = await discoverModuleSkills(mod);
       expect(rootOnly.map((s) => s.name)).toEqual(["nested"]); // default roots ignore the module root
       const withRoot = await discoverModuleSkills(mod, skillRootsForType("skills"));
       expect(withRoot.map((s) => s.name).sort()).toEqual(["ado", "nested"]);
       expect(withRoot.find((s) => s.name === "ado")!.source).toBe("module-root");
+      expect(withRoot.find((s) => s.name === "ado")!.path).toBe("platform/azure/ado/SKILL.md");
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("reports malformed leaves and duplicate names within one skill root", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(mod, join("engineering", "debug"), "debug", "engineering");
+      await skill(mod, join("data", "debug"), "debug", "data");
+      await mkdir(join(mod, "ops", "broken"), { recursive: true });
+      await writeFile(join(mod, "ops", "broken", "SKILL.md"), "# Missing frontmatter\n");
+      await writeFile(join(mod, "SKILL.md"), "---\nname: root\n---\n");
+
+      const issues = await validateModuleSkills(mod, [""]);
+      const discovered = await discoverModuleSkills(mod, [""]);
+
+      expect(issues.join("\n")).toMatch(/duplicate skill name "debug"/);
+      expect(issues.join("\n")).toMatch(/missing non-empty frontmatter name/);
+      expect(issues.join("\n")).toMatch(/skill root cannot itself be a skill leaf/);
+      expect(discovered.filter((skill) => skill.name === "debug")).toHaveLength(2);
     } finally {
       await rm(mod, { recursive: true, force: true });
     }
@@ -84,9 +139,10 @@ describe("module skills", () => {
 });
 
 describe("vendored skills", () => {
-  it("lists knowledge and memory vendored skills", async () => {
+  it("lists built-in type skills", async () => {
     expect((await vendoredSkills("knowledge")).map((s) => s.name)).toContain("learn");
     expect((await vendoredSkills("memory")).map((s) => s.name).sort()).toEqual(["reflect", "remember", "todo"]);
+    expect((await vendoredSkills("skills")).map((s) => s.name)).toEqual(["initialize"]);
     expect(await vendoredSkills("recipes")).toEqual([]);
   });
 });

@@ -72,8 +72,14 @@ function formatInspect(r: InspectResult): string {
     ? r.items.map((i) => `  - ${i.title}${i.description ? ` — ${i.description}` : ""} (${i.path})`)
     : ["  (empty)"];
   const skillLines = r.skills.length
-    ? r.skills.map((s) => `  - ${s.name} — ${s.description}`)
+    ? r.skills.map((s) => {
+        const location = s.path ? ` [${s.source}:${s.path}]` : ` [${s.source}]`;
+        return `  - ${s.name}${s.description ? ` — ${s.description}` : ""}${location}`;
+      })
     : ["  (none)"];
+  const skillIssueLines = r.skillIssues?.length
+    ? ["Skill tree issues:", ...r.skillIssues.map((issue) => `  - ${issue}`)]
+    : [];
   const overview = r.overview.trim();
   const overviewLines = overview
     ? ["Scope / overview:", ...overview.split("\n").map((l) => `  ${l}`)]
@@ -93,7 +99,15 @@ function formatInspect(r: InspectResult): string {
       if (h.missingType.length) healthLines.push(`  Missing type (${h.missingType.length}): ${h.missingType.join(", ")}`);
     }
   }
-  return [head, ...items, "Skills:", ...skillLines, ...overviewLines, ...healthLines].join("\n");
+  return [
+    head,
+    ...items,
+    "Skills:",
+    ...skillLines,
+    ...skillIssueLines,
+    ...overviewLines,
+    ...healthLines,
+  ].join("\n");
 }
 
 function formatContainerPlan(plan: AddContainerPlan): string {

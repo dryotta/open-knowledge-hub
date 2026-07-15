@@ -1,0 +1,31 @@
+# run - locate and invoke a nested skill from a skills-module tree.
+- config:
+    - vars:
+        env: local-and-git
+        prompt: |
+          Use the open-knowledge-hub MCP tools. In container "kb-hub", inspect the
+          "skills" module to locate the nested "debugging" skill, then run it for:
+          "A CSV parser test fails only on Windows."
+  tests:
+    - description: Run - nested skills module - locates and invokes debugging
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: inspect
+                arguments: { container: kb-hub, module: skills }
+              - name: run
+                arguments: { container: kb-hub, module: skills, skill: debugging }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config: { mustContain: ["engineering/testing/debugging/SKILL.md"] }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: locates-nested-skill
+                text: The agent inspects the skills module and identifies the debugging skill at its nested engineering/testing path.
+              - id: runs-debugging
+                text: The agent invokes the run tool with skill "debugging" and applies its root-cause workflow to the Windows-only CSV test failure.

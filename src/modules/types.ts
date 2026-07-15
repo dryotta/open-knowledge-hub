@@ -40,6 +40,8 @@ export interface Loader {
   enumerate(moduleRoot: string): Promise<Item[]>;
   /** The module's entry-point text (OKF index.md, or a generated listing). */
   overview(moduleRoot: string): Promise<string>;
+  /** Files that structural validation requires at the module root. */
+  requiredFiles?: readonly string[];
   /** Optionally scaffold a type skeleton into a freshly created module folder. */
   scaffold?(moduleRoot: string): Promise<void>;
   /** Optional deterministic structural health report (currently: llmwiki). */

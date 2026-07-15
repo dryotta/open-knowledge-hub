@@ -1,5 +1,5 @@
 ---
-name: Debugging
+name: debugging
 description: Systematic root-cause analysis for failing tests
 ---
 

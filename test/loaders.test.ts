@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, mkdir, writeFile } from "node:fs/promises";
+import { rm, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "./helpers.js";
 import { knowledgeLoader } from "../src/modules/loaders/knowledge.js";
@@ -169,27 +169,44 @@ describe("llmwiki loader", () => {
 });
 
 describe("skills loader", () => {
-  it("enumerates skill folders via SKILL.md frontmatter", async () => {
+  it("recursively enumerates skill leaves via SKILL.md frontmatter", async () => {
     const root = await tmp();
-    await write(root, "debugging/SKILL.md", "---\nname: Debugging\ndescription: Find bugs\n---\nbody");
+    await write(root, "engineering/testing/debugging/SKILL.md", "---\nname: Debugging\ndescription: Find bugs\n---\nbody");
+    await write(root, "engineering/testing/debugging/resources/child/SKILL.md", "---\nname: Hidden\n---\nignored");
     await write(root, "no-skill/notes.md", "ignored");
 
     const items = await skillsLoader.enumerate(root);
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      path: "debugging/SKILL.md",
+      path: "engineering/testing/debugging/SKILL.md",
       title: "Debugging",
       description: "Find bugs",
       type: "skill",
     });
   });
 
-  it("overview lists skills or says none", async () => {
+  it("overview returns index.md when present, else a generated recursive listing", async () => {
     const root = await tmp();
-    expect(await skillsLoader.overview(root)).toContain("No skills");
-    await write(root, "x/SKILL.md", "---\nname: X\n---\n");
-    expect(await skillsLoader.overview(root)).toContain("**X**");
+    expect(await skillsLoader.overview(root)).toContain("Empty skills module");
+    await write(root, "area/x/SKILL.md", "---\nname: X\n---\n");
+    expect(await skillsLoader.overview(root)).toContain("area/x/SKILL.md");
+    await write(root, "index.md", "# Team skills\n\n## Structure\n");
+    expect(await skillsLoader.overview(root)).toContain("# Team skills");
+  });
+
+  it("scaffolds a skills index without overwriting an existing one", async () => {
+    const root = await tmp();
+    await skillsLoader.scaffold!(root);
+    expect(await readFile(join(root, "index.md"), "utf8")).toContain("## Structure");
+    expect(skillsLoader.requiredFiles).toContain("index.md");
+    await expect(skillsLoader.scaffold!(root)).rejects.toMatchObject({ code: "EEXIST" });
+  });
+
+  it("propagates read errors for an existing index.md path", async () => {
+    const root = await tmp();
+    await mkdir(join(root, "index.md"), { recursive: true });
+    await expect(skillsLoader.overview(root)).rejects.toBeTruthy();
   });
 });
 

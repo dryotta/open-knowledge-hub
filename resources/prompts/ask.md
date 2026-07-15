@@ -7,7 +7,7 @@
 
 Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
 relevant module(s), starting from each module's overview (knowledge/llmwiki: index.md;
-skills: the listing; memory: recent files). Return a distilled,
+skills: the root index and nested paths; memory: recent files). Return a distilled,
 **cited** answer. Do not load whole modules into this context.
 
 <discipline name="ask">
@@ -45,7 +45,10 @@ Instruct the sub-agent to:
    to answer the question. Do not read the whole bundle.
 2. **Ground every claim** in the pack — cite the concept (and its underlying `# Citations` origin
    URL / `path:line`) it drew each fact from. Carry through any `⚠️ UNVERIFIED` flags rather than
-   laundering them into fact.
+   laundering them into fact. Preserve evidentiary strength exactly: correlation is not causation,
+   an observation is not a root cause, and absence of detail is not evidence that a behavior does
+   not exist. Do not add generic benefits, rationale, examples, or likely implementation details
+   that the source does not state.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
 4. **Assess scope explicitly.** For each question, say whether the pack actually covers it:

@@ -49,6 +49,8 @@ describe("prompt builders", () => {
     expect(text).toContain("How does auth work?");
     expect(text).toContain("/c/hub/kb");
     expect(text).toContain('<discipline name="ask">');
+    expect(text).toMatch(/correlation is not causation/i);
+    expect(text).toMatch(/do not add generic benefits/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
@@ -69,16 +71,16 @@ describe("prompt builders", () => {
   });
   it("buildInstructions routes deterministic todo work through todos while preserving remember and todo skill distinctions", async () => {
     const text = await buildInstructions({ wakePhrase: "sam" });
-    expect(text).toContain("read, list, filter, or check todo lists");
-    expect(text).toContain("call `todos`");
-    expect(text).toContain("Every deterministic todo operation is performed through `todos`");
-    expect(text).toContain("explicitly asks to remember an observation, reminder, commitment, or task");
-    expect(text).toContain('use the target memory module\'s `remember` skill');
-    expect(text).toContain("For other natural-language todo management");
-    expect(text).toContain('use the target memory module\'s `todo` skill');
+    expect(text).toContain("Routing gates");
+    expect(text).toContain('skill: "learn"');
+    expect(text).toContain("Do not");
+    expect(text).toContain("substitute a memory module");
+    expect(text).toMatch(/never call `todos` first/i);
+    expect(text).toContain('skill: "remember"');
+    expect(text).toContain('skill: "todo"');
+    expect(text).toContain("Every deterministic todo operation still goes through `todos`");
+    expect(text).toContain("Call `todos` directly only to read/list/filter todos");
     expect(text).not.toContain("update_todo");
-    expect(text).not.toContain("must first call `run { container, module, skill: \"todo\", input? }`");
-    expect(text).not.toContain("before `todos`");
     expect(text).not.toContain("without bypassing or restarting it");
   });
   it("buildRun embeds skill name, body, module path, and write policy", async () => {

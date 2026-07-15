@@ -126,7 +126,7 @@ describe("MCP server surface", () => {
     expect(textOf(res)).toMatch(/skill: "initialize"/);
   });
 
-  it("adding a non-initialize type omits the initialize pointer", async () => {
+  it("adding a skills module points at the initialize skill", async () => {
     const { client } = await connect();
     const source = await makeTempDir();
     cleanups.push(source);
@@ -134,6 +134,18 @@ describe("MCP server surface", () => {
     const res = await client.callTool({
       name: "add_module",
       arguments: { container: "hub", path: "sk", type: "skills", name: "SK", create: true },
+    });
+    expect(textOf(res)).toContain('skill: "initialize"');
+  });
+
+  it("adding a non-initialize custom type omits the initialize pointer", async () => {
+    const { client } = await connect();
+    const source = await makeTempDir();
+    cleanups.push(source);
+    await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
+    const res = await client.callTool({
+      name: "add_module",
+      arguments: { container: "hub", path: "recipes", type: "recipes", name: "Recipes", create: true },
     });
     expect(textOf(res)).not.toContain('skill: "initialize"');
   });
@@ -233,7 +245,8 @@ describe("MCP server surface", () => {
     const { client } = await connect();
     const todos = (await client.listTools()).tools.find((t) => t.name === "todos");
     const description = normalizedWhitespace(todos?.description);
-    expect(description).toContain("For a natural-language todo change, call `run` before `todos`");
+    expect(description).toContain("never call create/update directly from a user's natural-language todo request");
+    expect(description).toContain("Call `run` first");
     expect(description).toContain('explicit remember requests use `skill: "remember"`');
     expect(description).toContain('other todo changes use `skill: "todo"`');
   });
