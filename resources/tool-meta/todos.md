@@ -21,6 +21,12 @@ args:
   priority: "Create/update: set a todo priority, clear it with null on update, or omit to leave it unchanged."
   apply: "Create/update only: write the previewed change when true."
 ---
+**Routing gate:** never call create/update directly from a user's natural-language
+todo request. Call `run` first: explicit remember requests use `skill: "remember"`;
+other todo changes use `skill: "todo"`. Use `todos` directly only to show, review,
+or filter a list, or after the active memory-module skill directs the deterministic
+mutation.
+
 List, preview, create, or update Markdown todos in memory modules. `operation`
 defaults to `list`. Create and update return a preview without writing unless
 `apply: true` is supplied. Ordinary agent-driven writes pass `apply: true`
@@ -29,10 +35,6 @@ requests or MCP App checkbox interactions, which may apply directly without sync
 Every result includes the live hosted todo web UI URL when the standard server
 entrypoint is running.
 
-Use this directly only when asked to show, review, or filter a todo list, or when
-an active memory-module skill already directed a deterministic todo mutation. For
-a natural-language todo change, call `run` before `todos`: explicit remember
-requests use `skill: "remember"`; other todo changes use `skill: "todo"`.
 Agent-driven writes call `sync` afterward; MCP App changes remain local until
 explicit sync.
 

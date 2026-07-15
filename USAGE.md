@@ -37,6 +37,14 @@ Review it and confirm; your agent then re-runs it with `create:true` to apply.
 proposes the module, confirms with you, then applies with `create:true` and runs the
 type's `initialize` skill to populate it.
 
+## Organizing many skills
+
+Use multiple `skills` modules when audience, ownership, access, or sync lifecycle
+differs. Within one module, `index.md` defines its scope and folder taxonomy; group
+skills by stable capability area at any depth. A folder with `SKILL.md` is a leaf,
+so nested scripts, templates, and references stay attached to that skill. Skill
+names must be unique only within their module.
+
 ## Choosing a wake phrase
 
 The default is `hub`. To change it: `hub, call yourself brain.` — your agent

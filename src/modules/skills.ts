@@ -1,5 +1,7 @@
+import type { Dirent } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { OkhError } from "../errors.js";
 import { parseFrontmatter, stringField } from "../util/frontmatter.js";
 
 export interface Skill {
@@ -10,6 +12,8 @@ export interface Skill {
   source: string;
   /** Absolute path to the skill's folder (holds SKILL.md and any resource files). */
   dir?: string;
+  /** POSIX path to SKILL.md, relative to the skill root represented by `source`. */
+  path?: string;
 }
 
 /** Module-local skill roots scanned, in precedence order: on a name collision an
@@ -34,66 +38,214 @@ export function skillRootsForType(moduleType: string): readonly string[] {
     : MODULE_SKILL_ROOTS;
 }
 
-async function subdirNames(dir: string): Promise<string[]> {
-  try {
-    const entries = await readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
-  } catch {
-    return [];
+export interface SkillRootScan {
+  skills: Skill[];
+  issues: string[];
+}
+
+const SKILL_TREE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+
+function isNotFound(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function shouldSkipDir(name: string): boolean {
+  return name.startsWith(".") || SKILL_TREE_SKIP_DIRS.has(name);
+}
+
+function skillFromText(
+  text: string,
+  dir: string,
+  source: string,
+  path?: string,
+): Skill | undefined {
+  const { data, body } = parseFrontmatter(text);
+  const name = stringField(data, "name")?.trim();
+  if (!name) return undefined;
+  return {
+    name,
+    description: stringField(data, "description")?.trim() ?? "",
+    body: body.trim(),
+    source,
+    dir,
+    ...(path ? { path } : {}),
+  };
+}
+
+/**
+ * Scan one skill root recursively. Group directories may nest arbitrarily; the
+ * first directory containing SKILL.md is a leaf, so bundled resource folders are
+ * never mistaken for child skills.
+ */
+export async function scanSkillsInRoot(root: string, source: string): Promise<SkillRootScan> {
+  const skills: Skill[] = [];
+  const issues: string[] = [];
+
+  async function walk(dir: string, rel: string, canBeSkill: boolean): Promise<void> {
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if (isNotFound(err)) return;
+      issues.push(`${rel || "."}: cannot read directory`);
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+
+    const marker = entries.find((entry) => entry.name === "SKILL.md");
+    if (!canBeSkill && marker) {
+      issues.push("SKILL.md: a skill root cannot itself be a skill leaf; use a child folder");
+    }
+    if (canBeSkill) {
+      if (marker) {
+        const path = `${rel}/SKILL.md`;
+        if (!marker.isFile()) {
+          issues.push(`${path}: must be a file`);
+          return;
+        }
+        let text: string;
+        try {
+          text = await readFile(join(dir, "SKILL.md"), "utf8");
+        } catch {
+          issues.push(`${path}: cannot read file`);
+          return;
+        }
+        const skill = skillFromText(text, dir, source, path);
+        if (!skill) {
+          issues.push(`${path}: missing non-empty frontmatter name`);
+          return;
+        }
+        skills.push(skill);
+        return;
+      }
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || shouldSkipDir(entry.name)) continue;
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      await walk(join(dir, entry.name), childRel, true);
+    }
   }
+
+  await walk(root, "", false);
+  skills.sort((a, b) => (a.path ?? "").localeCompare(b.path ?? ""));
+
+  const byName = new Map<string, string[]>();
+  for (const skill of skills) {
+    const paths = byName.get(skill.name) ?? [];
+    paths.push(skill.path ?? skill.name);
+    byName.set(skill.name, paths);
+  }
+  for (const [name, paths] of byName) {
+    if (paths.length > 1) {
+      issues.push(`duplicate skill name "${name}" at ${paths.join(", ")}`);
+    }
+  }
+
+  return { skills, issues: issues.sort() };
+}
+
+/** Discover every valid skill in one recursive skill root. */
+export async function discoverSkillsInRoot(root: string, source: string): Promise<Skill[]> {
+  const scan = await scanSkillsInRoot(root, source);
+  if (scan.issues.length > 0) {
+    throw new OkhError(
+      "INVALID_MANIFEST",
+      `Invalid ${source || "module-root"} skill tree: ${scan.issues.join("; ")}.`,
+    );
+  }
+  return scan.skills;
+}
+
+export interface ModuleSkillDiscovery {
+  skills: Skill[];
+  issues: string[];
+}
+
+/**
+ * Discover module-local skills without disabling valid leaves when siblings are
+ * malformed. Earlier roots still shadow later roots by name; duplicates within
+ * one root remain visible so resolution can report an explicit conflict.
+ */
+export async function discoverModuleSkillSet(
+  moduleRoot: string,
+  roots: readonly string[] = MODULE_SKILL_ROOTS,
+): Promise<ModuleSkillDiscovery> {
+  const scans = await Promise.all(
+    roots.map(async (root) => {
+      const source = root || "module-root";
+      return {
+        source,
+        scan: await scanSkillsInRoot(root ? join(moduleRoot, root) : moduleRoot, source),
+      };
+    }),
+  );
+
+  const skills: Skill[] = [];
+  const issues: string[] = [];
+  const seenFromEarlierRoots = new Set<string>();
+  for (const { source, scan } of scans) {
+    issues.push(...scan.issues.map((issue) => `${source}: ${issue}`));
+    for (const skill of scan.skills) {
+      if (!seenFromEarlierRoots.has(skill.name)) skills.push(skill);
+    }
+    for (const skill of scan.skills) seenFromEarlierRoots.add(skill.name);
+  }
+  return { skills, issues };
+}
+
+/** Structural issues across a module's configured skill roots. Missing optional roots are valid. */
+export async function validateModuleSkills(
+  moduleRoot: string,
+  roots: readonly string[] = MODULE_SKILL_ROOTS,
+): Promise<string[]> {
+  return (await discoverModuleSkillSet(moduleRoot, roots)).issues;
 }
 
 /** Read one `<dir>/SKILL.md` into a Skill, or undefined if absent/unnamed. */
-export async function readSkill(dir: string, source: string): Promise<Skill | undefined> {
+export async function readSkill(
+  dir: string,
+  source: string,
+  path?: string,
+): Promise<Skill | undefined> {
   let text: string;
   try {
     text = await readFile(join(dir, "SKILL.md"), "utf8");
   } catch {
     return undefined;
   }
-  const { data, body } = parseFrontmatter(text);
-  const name = stringField(data, "name");
-  if (!name) return undefined;
-  return { name, description: stringField(data, "description") ?? "", body: body.trim(), source, dir };
+  return skillFromText(text, dir, source, path);
 }
 
 /** Discover module-local skills across the given skill roots inside a module.
  * Earlier roots take precedence: a skill name found in an earlier root shadows the
  * same name in a later root (e.g. `.okh/skills` over `.claude/skills`). An empty
- * root string means the module folder itself (skills at `<module>/<name>/SKILL.md`). */
+ * root string means the module folder itself. Each root may contain arbitrary-depth
+ * grouping folders; directories containing SKILL.md are leaf skills. */
 export async function discoverModuleSkills(
   moduleRoot: string,
   roots: readonly string[] = MODULE_SKILL_ROOTS,
 ): Promise<Skill[]> {
-  const out: Skill[] = [];
-  const seen = new Set<string>();
-  for (const root of roots) {
-    const base = root ? join(moduleRoot, root) : moduleRoot;
-    for (const name of await subdirNames(base)) {
-      const s = await readSkill(join(base, name), root || "module-root");
-      if (s && !seen.has(s.name)) {
-        seen.add(s.name);
-        out.push(s);
-      }
-    }
-  }
-  return out;
+  return (await discoverModuleSkillSet(moduleRoot, roots)).skills;
 }
 
 /** Discover vendored skills for a built-in type from an absolute vendored dir. */
 export async function discoverVendoredSkills(vendoredDir: string, source = "vendored"): Promise<Skill[]> {
-  const out: Skill[] = [];
-  for (const name of await subdirNames(vendoredDir)) {
-    const s = await readSkill(join(vendoredDir, name), source);
-    if (s) out.push(s);
-  }
-  return out;
+  return discoverSkillsInRoot(vendoredDir, source);
 }
 
 /** Merge vendored ∪ local; a local skill overrides a vendored one of the same name. */
 export function mergeSkills(vendored: Skill[], local: Skill[]): Skill[] {
-  const byName = new Map<string, Skill>();
-  for (const s of vendored) byName.set(s.name, s);
-  for (const s of local) byName.set(s.name, s);
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const localNames = new Set(local.map((skill) => skill.name));
+  return [...vendored.filter((skill) => !localNames.has(skill.name)), ...local].sort(
+    (a, b) =>
+      a.name.localeCompare(b.name) ||
+      (a.path ?? "").localeCompare(b.path ?? "") ||
+      a.source.localeCompare(b.source),
+  );
 }

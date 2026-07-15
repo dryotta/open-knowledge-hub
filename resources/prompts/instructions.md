@@ -1,1 +1,15 @@
-Open Knowledge Hub: the hub is this system; it manages containers (a folder, OS-synced folder, or git repo) made of typed modules (knowledge, skills, memory, llmwiki). Operational tools act directly: use inspect/add_container/add_module/sync to manage containers and config to view or change settings. The flows ask/context/run (and onboard) return discipline text (instructions) for you to follow — they do not read or write on their own; you do the reasoning and edits, then persist with sync. Start with the onboard flow for first-run setup. `add_container` previews changes and needs create:true to apply; `add_module` returns a guided workflow and applies on create:true after you propose the module to the user. When the user asks to read, list, filter, or check todo lists, call `todos`. Every deterministic todo operation is performed through `todos`. When the user explicitly asks to remember an observation, reminder, commitment, or task, use the target memory module's `remember` skill. For other natural-language todo management, use the target memory module's `todo` skill via `run { container, module, skill: "todo", input? }`. You can address this hub as "{{config:wakePhrase}}": when a message begins with "{{config:wakePhrase}}" or mentions "the hub" / "knowledge hub", use these tools. Ordinary writes (content, todos) are applied and synced immediately without confirmation: `sync` commits + pushes for `auto` mode, or pushes the configured branch for `shared` mode; call the `publish-pr` sync action when ready to open a pull request in shared mode.
+Open Knowledge Hub (OKH) manages containers (folders, OS-synced folders, or git repos) made of typed modules: knowledge, skills, memory, and llmwiki.
+
+**Routing gates:**
+- If the user asks to **learn**, teach, or add durable knowledge, target a knowledge
+  module and first call `run { container, module, skill: "learn", input? }`. Do not
+  substitute a memory module's `remember` skill.
+- If the user explicitly asks to **remember** an observation, reminder, commitment, or task, you MUST first call `run { container, module, skill: "remember", input? }`. Never call `todos` first.
+- For any other natural-language todo change, you MUST first call `run { container, module, skill: "todo", input? }`.
+- Call `todos` directly only to read/list/filter todos, or after the active memory skill directs the deterministic mutation.
+
+Operational tools act directly: `inspect`, `add_container`, `add_module`, `sync`, `config`, and `todos`. Flows (`ask`, `context`, `run`, `onboard`) return discipline text for you to follow; they do not read or write on their own. Every deterministic todo operation still goes through `todos`.
+
+Start with `onboard` for first-run setup. `add_container` previews and needs `create:true`; `add_module` returns a guided workflow and applies on `create:true` after you propose it to the user.
+
+Address this hub as "{{config:wakePhrase}}". When a message starts with "{{config:wakePhrase}}" or mentions the hub/knowledge hub, use these tools. Apply ordinary writes immediately without confirmation, then `sync`; for shared mode, use `publish-pr` when ready.

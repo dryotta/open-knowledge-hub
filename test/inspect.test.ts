@@ -64,6 +64,63 @@ describe("validate", () => {
     expect(res.issues.join("\n")).toMatch(/index\.md/i);
   });
 
+  it("flags a skills module without index.md", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await seedModule(dir, "skills", "skills", "Skills");
+    const res = await service.validate("hub");
+    expect(res.ok).toBe(false);
+    expect(res.issues.join("\n")).toMatch(/skills module "skills": missing index\.md/i);
+  });
+
+  it("flags an llmwiki module without index.md", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await seedModule(dir, "wiki", "llmwiki", "Wiki");
+    const res = await service.validate("hub");
+    expect(res.ok).toBe(false);
+    expect(res.issues.join("\n")).toMatch(/llmwiki module "wiki": missing index\.md/i);
+  });
+
+  it("flags invalid nested skill leaves and duplicate names", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "skills", type: "skills", name: "Skills", create: true });
+    await mkdir(join(dir, "skills", "engineering", "debug"), { recursive: true });
+    await mkdir(join(dir, "skills", "data", "debug"), { recursive: true });
+    await mkdir(join(dir, "skills", "ops", "broken"), { recursive: true });
+    await writeFile(join(dir, "skills", "engineering", "debug", "SKILL.md"), "---\nname: debug\n---\n");
+    await writeFile(join(dir, "skills", "data", "debug", "SKILL.md"), "---\nname: debug\n---\n");
+    await writeFile(join(dir, "skills", "ops", "broken", "SKILL.md"), "# Missing name\n");
+
+    const res = await service.validate("hub");
+
+    expect(res.ok).toBe(false);
+    expect(res.issues.join("\n")).toMatch(/duplicate skill name "debug"/);
+    expect(res.issues.join("\n")).toMatch(/missing non-empty frontmatter name/);
+  });
+
+  it("keeps valid skills inspectable when a sibling leaf is malformed", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "skills", type: "skills", name: "Skills", create: true });
+    await mkdir(join(dir, "skills", "good"), { recursive: true });
+    await mkdir(join(dir, "skills", "broken"), { recursive: true });
+    await writeFile(join(dir, "skills", "good", "SKILL.md"), "---\nname: good\n---\n\nWorks.\n");
+    await writeFile(join(dir, "skills", "broken", "SKILL.md"), "# Missing name\n");
+
+    const inspected = await service.inspect("hub", "skills");
+    if (inspected.kind !== "module") throw new Error("expected module inspect result");
+
+    expect(inspected.skills.map((skill) => skill.name)).toContain("good");
+    expect(inspected.skillIssues?.join("\n")).toMatch(/broken\/SKILL\.md/);
+    expect((await service.resolveSkill("hub", "skills", "good")).body).toContain("Works");
+  });
+
   it("passes for a well-formed container", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
@@ -129,5 +186,31 @@ describe("inspect", () => {
     const m = await service.inspect("hub", "kb");
     expect(m.kind).toBe("module");
     if (m.kind === "module") expect(m.overview).toContain("Know the auth system.");
+  });
+
+  it("includes a skills module's scope contract and nested skill paths", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "skills", type: "skills", name: "Skills", create: true });
+    await writeFile(join(dir, "skills", "index.md"), "# Team skills\n\nGrouped by capability area.\n", "utf8");
+    await mkdir(join(dir, "skills", "engineering", "testing", "debug"), { recursive: true });
+    await writeFile(
+      join(dir, "skills", "engineering", "testing", "debug", "SKILL.md"),
+      "---\nname: debug\ndescription: Find root causes\n---\n\nDebug.\n",
+    );
+
+    const inspected = await service.inspect("hub", "skills");
+    if (inspected.kind !== "module") throw new Error("expected module inspect result");
+
+    expect(inspected.overview).toContain("Grouped by capability area.");
+    expect(inspected.items).toContainEqual(expect.objectContaining({
+      path: "engineering/testing/debug/SKILL.md",
+    }));
+    expect(inspected.skills).toContainEqual(expect.objectContaining({
+      name: "debug",
+      source: "module-root",
+      path: "engineering/testing/debug/SKILL.md",
+    }));
   });
 });

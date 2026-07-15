@@ -30,17 +30,22 @@ Each module folder carries a manifest with `type`, `name`, `description` (option
 and `config` (optional). The hub auto-discovers modules by scanning the container
 for these manifests — a folder is a module iff it has `.okh/module.yaml`.
 Built-in types ship vendored skills (`knowledge` → `learn`, `initialize`; `memory` →
-`remember`, `reflect`, `todo`). Module-local skills are discovered from `.okh/skills/` and
-common external roots like `.claude/skills/`. Shared, module-less skills (`grilling`,
-`okf-writer`) live under `resources/shared/skills/` and run via `run { skill }` with
-no container/module. `.okh/` is reserved for OKH state.
+`remember`, `reflect`, `todo`; `skills` → `initialize`). Module-local skills are
+discovered recursively from `.okh/skills/` and common external roots like
+`.claude/skills/`. Shared, module-less skills (`grilling`, `okf-writer`) live under
+`resources/shared/skills/` and run via `run { skill }` with no container/module.
+`.okh/` is reserved for OKH state.
 
 ### Module
 A self-contained typed subfolder with its own `.okh/module.yaml`. Built-in types:
-`knowledge` (OKF bundle), `llmwiki`, `memory`, and `skills` (`SKILL.md` skills; a
-skill can also launch/run a CLI tool). Custom types (any other string) use a generic
-file-listing loader; skills come entirely from the module. A loader per type
-enumerates items and produces an overview; loaders never interpret content.
+`knowledge` (OKF bundle), `llmwiki`, `memory`, and `skills` (root `index.md` plus an
+arbitrary-depth tree whose `SKILL.md` directories are leaves; a skill can also
+launch/run a CLI tool). Group directories may have their own `index.md`; descendants
+of a skill leaf are resources. Skill names are unique within a module, while
+multiple skills modules may reuse names because invocation is module-scoped. Custom
+types (any other string) use a generic file-listing loader; skills come entirely
+from the module. A loader per type enumerates items and produces an overview;
+loaders never interpret content.
 
 ### Sync model
 `auto`: `sync` commits local changes and pushes (fast-forward pull to integrate

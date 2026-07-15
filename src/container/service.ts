@@ -30,7 +30,13 @@ import { migrateLegacyContainerManifest, removeLegacyContainerManifest } from ".
 import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
 import { type Item, type WikiHealth } from "../modules/types.js";
 import { getLoader } from "../modules/registry.js";
-import { discoverModuleSkills, mergeSkills, skillRootsForType, type Skill } from "../modules/skills.js";
+import {
+  discoverModuleSkillSet,
+  mergeSkills,
+  skillRootsForType,
+  validateModuleSkills,
+  type Skill,
+} from "../modules/skills.js";
 import { resolveSharedSkill as resolveShared } from "../modules/shared.js";
 import { vendoredSkills } from "../modules/vendored.js";
 import { BackendRegistry, createBackendRegistry } from "../sync/backendRegistry.js";
@@ -185,7 +191,8 @@ export type InspectResult =
       module: { path: string; type: string; name: string; description: string; config?: Record<string, unknown> };
       overview: string;
       items: Item[];
-      skills: Array<{ name: string; description: string }>;
+      skills: Array<{ name: string; description: string; source: string; path?: string }>;
+      skillIssues?: string[];
       health?: WikiHealth;
     };
 
@@ -342,7 +349,7 @@ export class ContainerService {
     };
   }
 
-  /** Structural validation: module manifests parse, knowledge has index.md. */
+  /** Structural validation: manifests, type-required files, and local skill trees. */
   async validate(name: string): Promise<{ ok: boolean; issues: string[] }> {
     const reg = await this.loadRegistryData();
     const entry = requireContainer(reg, name);
@@ -353,9 +360,16 @@ export class ContainerService {
     for (const d of discovered) {
       if (d.error) { issues.push(`module "${d.path}": ${d.error}`); continue; }
       const m = d.manifest!;
-      if (m.type === "knowledge") {
-        const idx = await stat(join(this.moduleRoot(root, d.path), "index.md")).catch(() => null);
-        if (!idx) issues.push(`knowledge module "${d.path}": missing index.md`);
+      const moduleRoot = this.moduleRoot(root, d.path);
+      const loader = getLoader(m.type);
+      for (const requiredFile of loader.requiredFiles ?? []) {
+        const file = await stat(join(moduleRoot, requiredFile)).catch(() => null);
+        if (!file?.isFile()) {
+          issues.push(`${m.type} module "${d.path}": missing ${requiredFile}`);
+        }
+      }
+      for (const issue of await validateModuleSkills(moduleRoot, skillRootsForType(m.type))) {
+        issues.push(`module "${d.path}" skill tree: ${issue}`);
       }
     }
     return { ok: issues.length === 0, issues };
@@ -390,7 +404,7 @@ export class ContainerService {
     }
     const manifest = await loadModuleManifest(moduleRoot);
     const items = await this.safeEnumerate(manifest.type, moduleRoot);
-    const skills = await this.effectiveSkills(container, module);
+    const skillSet = await this.collectEffectiveSkills(manifest.type, moduleRoot);
     const loader = getLoader(manifest.type);
     const overview = await loader.overview(moduleRoot).catch(() => "");
     const health = await loader.health?.(moduleRoot).catch(() => undefined);
@@ -399,13 +413,32 @@ export class ContainerService {
       module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
       overview,
       items,
-      skills: skills.map(s => ({ name: s.name, description: s.description })),
+      skills: skillSet.skills.map((s) => ({
+        name: s.name,
+        description: s.description,
+        source: s.source,
+        ...(s.path ? { path: s.path } : {}),
+      })),
+      ...(skillSet.issues.length ? { skillIssues: skillSet.issues } : {}),
       ...(health ? { health } : {}),
     };
   }
 
-  /** The module's effective skill set: vendored (built-in type) ∪ module-local, local overriding by name. */
-  async effectiveSkills(container: string, module: string): Promise<Skill[]> {
+  private async collectEffectiveSkills(
+    type: string,
+    moduleRoot: string,
+  ): Promise<{ skills: Skill[]; issues: string[] }> {
+    const [vendored, local] = await Promise.all([
+      vendoredSkills(type),
+      discoverModuleSkillSet(moduleRoot, skillRootsForType(type)),
+    ]);
+    return { skills: mergeSkills(vendored, local.skills), issues: local.issues };
+  }
+
+  private async effectiveSkillSet(
+    container: string,
+    module: string,
+  ): Promise<{ skills: Skill[]; issues: string[] }> {
     const reg = await this.loadRegistryData();
     const entry = requireContainer(reg, container);
     const moduleRoot = this.moduleRoot(entry.localPath, module);
@@ -413,22 +446,38 @@ export class ContainerService {
       throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
     }
     const manifest = await loadModuleManifest(moduleRoot);
-    const [vendored, local] = await Promise.all([
-      vendoredSkills(manifest.type),
-      discoverModuleSkills(moduleRoot, skillRootsForType(manifest.type)),
-    ]);
-    return mergeSkills(vendored, local);
+    return this.collectEffectiveSkills(manifest.type, moduleRoot);
+  }
+
+  /** The module's effective skill set: vendored (built-in type) ∪ module-local, local overriding by name. */
+  async effectiveSkills(container: string, module: string): Promise<Skill[]> {
+    return (await this.effectiveSkillSet(container, module)).skills;
   }
 
   /** Resolve one named skill for a module; throws NOT_FOUND listing available skills. */
   async resolveSkill(container: string, module: string, skill: string): Promise<Skill> {
-    const skills = await this.effectiveSkills(container, module);
-    const found = skills.find((s) => s.name === skill);
-    if (!found) {
-      const names = skills.map((s) => s.name).join(", ") || "(none)";
-      throw new OkhError("NOT_FOUND", `Module "${module}" has no skill "${skill}". Available: ${names}.`);
+    const skillSet = await this.effectiveSkillSet(container, module);
+    const matches = skillSet.skills.filter((candidate) => candidate.name === skill);
+    if (matches.length > 1) {
+      const locations = matches
+        .map((match) => `${match.source}:${match.path ?? match.name}`)
+        .join(", ");
+      throw new OkhError(
+        "CONFLICT",
+        `Module "${module}" has multiple skills named "${skill}": ${locations}. Rename them to be unique within the module.`,
+      );
     }
-    return found;
+    if (matches.length === 0) {
+      const names = [...new Set(skillSet.skills.map((candidate) => candidate.name))].join(", ") || "(none)";
+      const issues = skillSet.issues.length
+        ? ` Structural issues: ${skillSet.issues.join("; ")}.`
+        : "";
+      throw new OkhError(
+        "NOT_FOUND",
+        `Module "${module}" has no skill "${skill}". Available: ${names}.${issues}`,
+      );
+    }
+    return matches[0]!;
   }
 
   /** Resolve a module-less shared skill by name (runnable via run with no container/module). */

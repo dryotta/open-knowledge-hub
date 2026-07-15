@@ -40,4 +40,9 @@ async function scaffold(moduleRoot: string): Promise<void> {
   await writeFile(join(moduleRoot, "index.md"), skeleton, { encoding: "utf8", flag: "wx" });
 }
 
-export const knowledgeLoader: Loader = { enumerate, overview, scaffold };
+export const knowledgeLoader: Loader = {
+  enumerate,
+  overview,
+  requiredFiles: ["index.md"],
+  scaffold,
+};

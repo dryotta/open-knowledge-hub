@@ -16,13 +16,13 @@
           config: { expect: [context] }
         - type: javascript
           value: file://assertions/transcript.ts
-          config: { mustContain: ["debugging", "csv2json"] }
+          config: { mustContain: ["engineering/testing/debugging/SKILL.md", "csv2json"] }
         - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
               - id: selects-skill-and-tool
-                text: The working set selects the Debugging skill and the csv2json tool, each cited by path.
+                text: The working set selects the nested debugging skill and the csv2json tool, each cited by path.
               - id: one-line-why
                 text: It notes one line on why each selected item matters.
               - id: no-auth-pad

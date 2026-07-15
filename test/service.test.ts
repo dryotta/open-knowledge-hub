@@ -115,15 +115,24 @@ describe("addModule", () => {
     expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("okf_version");
   });
 
-  it("does not scaffold content for non-knowledge modules", async () => {
+  it("scaffolds a skills index", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     const out = await service.addModule({ container: "hub", path: "skills", type: "skills", name: "My Skills", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
-    expect((await stat(moduleRoot)).isDirectory()).toBe(true);
-    await expect(stat(join(moduleRoot, "index.md"))).rejects.toBeTruthy();
+    expect((await stat(join(moduleRoot, "index.md"))).isFile()).toBe(true);
+    expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("Skills module");
+  });
+
+  it("does not scaffold content for memory modules", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    const out = await service.addModule({ container: "hub", path: "mem", type: "memory", name: "Memory", create: true });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    await expect(stat(join(out.moduleRoot, "index.md"))).rejects.toBeTruthy();
   });
 
   it("rejects a duplicate module path", async () => {

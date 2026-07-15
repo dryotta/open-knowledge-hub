@@ -120,20 +120,46 @@ describe("effective skills + resolveSkill", () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "cli"), { type: "skills", name: "CLI Tools", description: "" });
     // A tool-skill = a SKILL.md skill that launches a CLI, authored at the module root.
-    await mkdir(join(root, "cli", "ado", "lib"), { recursive: true });
-    await writeFile(join(root, "cli", "ado", "SKILL.md"), "---\nname: ado\ndescription: Read-only ADO work items via CLI\n---\n\nRun `python -m tools.ado get-work-item`.\n");
-    await writeFile(join(root, "cli", "ado", "cli.py"), "print('ado')\n");
-    await writeFile(join(root, "cli", "ado", "lib", "client.py"), "print('client')\n");
+    const skillDir = join(root, "cli", "platform", "azure", "ado");
+    await mkdir(join(skillDir, "lib"), { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "---\nname: ado\ndescription: Read-only ADO work items via CLI\n---\n\nRun `python -m tools.ado get-work-item`.\n");
+    await writeFile(join(skillDir, "cli.py"), "print('ado')\n");
+    await writeFile(join(skillDir, "lib", "client.py"), "print('client')\n");
 
     // Discoverable: the tool description is visible without loading how-to-run.
     const inspected = await svc.inspect("h", "cli");
     if (inspected.kind !== "module") throw new Error("expected module inspect result");
     const listed = inspected.skills.find((s) => s.name === "ado");
     expect(listed?.description).toBe("Read-only ADO work items via CLI");
+    expect(listed?.path).toBe("platform/azure/ado/SKILL.md");
 
     // Runnable: the how-to-run body loads only when the skill is resolved.
     const resolved = await svc.resolveSkill("h", "cli", "ado");
     expect(resolved.body).toMatch(/python -m tools\.ado/);
+  });
+
+  it("allows the same skill name in separate skills modules", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "engineering"), { type: "skills", name: "Engineering", description: "" });
+    await saveModuleManifest(join(root, "data"), { type: "skills", name: "Data", description: "" });
+    await mkdir(join(root, "engineering", "delivery", "deploy"), { recursive: true });
+    await mkdir(join(root, "data", "pipelines", "deploy"), { recursive: true });
+    await writeFile(join(root, "engineering", "delivery", "deploy", "SKILL.md"), "---\nname: deploy\n---\n\nDeploy the service.\n");
+    await writeFile(join(root, "data", "pipelines", "deploy", "SKILL.md"), "---\nname: deploy\n---\n\nDeploy the pipeline.\n");
+
+    expect((await svc.resolveSkill("h", "engineering", "deploy")).body).toContain("service");
+    expect((await svc.resolveSkill("h", "data", "deploy")).body).toContain("pipeline");
+  });
+
+  it("rejects ambiguous duplicate names within one skills module", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "skills"), { type: "skills", name: "Skills", description: "" });
+    await mkdir(join(root, "skills", "engineering", "deploy"), { recursive: true });
+    await mkdir(join(root, "skills", "data", "deploy"), { recursive: true });
+    await writeFile(join(root, "skills", "engineering", "deploy", "SKILL.md"), "---\nname: deploy\n---\n\nService.\n");
+    await writeFile(join(root, "skills", "data", "deploy", "SKILL.md"), "---\nname: deploy\n---\n\nPipeline.\n");
+
+    await expect(svc.resolveSkill("h", "skills", "deploy")).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
 

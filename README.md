@@ -28,9 +28,10 @@ does all the reasoning.
   `.okh/module.yaml` manifest (`type`, `name`, `description`, optional `config`).
   The hub auto-discovers modules by scanning the container for these manifests.
   Built-in types: `knowledge` (OKF markdown), `llmwiki` (OKF-backed living wiki),
-  `memory`, and `skills` (a folder of `SKILL.md` skills; a skill can also launch/run
-  a CLI tool). Custom types (any other string) use a generic file-listing loader;
-  skills come entirely from the module.
+  `memory`, and `skills` (an indexed tree of `SKILL.md` leaves; a skill can also
+  launch/run a CLI tool). Containers may hold multiple modules of the same type.
+  Custom types (any other string) use a generic file-listing loader; skills come
+  entirely from the module.
 
 ### Module manifest (`<module>/.okh/module.yaml`)
 ```yaml
@@ -45,13 +46,35 @@ entry** at `add_container`-time, not in a per-container file.
 
 ### Type skills
 Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `llmwiki`
-→ `initialize`, `write`, `lint`; `memory` → `remember`, `reflect`, `todo` (under
-`resources/module-types/<type>/skills/`). A module's
+→ `initialize`, `write`, `lint`; `memory` → `remember`, `reflect`, `todo`; `skills`
+→ `initialize` (under `resources/module-types/<type>/skills/`). A module's
 effective skill set = vendored (for its type) ∪ module-local skills (discovered from
 `.okh/skills/` and common roots like `.claude/skills/`). Shared, module-less skills
 (`grilling`, `okf-writer`, `ingest`) live under `resources/shared/skills/` and run via
 <!-- ingest can keep a copy of each ingested source in the module (opt-in per module; ./sources/<YYYY-MM>/). -->
 `run { skill }` with no container/module. Skills use the standard `SKILL.md` format.
+
+### Skills module layout
+
+A `skills` module has a root `index.md` scope contract plus an arbitrary-depth area
+tree. Group directories may have their own `index.md`; a directory containing
+`SKILL.md` is a leaf, and everything below it is that skill's resource bundle.
+
+```text
+skills/
+  index.md
+  engineering/
+    index.md
+    testing/
+      debugging/
+        SKILL.md
+        references.md
+```
+
+Skill names are unique within one module, but the same name may exist in another
+skills module because `run` targets `{ container, module, skill }`. Split modules
+when audience, ownership, access, or sync lifecycle differs; use folders for
+cohesive areas within a module.
 
 ### Memory todos
 
