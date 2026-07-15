@@ -81,12 +81,52 @@ describe("module skills", () => {
       await rm(mod, { recursive: true, force: true });
     }
   });
+
+  it("discovers skills nested under multiple layers of subfolders", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(mod, join("azure", "pipelines", "deploy"), "deploy", "ship it");
+      await skill(mod, join("azure", "repos", "pr"), "pr", "open a pr");
+      const skills = await discoverModuleSkills(mod, skillRootsForType("skills"));
+      expect(skills.map((s) => s.name).sort()).toEqual(["deploy", "pr"]);
+      const deploy = skills.find((s) => s.name === "deploy")!;
+      expect(deploy.dir).toBe(join(mod, "azure", "pipelines", "deploy"));
+      expect(deploy.source).toBe("module-root");
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("stops at a skill leaf: a nested SKILL.md under a skill is a resource, not a second skill", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(mod, "cli", "cli", "a CLI skill");
+      await skill(mod, join("cli", "examples", "sample"), "sample", "a bundled example");
+      const skills = await discoverModuleSkills(mod, skillRootsForType("skills"));
+      expect(skills.map((s) => s.name)).toEqual(["cli"]);
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("skips dot and noise dirs when scanning the module root", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await skill(mod, "real", "real", "kept");
+      await skill(mod, join("node_modules", "pkg"), "pkg", "vendored noise");
+      const skills = await discoverModuleSkills(mod, skillRootsForType("skills"));
+      expect(skills.map((s) => s.name)).toEqual(["real"]);
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("vendored skills", () => {
   it("lists knowledge and memory vendored skills", async () => {
     expect((await vendoredSkills("knowledge")).map((s) => s.name)).toContain("learn");
     expect((await vendoredSkills("memory")).map((s) => s.name).sort()).toEqual(["reflect", "remember", "todo"]);
+    expect((await vendoredSkills("skills")).map((s) => s.name)).toContain("initialize");
     expect(await vendoredSkills("recipes")).toEqual([]);
   });
 });

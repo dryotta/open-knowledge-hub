@@ -107,6 +107,13 @@ describe("effective skills + resolveSkill", () => {
     expect(names).toEqual(["initialize", "lint", "write"]);
   });
 
+  it("skills type exposes a vendored initialize skill", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "sk"), { type: "skills", name: "SK", description: "" });
+    const names = (await svc.effectiveSkills("h", "sk")).map((s) => s.name).sort();
+    expect(names).toEqual(["initialize"]);
+  });
+
   it("custom module exposes only its module-local skills", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "recipes"), { type: "recipes", name: "Food", description: "" });

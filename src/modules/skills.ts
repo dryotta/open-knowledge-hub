@@ -43,6 +43,42 @@ async function subdirNames(dir: string): Promise<string[]> {
   }
 }
 
+/** Subfolders never descended into when scanning for skills (VCS/build/cache noise). */
+const SKILL_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+
+/**
+ * Recursively collect folders holding a `SKILL.md` under `base`, sorted by path.
+ * A folder with a `SKILL.md` is a skill leaf — its subfolders are that skill's
+ * resource files, not further skills — so descent stops there. This lets a module
+ * group skills under multiple layers of organizational subfolders. Dot-folders
+ * (`.git`, `.okh`, `.claude`, …) and common noise dirs are skipped so scanning the
+ * module root itself does not re-enter the dedicated skill roots or vendored deps.
+ */
+export async function findSkillDirs(base: string): Promise<string[]> {
+  const out: string[] = [];
+
+  async function recurse(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (entries.some((e) => e.isFile() && e.name === "SKILL.md")) {
+      out.push(dir);
+      return; // skill leaf: its subfolders are resources, not nested skills
+    }
+    const childDirs = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !SKILL_SKIP_DIRS.has(e.name))
+      .map((e) => e.name)
+      .sort();
+    for (const name of childDirs) await recurse(join(dir, name));
+  }
+
+  await recurse(base);
+  return out.sort();
+}
+
 /** Read one `<dir>/SKILL.md` into a Skill, or undefined if absent/unnamed. */
 export async function readSkill(dir: string, source: string): Promise<Skill | undefined> {
   let text: string;
@@ -58,9 +94,11 @@ export async function readSkill(dir: string, source: string): Promise<Skill | un
 }
 
 /** Discover module-local skills across the given skill roots inside a module.
- * Earlier roots take precedence: a skill name found in an earlier root shadows the
- * same name in a later root (e.g. `.okh/skills` over `.claude/skills`). An empty
- * root string means the module folder itself (skills at `<module>/<name>/SKILL.md`). */
+ * Skills are found at any depth: each folder holding a `SKILL.md` is one skill, so
+ * organizational subfolders can group skills for readability. Earlier roots take
+ * precedence: a skill name found in an earlier root shadows the same name in a later
+ * root (e.g. `.okh/skills` over `.claude/skills`). An empty root string means the
+ * module folder itself (skills at `<module>/**\/SKILL.md`). */
 export async function discoverModuleSkills(
   moduleRoot: string,
   roots: readonly string[] = MODULE_SKILL_ROOTS,
@@ -69,8 +107,9 @@ export async function discoverModuleSkills(
   const seen = new Set<string>();
   for (const root of roots) {
     const base = root ? join(moduleRoot, root) : moduleRoot;
-    for (const name of await subdirNames(base)) {
-      const s = await readSkill(join(base, name), root || "module-root");
+    const source = root || "module-root";
+    for (const dir of await findSkillDirs(base)) {
+      const s = await readSkill(dir, source);
       if (s && !seen.has(s.name)) {
         seen.add(s.name);
         out.push(s);

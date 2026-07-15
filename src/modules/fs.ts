@@ -28,20 +28,6 @@ export async function walkFiles(dir: string, pred: (name: string) => boolean): P
   return out.sort();
 }
 
-/** Immediate subdirectory names of `dir` (excluding dotfiles), sorted. */
-export async function subdirs(dir: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
-    .map((e) => e.name)
-    .sort();
-}
-
 /** Immediate file names of `dir` (excluding dotfiles), sorted. */
 export async function shallowFiles(dir: string): Promise<string[]> {
   let entries;

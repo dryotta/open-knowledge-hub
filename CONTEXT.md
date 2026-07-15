@@ -37,7 +37,8 @@ no container/module. `.okh/` is reserved for OKH state.
 
 ### Module
 A self-contained typed subfolder with its own `.okh/module.yaml`. Built-in types:
-`knowledge` (OKF bundle), `llmwiki`, `memory`, and `skills` (`SKILL.md` skills; a
+`knowledge` (OKF bundle), `llmwiki`, `memory`, and `skills` (`SKILL.md` skills nested
+under any depth of subfolders, with an `index.md` scope contract as its overview; a
 skill can also launch/run a CLI tool). Custom types (any other string) use a generic
 file-listing loader; skills come entirely from the module. A loader per type
 enumerates items and produces an overview; loaders never interpret content.

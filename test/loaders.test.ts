@@ -185,11 +185,67 @@ describe("skills loader", () => {
     });
   });
 
-  it("overview lists skills or says none", async () => {
+  it("enumerates skills nested under multiple layers of subfolders", async () => {
     const root = await tmp();
-    expect(await skillsLoader.overview(root)).toContain("No skills");
-    await write(root, "x/SKILL.md", "---\nname: X\n---\n");
-    expect(await skillsLoader.overview(root)).toContain("**X**");
+    await write(root, "azure/pipelines/deploy/SKILL.md", "---\nname: Deploy\ndescription: Ship it\n---\nbody");
+    await write(root, "azure/repos/pr/SKILL.md", "---\nname: PR\n---\nbody");
+    // A grouping subfolder (no SKILL.md of its own) is descended through.
+    await write(root, "azure/README.md", "grouping notes");
+
+    const items = await skillsLoader.enumerate(root);
+
+    expect(items.map((i) => i.path).sort()).toEqual([
+      "azure/pipelines/deploy/SKILL.md",
+      "azure/repos/pr/SKILL.md",
+    ]);
+    expect(items.find((i) => i.path === "azure/pipelines/deploy/SKILL.md")).toMatchObject({
+      title: "Deploy",
+      description: "Ship it",
+      type: "skill",
+    });
+  });
+
+  it("does not descend into a skill folder's own resource subfolders", async () => {
+    const root = await tmp();
+    await write(root, "cli/SKILL.md", "---\nname: CLI\n---\nbody");
+    // A nested SKILL.md inside a skill's resources is a resource, not a second skill.
+    await write(root, "cli/examples/sample/SKILL.md", "---\nname: Sample\n---\nbody");
+
+    const items = await skillsLoader.enumerate(root);
+
+    expect(items.map((i) => i.path)).toEqual(["cli/SKILL.md"]);
+  });
+
+  it("overview returns index.md when present, else a generated listing", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# My Skills\n");
+    expect(await skillsLoader.overview(root)).toContain("# My Skills");
+
+    const root2 = await tmp();
+    await write(root2, "x/SKILL.md", "---\nname: X\n---\n");
+    const ov = await skillsLoader.overview(root2);
+    expect(ov).toContain("generated index");
+    expect(ov).toContain("**X**");
+  });
+
+  it("overview reports an empty module when there is no index.md and no skills", async () => {
+    const root = await tmp();
+    expect(await skillsLoader.overview(root)).toContain("Empty module");
+  });
+
+  it("scaffold writes an index.md skeleton", async () => {
+    const root = await tmp();
+    await skillsLoader.scaffold!(root);
+    const ov = await skillsLoader.overview(root);
+    expect(ov).toContain("okf_version");
+    expect(ov).toContain("What belongs here");
+  });
+
+  it("scaffold does not overwrite an existing index.md", async () => {
+    const root = await tmp();
+    await write(root, "index.md", "# Existing\n");
+    await expect(skillsLoader.scaffold!(root)).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await skillsLoader.overview(root)).toBe("# Existing\n");
   });
 });
 

@@ -114,26 +114,28 @@ describe("MCP server surface", () => {
     expect(structuredOf(res).needsConfirmation).toBeUndefined();
   });
 
-  it("adding a knowledge module points at the initialize skill", async () => {
+  it("adding a type that ships initialize (knowledge, skills) points at the initialize skill", async () => {
     const { client } = await connect();
     const source = await makeTempDir();
     cleanups.push(source);
     await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
-    const res = await client.callTool({
-      name: "add_module",
-      arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true },
-    });
-    expect(textOf(res)).toMatch(/skill: "initialize"/);
+    for (const [path, type] of [["kb", "knowledge"], ["sk", "skills"]] as const) {
+      const res = await client.callTool({
+        name: "add_module",
+        arguments: { container: "hub", path, type, name: path.toUpperCase(), create: true },
+      });
+      expect(textOf(res)).toMatch(/skill: "initialize"/);
+    }
   });
 
-  it("adding a non-initialize type omits the initialize pointer", async () => {
+  it("adding a type without an initialize skill omits the initialize pointer", async () => {
     const { client } = await connect();
     const source = await makeTempDir();
     cleanups.push(source);
     await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
     const res = await client.callTool({
       name: "add_module",
-      arguments: { container: "hub", path: "sk", type: "skills", name: "SK", create: true },
+      arguments: { container: "hub", path: "recipes", type: "recipes", name: "Recipes", create: true },
     });
     expect(textOf(res)).not.toContain('skill: "initialize"');
   });

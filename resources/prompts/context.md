@@ -14,8 +14,8 @@ Do NOT dump whole modules into context.
 
 1. Read the provided list of containers -> modules -> paths.
 2. Enumerate what each relevant module actually contains: inspect the module
-   ({ container, module }) to list its items. Start from the overview (knowledge/llmwiki:
-   `index.md`; skills: the item listing; memory: recent files).
+   ({ container, module }) to list its items. Start from the overview (knowledge/llmwiki/skills:
+   `index.md`; memory: recent files).
    Skim; do not ingest wholesale.
 3. Select every item the task needs across ALL module types — knowledge alone is
    rarely enough:

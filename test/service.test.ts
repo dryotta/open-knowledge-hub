@@ -115,11 +115,22 @@ describe("addModule", () => {
     expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("okf_version");
   });
 
-  it("does not scaffold content for non-knowledge modules", async () => {
+  it("scaffolds a skills index for skills modules", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     const out = await service.addModule({ container: "hub", path: "skills", type: "skills", name: "My Skills", create: true });
+    if (out.kind !== "applied") throw new Error("expected applied");
+    const { moduleRoot } = out;
+    expect((await stat(join(moduleRoot, "index.md"))).isFile()).toBe(true);
+    expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("What belongs here");
+  });
+
+  it("does not scaffold content for custom (non-built-in) modules", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    const out = await service.addModule({ container: "hub", path: "recipes", type: "recipes", name: "Recipes", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
     expect((await stat(moduleRoot)).isDirectory()).toBe(true);
