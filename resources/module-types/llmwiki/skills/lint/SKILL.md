@@ -19,7 +19,7 @@ Run `inspect { container, module }`. Its **Wiki health** block lists, determinis
 
 ## Stage 2 — Fix the mechanical issues
 
-Author edits with the shared **okf-writer** skill (`run { skill: "okf-writer" }`):
+Author edits with the global **okf-writer** skill (`run { skill: "okf-writer" }`):
 
 - Add the missing inbound links (or, if a page truly belongs nowhere, question whether it should
   exist).

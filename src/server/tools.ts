@@ -30,7 +30,7 @@ import {
 import { formatSyncDescriptor } from "../util/syncFormat.js";
 import { loadPromptFile } from "../prompts/templates.js";
 
-/** Render the no-arg hub map: global skills, module-type skills (labeled unambiguously as
+/** Render the no-arg hub map: global skills, module type skills (labeled unambiguously as
  * types), then containers → modules. Module-type skills are listed once per in-use type; only
  * local skills appear on a module line. The routing/usage footer is appended by the handler. */
 function formatHub(r: HubMap): string {
@@ -65,7 +65,9 @@ function formatHub(r: HubMap): string {
     lines.push("  (none registered — use add_container { source } to register one)");
   } else {
     for (const c of r.containers) {
-      const invalid = c.manifestValid ? "" : " (invalid manifest)";
+      const invalid = c.manifestValid
+        ? ""
+        : ` (invalid manifest${c.manifestError ? `: ${c.manifestError}` : ""})`;
       lines.push(`  ${c.name}  [${c.backend}] sync=${formatSyncDescriptor(c.sync)}${invalid}`);
       if (c.modules.length === 0) {
         lines.push("    (no modules)");
@@ -112,7 +114,10 @@ function formatInspect(r: InspectResult): string {
     : ["  (empty)"];
   const skillLines = r.skills.length
     ? r.skills.map((s) => {
-        const location = s.path ? ` [${s.source}:${s.path}]` : ` [${s.source}]`;
+        // Align the per-skill provenance tag with the hub-map vocabulary: a type-provided
+        // skill is a "module type" skill; local skills keep their in-repo source path.
+        const provenance = s.source === "vendored" ? "module type" : s.source;
+        const location = s.path ? ` [${provenance}:${s.path}]` : ` [${provenance}]`;
         return `  - ${s.name}${s.description ? ` — ${s.description}` : ""}${location}`;
       })
     : ["  (none)"];

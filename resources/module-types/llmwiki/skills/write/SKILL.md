@@ -7,9 +7,9 @@ description: Integrate new material into this llmwiki — author OKF pages, touc
 
 Fold new material into this wiki as OKF concept pages, keeping the graph connected and the index
 current. A single source or insight typically **touches several pages** — that is expected. Author
-all pages with the shared **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and
+all pages with the global **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and
 citation rules — invoke it with only `skill` and `input`, omitting `container` and `module` because
-it is a shared skill. The `input` must contain: target path, declared type, source context, and
+it is a global skill. The `input` must contain: target path, declared type, source context, and
 affected cross-links. Run these stages in order.
 
 ## Stage 1 — Load the scope contract
@@ -26,7 +26,7 @@ Unlike a knowledge module's default-NO gate, a wiki **welcomes breadth within it
 Decide:
 
 - **In scope** → proceed.
-- **Out of scope** → do not silently expand scope. Run the shared **grilling** skill to propose the
+- **Out of scope** → do not silently expand scope. Run the global **grilling** skill to propose the
   *smallest* scope change that would admit it and get the user's explicit agreement, then re-judge.
   If the user declines, leave it out and say why.
 

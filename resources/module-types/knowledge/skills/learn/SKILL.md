@@ -15,7 +15,7 @@ A knowledge module earns its value from **restraint**. Decide which case the can
 
 - **Serves a goal / answers a target question** → in scope. Proceed to Stage 3.
 - **Out of scope, or trivial / generic / common knowledge that serves no goal** → **REJECT IT. Do not write, create, append, or edit any file.** Tell the user *why* in terms of the goals and out-of-scope list, and **stop here** — your entire response is the rejection.
-- **Borderline — would only fit if the module's purpose grew** → do not decide unilaterally. Run the shared **grilling** skill (`run { skill: "grilling" }`) to negotiate scope: propose the smallest goal change that would justify it and get the user's explicit agreement, then re-run the gate. If it still doesn't serve a goal, reject it.
+- **Borderline — would only fit if the module's purpose grew** → do not decide unilaterally. Run the global **grilling** skill (`run { skill: "grilling" }`) to negotiate scope: propose the smallest goal change that would justify it and get the user's explicit agreement, then re-run the gate. If it still doesn't serve a goal, reject it.
 
 Never expand scope silently to make a fact fit. Scope changes are a user decision, made explicit in `index.md`.
 
@@ -30,7 +30,7 @@ Only knowledge that **passed the gate** reaches this stage.
 
 ## Stage 4 — Integrate
 
-Author with the shared **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and citation rules, then:
+Author with the global **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and citation rules, then:
 
 - Prefer **extending an existing concept** over adding a new doc; add a new concept only when it is genuinely distinct.
 - Name the **target question** each addition serves. If you can't name one, it doesn't belong.

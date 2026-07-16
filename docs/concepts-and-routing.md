@@ -56,7 +56,7 @@ flowchart TD
   Start["Need a skill for a module"] --> Type["Module type skills for its type"]
   Start --> Local["Local skills in the module repo"]
   Local --> Override{"Local name ==<br/>a module type name?"}
-  Override -->|yes| Shadow["Local overrides the type skill"]
+  Override -->|yes| Shadow["Local overrides the module type skill"]
   Override -->|no| Add["Local adds a new skill"]
   Type --> Merge["Effective set"]
   Shadow --> Merge

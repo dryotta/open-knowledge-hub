@@ -178,22 +178,16 @@ export interface SkillRef {
   description: string;
 }
 
-/** A module-local (in-repo) skill in the hub map, with its provenance. */
-export interface HubLocalSkill extends SkillRef {
-  /** ".okh/skills" | ".claude/skills" | "module-root". */
-  source: string;
-  path?: string;
-}
-
-/** One module in the hub map. Module-type skills are hoisted to `HubMap.moduleTypeSkills`
+/** One module in the hub map. Module type skills are hoisted to `HubMap.moduleTypeSkills`
  * (keyed by `type`) so they are never repeated here; only in-repo `local` skills live on
- * the module. `overrides` are local skill names that shadow a same-named module-type skill. */
+ * the module. `overrides` are local skill names that shadow a same-named module type skill.
+ * Full per-skill provenance (source path) is available via the module drilldown. */
 export interface HubModule {
   path: string;
   type: string;
   name: string;
   items: number;
-  local?: HubLocalSkill[];
+  local?: SkillRef[];
   overrides?: string[];
 }
 
@@ -210,7 +204,7 @@ export interface HubContainer {
 }
 
 /** The full hub map returned by no-arg `inspect`: every container, module, and runnable
- * skill, factored by provenance. Global skills are listed once; module-type skills once
+ * skill, factored by provenance. Global skills are listed once; module type skills once
  * per in-use type; only local skills are carried per module. */
 export interface HubMap {
   kind: "hub";
@@ -460,7 +454,7 @@ export class ContainerService {
   }
 
   /** Build the full hub map: containers → modules, with skills factored by provenance
-   * (global once, module-type once per in-use type, local per module). */
+   * (global once, module type once per in-use type, local per module). */
   private async buildHubMap(reg: { containers: ContainerEntry[] }): Promise<HubMap> {
     const wakePhrase = (await loadPreferences(this.paths)).wakePhrase;
     const containers: HubContainer[] = [];
@@ -494,8 +488,8 @@ export class ContainerService {
     return { kind: "hub", wakePhrase, globalSkills, moduleTypeSkills, containers };
   }
 
-  /** Build one hub-map module entry: carries only its in-repo `local` skills (module-type
-   * skills are hoisted) and records `overrides` where a local name shadows a type skill. */
+  /** Build one hub-map module entry: carries only its in-repo `local` skills (module type
+   * skills are hoisted) and records `overrides` where a local name shadows a module type skill. */
   private async buildHubModule(containerRoot: string, m: ModuleStatus): Promise<HubModule> {
     const moduleRoot = this.moduleRoot(containerRoot, m.path);
     const [localSet, vendored] = await Promise.all([
@@ -503,12 +497,7 @@ export class ContainerService {
       vendoredSkills(m.type),
     ]);
     const vendoredNames = new Set(vendored.map((s) => s.name));
-    const local = localSet.skills.map((s) => ({
-      name: s.name,
-      description: s.description,
-      source: s.source,
-      ...(s.path ? { path: s.path } : {}),
-    }));
+    const local: SkillRef[] = localSet.skills.map((s) => ({ name: s.name, description: s.description }));
     const overrides = local.filter((s) => vendoredNames.has(s.name)).map((s) => s.name);
     return {
       path: m.path,

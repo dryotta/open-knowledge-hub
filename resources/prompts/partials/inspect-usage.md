@@ -2,7 +2,7 @@
 
 **Effective skills** for a module = its **module type skills** (listed above,
 keyed by type) minus any `overrides`, plus its own `+local` skills. Local skills
-override a same-named module-type skill.
+override a same-named module type skill.
 
 **Routing gates — run the flow BEFORE any deterministic write:**
 - **learn / teach / add durable knowledge** → `run { container, module, skill: "learn" }`

@@ -549,6 +549,9 @@ describe("MCP server surface", () => {
     const mod = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(mod)).toContain("[knowledge]");
     expect(textOf(mod)).toContain("KB");
+    // The module drilldown tags a type-provided skill's provenance in hub-map vocabulary.
+    expect(textOf(mod)).toContain("[module type:");
+    expect(textOf(mod)).not.toContain("[vendored");
   });
 
   it("module inspect shows the scope contract / overview", async () => {
