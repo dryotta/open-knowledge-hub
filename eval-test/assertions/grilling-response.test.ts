@@ -31,6 +31,8 @@ describe("grilling-response assertion", () => {
     "Which OAuth provider should launch first? My recommended answer is GitHub.",
     "Which OAuth provider should launch first? I'd suggest GitHub.",
     "Which OAuth provider should launch first? I\u2019d recommend GitHub.",
+    "Which OAuth provider should launch first? We'd recommend GitHub.",
+    "Which OAuth provider should launch first? We\u2019d suggest GitHub.",
     "Which OAuth provider should launch first? Here is my recommendation: GitHub.",
     "Which OAuth provider should launch first? Our recommendation is GitHub.",
     "Which OAuth provider should launch first?\n- Recommendation: GitHub.",
@@ -53,6 +55,9 @@ describe("grilling-response assertion", () => {
 
   it.each([
     "Should we recommend GitHub OAuth?",
+    "Must we recommend GitHub OAuth?",
+    "- Should we recommend GitHub OAuth?",
+    "Which OAuth provider should launch first? Recommendation: Should we choose GitHub?",
     "Which OAuth provider should launch first? Recommendation:",
     "Which OAuth provider should launch first?\n- Recommendation:",
   ])("rejects a question or empty recommendation: %s", (message) => {
