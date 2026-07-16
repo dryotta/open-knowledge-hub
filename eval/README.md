@@ -268,11 +268,11 @@ PASS or FAIL votes, the result is `UNRELIABLE` and fails. A failed or timed-out 
 subprocess is an invalid vote rather than an exception; malformed votes are rejected as a
 whole, and invalid-run diagnostics are reported.
 
-Judge votes run concurrently by default. `OKH_JUDGE_CONCURRENCY` caps parallel votes per
-scenario (maximum `k`); set it to `1` to restore sequential judging. Invalid values fall
-back to `k`. The tested agent is pinned to `claude-sonnet-4.5`, while the judge defaults
-to the faster `gpt-5.6-luna`. Override the judge globally with `OKH_JUDGE_MODEL`, or per
-assertion with `graderModel`.
+Up to two judge votes run concurrently per scenario by default.
+`OKH_JUDGE_CONCURRENCY` overrides that cap (maximum `k`); set it to `1` for sequential
+judging. Invalid values fall back to `min(k, 2)`. The tested agent is pinned to
+`claude-sonnet-4.5`, while the judge defaults to the faster `gpt-5.6-luna`. Override the
+judge globally with `OKH_JUDGE_MODEL`, or per assertion with `graderModel`.
 
 A criterion carrying a `check` (`tool`, `container`, `manifest`, `wake-phrase`,
 `transcript-contains`, `transcript-absent`) is evaluated **deterministically** — the
@@ -297,7 +297,8 @@ npm run eval:view        # open the report + Prompts/Datasets/Results UI
 
 > **One config, concurrent scenarios.** `npm run eval` / `eval:validate` run a **single**
 > `promptfoo` process on `eval/promptfooconfig.yaml` (via `run-scenarios.ts`), which globs
-> every `scenarios/**/*.yaml` scenario and runs them with promptfoo's default concurrency.
+> every `scenarios/**/*.yaml` scenario and runs at most two concurrently by default.
+> Pass `--max-concurrency N` to override the cap.
 > All cases share one eval record — pick a row in `npm run eval:view`. Both invoke promptfoo
 > through `node --import tsx` so the TypeScript provider keeps NodeNext `.js` import specifiers;
 > validation prints `Configuration is valid.` Additional CLI arguments are forwarded to promptfoo.

@@ -167,7 +167,7 @@ function resolveK(optsK?: number): number {
 
 function resolveConcurrency(k: number): number {
   const raw = Number(process.env.OKH_JUDGE_CONCURRENCY);
-  return Number.isInteger(raw) && raw >= 1 ? Math.min(raw, k) : k;
+  return Number.isInteger(raw) && raw >= 1 ? Math.min(raw, k) : Math.min(k, 2);
 }
 
 type ParsedJudgeRun =

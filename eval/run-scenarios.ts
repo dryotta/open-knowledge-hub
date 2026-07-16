@@ -29,6 +29,7 @@ const CONFIG = join(EVAL_ROOT, "promptfooconfig.yaml");
 const _require = createRequire(import.meta.url);
 const PROMPTFOO = join(dirname(_require.resolve("promptfoo")), "entrypoint.js");
 const SIGNAL_GRACE_MS = 5_000;
+const DEFAULT_SCENARIO_CONCURRENCY = 2;
 
 export type EvalMode = "eval" | "validate";
 
@@ -39,7 +40,15 @@ export function parseEvalMode(value: string | undefined): EvalMode {
 
 export function buildPromptfooArgs(mode: EvalMode, extraArgs: string[] = []): string[] {
   const args = ["--import", "tsx", PROMPTFOO, mode, "-c", CONFIG];
-  if (mode === "eval") args.push("--no-cache");
+  if (mode === "eval") {
+    args.push("--no-cache");
+    const hasConcurrencyOverride = extraArgs.some(
+      (arg) => arg === "--max-concurrency" || arg.startsWith("--max-concurrency="),
+    );
+    if (!hasConcurrencyOverride) {
+      args.push("--max-concurrency", String(DEFAULT_SCENARIO_CONCURRENCY));
+    }
+  }
   args.push(...extraArgs);
   return args;
 }

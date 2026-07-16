@@ -135,7 +135,7 @@ describe("runJudgeCriteria", () => {
     }
   });
 
-  it("runs all judge votes concurrently by default", async () => {
+  it("caps default parallel judge votes at two", async () => {
     const prev = process.env.OKH_JUDGE_CONCURRENCY;
     delete process.env.OKH_JUDGE_CONCURRENCY;
     let release!: () => void;
@@ -155,7 +155,7 @@ describe("runJudgeCriteria", () => {
       release();
       await pending;
 
-      expect(maxActive).toBe(3);
+      expect(maxActive).toBe(2);
     } finally {
       if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
       else process.env.OKH_JUDGE_CONCURRENCY = prev;
@@ -209,7 +209,7 @@ describe("runJudgeCriteria", () => {
       release();
       await pending;
 
-      expect(maxActive).toBe(3);
+      expect(maxActive).toBe(2);
     } finally {
       if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
       else process.env.OKH_JUDGE_CONCURRENCY = prev;

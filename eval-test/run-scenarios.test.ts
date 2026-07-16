@@ -22,6 +22,7 @@ describe("run-scenarios", () => {
 
     expect(args).toContain("eval");
     expect(args).toContain("--no-cache");
+    expect(args.filter((arg) => arg === "--max-concurrency")).toHaveLength(1);
     expect(args.slice(-6)).toEqual([
       "--filter-pattern",
       "Learn - useful",
@@ -30,6 +31,12 @@ describe("run-scenarios", () => {
       "--max-concurrency",
       "2",
     ]);
+  });
+
+  it("caps scenario concurrency at two by default", () => {
+    const args = buildPromptfooArgs("eval");
+    const index = args.indexOf("--max-concurrency");
+    expect(args.slice(index, index + 2)).toEqual(["--max-concurrency", "2"]);
   });
 
   it("does not add eval-only cache flags to validation", () => {
