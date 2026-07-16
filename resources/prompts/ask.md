@@ -56,7 +56,9 @@ Instruct the sub-agent to:
    Use each source's exact path relative to the module root. Never add an assumed directory
    such as `concepts/` when the source path does not contain it. When a source says an event
    happens "after", "during", or "on" another event, preserve that wording; do not relabel the
-   relationship as causal or correlational unless the source explicitly does so.
+   relationship as causal or correlational unless the source explicitly does so. If asked to
+   distinguish the two and the sources establish neither, say that neither classification is
+   established rather than forcing each fact into a category.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
 4. **Assess scope explicitly.** For each question, say whether the pack actually covers it:

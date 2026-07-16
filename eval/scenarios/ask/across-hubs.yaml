@@ -28,7 +28,7 @@
               - "git-hub[/\\\\]kb"
             mustNotContain:
               - "\\b(?:storage|algorithms?|MFA|authorization scopes?)\\b"
-              - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use)"
+              - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"
         - type: javascript
           value: file://assertions/judge.ts
           config:
@@ -49,4 +49,6 @@
                   synthesis or inference drawn from the listed facts are allowed. The user's constraint
                   forbids enumerating absent-topic gaps. Unsupported specific algorithms, timeout
                   values, or implementation details not present in any fixture remain disallowed even
-                  when labeled as inference/synthesis.
+                  when labeled as inference/synthesis. None of the source facts classifies the
+                  implementation statements as causal or correlational; the answer may say that neither
+                  relationship is established but must not assign either classification to them.

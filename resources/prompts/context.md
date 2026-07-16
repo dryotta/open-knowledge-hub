@@ -36,15 +36,16 @@ Do NOT dump whole modules into context.
    it matters. Prefer paths/links over pasted content. Cite the complete listed
    item path, including its filename and extension; a module or directory path is
    not an item citation.
-   Keep irrelevant or rejected candidates out of the working-set list. A concise
-   gap summary may say that no relevant item exists, but must not present a
-   rejected path as selected.
+   Include only module types with at least one selected item. Never create a bullet
+   for an excluded item, even to label it irrelevant or not applicable. A concise
+   gap summary may say that no relevant item exists, but must not name or cite the
+   rejected item.
 5. Surface gaps: what the task needs that no module provides. Name only information
    required by the stated task; do not invent concrete libraries, algorithms, or
    generic best practices and present them as requirements. Describe missing coverage
    at the narrowest evidence-backed level instead of brainstorming likely subtopics.
-   For example, say that implementation requirements are not documented rather than
-   inventing a checklist of password, MFA, storage, endpoint, or testing requirements.
+   When only the broad task establishes a gap, state that gap once at the same broad
+   level without examples or an invented checklist of subcategories.
    Put this separate from the selected working set under a `## Gaps` heading.
 
 Output a concise brief the agent can act on — not a transcript of file contents.

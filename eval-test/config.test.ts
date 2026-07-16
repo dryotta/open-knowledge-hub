@@ -435,6 +435,9 @@ describe("scenario routing contracts", () => {
       expect(patterns).toHaveLength(2);
       expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);
+      expect(new RegExp(patterns[1]!, "i").test(
+        "Tokens are issued at login and verified on each request; these are two separate behaviors that occur (correlation)",
+      )).toBe(true);
     });
 
     it("CSV context requests only selected entries and rejects cited irrelevant paths", async () => {

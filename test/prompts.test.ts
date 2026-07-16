@@ -63,6 +63,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/explicit user constraints override the default gap and next-step elaboration/i);
     expect(text).toMatch(/without speculating about specific missing technologies/i);
     expect(text).toMatch(/do not relabel the\s+relationship as causal or correlational/i);
+    expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
     expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
   });
   it("context uses the context discipline", async () => {
@@ -70,13 +71,13 @@ describe("prompt builders", () => {
   });
   it("context discipline keeps rejected candidates out of the selected working set", async () => {
     const text = await buildContext(targets, "Debug CSV import");
-    expect(text).toMatch(/keep irrelevant or rejected candidates out of the working-set list/i);
-    expect(text).toMatch(/gap summary[\s\S]{0,120}must not present[\s\S]{0,80}rejected path as selected/i);
+    expect(text).toMatch(/never create a bullet\s+for an excluded item/i);
+    expect(text).toMatch(/gap summary[\s\S]{0,120}must not name or cite[\s\S]{0,80}rejected item/i);
     expect(text).toMatch(/never select.{0,160}(filename|recency)/is);
     expect(text).toMatch(/do not select a debugging skill[\s\S]{0,100}unless the task includes a failure to debug/i);
     expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
     expect(text).toMatch(/do not invent concrete libraries, algorithms/i);
-    expect(text).toMatch(/rather than\s+inventing a checklist of password, MFA, storage, endpoint, or testing requirements/i);
+    expect(text).toMatch(/same broad\s+level without examples or an invented checklist/i);
     expect(text).toMatch(/complete listed\s+item path/i);
     expect(text).toMatch(/under a `## Gaps` heading/i);
   });
