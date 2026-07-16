@@ -1,4 +1,4 @@
-## Write policy
+# Write policy
 
 After making changes in any container or module, immediately call
 `sync { container }` for each changed container and report its outcome.

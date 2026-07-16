@@ -1,6 +1,4 @@
-# OKH: dream — consolidate module descriptions
-
-**Modules to consolidate:**
+# Modules to consolidate
 {{var:targets}}
 
 <discipline name="dream">

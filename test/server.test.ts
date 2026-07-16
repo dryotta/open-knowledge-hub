@@ -154,7 +154,7 @@ describe("MCP server surface", () => {
   it("onboard returns multi-turn guidance without args and does not mutate config", async () => {
     const { client, home } = await connect();
     const guide = await client.callTool({ name: "onboard", arguments: {} });
-    expect(textOf(guide)).toContain("OKH: onboard");
+    expect(textOf(guide)).toContain("Onboarding a new user");
     expect(textOf(guide)).toContain("hub"); // default wake phrase injected
 
     const { loadPreferences } = await import("../src/preferences.js");
@@ -599,11 +599,15 @@ describe("MCP server surface", () => {
     await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
     const res = await client.callTool({ name: "inspect", arguments: {} });
     // No-arg inspect renders the hub map: container line + module (labeled by type) +
-    // the module type skills block + the routing footer.
+    // the built-in-skills-by-type block, each module's runnable skills, and the Guardrails footer.
     expect(textOf(res)).toContain("hub  [local]");
-    expect(textOf(res)).toMatch(/· kb {2}\(module type: knowledge\) {2}0 items/);
-    expect(textOf(res)).toContain('Module type "knowledge":');
-    expect(textOf(res)).toContain("Routing gates");
+    expect(textOf(res)).toMatch(/- kb {2}\(module type: knowledge\) {2}0 items/);
+    expect(textOf(res)).toContain("Built-in skills");
+    expect(textOf(res)).toContain("built-in skills: initialize, learn");
+    // The Examples block shows the module-scoped run shape with real container/module names.
+    expect(textOf(res)).toContain("Examples:");
+    expect(textOf(res)).toMatch(/run \{ container: "hub", module: "kb", skill: "\w+" \}/);
+    expect(textOf(res)).toContain("Guardrails");
 
     const mod = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(mod)).toContain("[knowledge]");
