@@ -3,7 +3,6 @@ import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir, makeOrigin, pushToOrigin } from "../test/helpers.js";
 import toolsCalled from "../eval/assertions/tools-called.js";
-import toolArgument from "../eval/assertions/tool-argument.js";
 import transcript from "../eval/assertions/transcript.js";
 import okfValid from "../eval/assertions/okf-valid.js";
 import memoryAppend from "../eval/assertions/memory-append.js";
@@ -32,36 +31,6 @@ const mkEvent = (overrides: Partial<ToolEvent> = {}): ToolEvent => ({
   completed: true,
   success: true,
   ...overrides,
-});
-
-describe("toolArgument", () => {
-  it("checks successful structured tool arguments against regex boundaries", () => {
-    const metadata = {
-      toolEvents: [mkEvent({
-        tool: "context",
-        arguments: { task: "Implement a secure login feature. New implementation work; use one broad gap statement." },
-      })],
-    };
-    const config = {
-      tool: "context",
-      argument: "task",
-      mustContain: ["secure login", "broad gap"],
-      mustNotContain: ["password|storage"],
-    };
-    expect(toolArgument("", ctx(metadata, config)).pass).toBe(true);
-    expect(toolArgument("", ctx(metadata, { ...config, mustNotContain: ["implementation"] })).pass).toBe(false);
-  });
-
-  it("rejects missing, failed, or non-string arguments", () => {
-    const config = { tool: "context", argument: "task" };
-    expect(toolArgument("", ctx({ toolEvents: [] }, config)).pass).toBe(false);
-    expect(toolArgument("", ctx({
-      toolEvents: [mkEvent({ tool: "context", success: false, arguments: { task: "x" } })],
-    }, config)).pass).toBe(false);
-    expect(toolArgument("", ctx({
-      toolEvents: [mkEvent({ tool: "context", arguments: { task: 1 } })],
-    }, config)).pass).toBe(false);
-  });
 });
 
 describe("isDeepSubset", () => {

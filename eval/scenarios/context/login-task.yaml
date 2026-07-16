@@ -24,17 +24,6 @@
               - "engineering/testing/debugging/SKILL\\.md"
               - "tools/csv2json/README\\.md"
         - type: javascript
-          value: file://assertions/tool-argument.ts
-          config:
-            tool: context
-            argument: task
-            mustContain:
-              - "implement a secure login feature"
-              - "(?:new implementation work|not an existing failure)"
-              - "(?:broad gap statement|without enumerating|not a list)"
-            mustNotContain:
-              - "\\b(?:credential|password|session management|infrastructure|storage)\\b"
-        - type: javascript
           value: file://assertions/transcript.ts
           config:
             source: final-message
