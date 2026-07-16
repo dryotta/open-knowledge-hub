@@ -744,6 +744,9 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(new RegExp(relationPattern, "i").test(
       "Attention is the fundamental building block of Transformer architecture.",
     )).toBe(true);
+    expect(new RegExp(relationPattern, "i").test(
+      "Attention serves as the foundational component of the Transformer.",
+    )).toBe(true);
   });
 
   it("run/shared-grilling.yaml routes a concrete plan through the module-less shared skill", async () => {
