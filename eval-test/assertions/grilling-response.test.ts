@@ -26,6 +26,15 @@ describe("grilling-response assertion", () => {
     expect(result.pass).toBe(true);
   });
 
+  it.each([
+    "Which OAuth provider should launch first? Recommended: GitHub.",
+    "Which OAuth provider should launch first? My recommended answer is GitHub.",
+    "Which OAuth provider should launch first? I'd suggest GitHub.",
+    "Which OAuth provider should launch first? I\u2019d recommend GitHub.",
+  ])("accepts recommendation wording: %s", (message) => {
+    expect(evaluate(message).pass).toBe(true);
+  });
+
   it("rejects a repetitive four-question prompt even within one topic", () => {
     const result = evaluate(
       "Why GitHub? Are users on GitHub? Will Google follow? Is GitLab needed? My recommendation is GitHub-only first.",
