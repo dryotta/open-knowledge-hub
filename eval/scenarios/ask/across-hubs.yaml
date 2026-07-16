@@ -40,7 +40,8 @@
                   kb-hub additionally says tokens are issued at login, expire after 24 hours, and
                   refresh tokens rotate on use; (3) if the response draws on memory evidence,
                   kb-hub memory reports refresh failures correlated with client clock drift greater
-                  than 60 seconds. Coverage gaps and clearly labeled synthesis or inference drawn
-                  from the listed facts are allowed. Unsupported specific algorithms, timeout
-                  values, or implementation details not present in any fixture remain disallowed
-                  even when labeled as inference/synthesis.
+                  than 60 seconds, and identifies the February regression as the same root-cause
+                  family as the January auth spike. Coverage gaps and clearly labeled synthesis or
+                  inference drawn from the listed facts are allowed. Unsupported specific algorithms,
+                  timeout values, or implementation details not present in any fixture remain
+                  disallowed even when labeled as inference/synthesis.

@@ -900,6 +900,7 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
     // Must name memory evidence with the fixture-backed >60-second threshold
     expect(text, "must reference clock skew or drift (memory evidence)").toMatch(/clock skew|clock drift/i);
     expect(text, "must name fixture-backed >60-second drift threshold").toMatch(/greater than 60/i);
+    expect(text, "must name the fixture-backed root-cause-family link").toMatch(/same root-cause\s+family/i);
 
     // Must explicitly allow coverage-gap statements
     expect(text, "must explicitly allow coverage-gap statements").toMatch(/coverage.gap/i);
