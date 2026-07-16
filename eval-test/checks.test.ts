@@ -106,6 +106,37 @@ describe("evaluateCheck", () => {
     expect(result.pass).toBe(true);
   });
 
+  it("todo-apply-sync rejects an extra applied mutation of another operation", async () => {
+    const result = await evaluateCheck(
+      { kind: "todo-apply-sync", operation: "update", container: "kb-hub" },
+      {
+        transcript: "",
+        toolEvents: [
+          { turn: 1, callId: "update", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", apply: true }, completed: true, success: true },
+          { turn: 1, callId: "create", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "create", container: "kb-hub", apply: true }, completed: true, success: true },
+          { turn: 1, callId: "sync", server: "open-knowledge-hub", tool: "sync", arguments: { container: "kb-hub" }, completed: true, success: true },
+        ],
+      },
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/2 applied todo mutations/i);
+  });
+
+  it("todo-apply-sync requires sync for the expected container", async () => {
+    const result = await evaluateCheck(
+      { kind: "todo-apply-sync", operation: "update", container: "kb-hub" },
+      {
+        transcript: "",
+        toolEvents: [
+          { turn: 1, callId: "update", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", apply: true }, completed: true, success: true },
+          { turn: 1, callId: "sync", server: "open-knowledge-hub", tool: "sync", arguments: { container: "other-hub" }, completed: true, success: true },
+        ],
+      },
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/sync targeted other-hub; expected kb-hub/i);
+  });
+
   it("todo-apply-sync passes when apply:true is preceded by a preview call (preview is optional)", async () => {
     const result = await evaluateCheck(
       { kind: "todo-apply-sync", operation: "update" },
@@ -119,6 +150,52 @@ describe("evaluateCheck", () => {
       } as any,
     );
     expect(result.pass).toBe(true);
+  });
+
+  it("todo-apply-sync rejects an intervening successful OKH call", async () => {
+    const result = await evaluateCheck(
+      { kind: "todo-apply-sync", operation: "update" },
+      {
+        transcript: "",
+        toolEvents: [
+          { turn: 1, callId: "todo", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", apply: true }, completed: true, success: true },
+          { turn: 1, callId: "inspect", server: "open-knowledge-hub", tool: "inspect", arguments: {}, completed: true, success: true },
+          { turn: 1, callId: "sync", server: "open-knowledge-hub", tool: "sync", arguments: {}, completed: true, success: true },
+        ],
+      },
+    );
+    expect(result.pass).toBe(false);
+  });
+
+  it("todo-apply-sync rejects an intervening failed OKH attempt", async () => {
+    const result = await evaluateCheck(
+      { kind: "todo-apply-sync", operation: "update" },
+      {
+        transcript: "",
+        toolEvents: [
+          { turn: 1, callId: "todo", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", apply: true }, completed: true, success: true },
+          { turn: 1, callId: "inspect", server: "open-knowledge-hub", tool: "inspect", arguments: {}, completed: true, success: false },
+          { turn: 1, callId: "sync", server: "open-knowledge-hub", tool: "sync", arguments: {}, completed: true, success: true },
+        ],
+      },
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/found inspect/i);
+  });
+
+  it("todo-apply-sync requires sync in the same turn", async () => {
+    const result = await evaluateCheck(
+      { kind: "todo-apply-sync", operation: "update" },
+      {
+        transcript: "",
+        toolEvents: [
+          { turn: 1, callId: "todo", server: "open-knowledge-hub", tool: "todos", arguments: { operation: "update", apply: true }, completed: true, success: true },
+          { turn: 2, callId: "sync", server: "open-knowledge-hub", tool: "sync", arguments: {}, completed: true, success: true },
+        ],
+      },
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/expected turn 1/);
   });
 
   it.each([

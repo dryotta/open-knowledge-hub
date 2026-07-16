@@ -51,21 +51,60 @@ describe("prompt builders", () => {
     expect(text).toContain("/c/hub/kb");
     expect(text).toContain('<discipline name="ask">');
     expect(text).toMatch(/correlation is not causation/i);
+    expect(text).toMatch(/issued at login and verified on each request[\s\S]{0,100}not that\s+issuance causes verification/i);
     expect(text).toMatch(/do not add generic benefits/i);
+    expect(text).toMatch(/do not specialize a generic source\s+term/i);
+    expect(text).toMatch(/exact path relative to the module root/i);
+    expect(text).toMatch(/never add an assumed directory/i);
+    expect(text).toMatch(/never attach a source citation\s+to a detail that source does not contain/i);
+    expect(text).toMatch(/<container>\/<module>\/<exact item path>/i);
+    expect(text).toMatch(/do not remove, weaken,\s+combine, or rewrite the sub-agent's citations/i);
+    expect(text).toMatch(/for one pack, run it in the foreground and wait for its result/i);
+    expect(text).toMatch(/background sub-agents may run in parallel[\s\S]{0,100}wait for every\s+result/i);
+    expect(text).toMatch(/still include the distilled answer itself/i);
+    expect(text).toMatch(/do not replace it with a\s+statement that the answer was retrieved or handled/i);
+    expect(text).toMatch(/explicit user constraints\s+override the default gap elaboration/i);
+    expect(text).toMatch(/omit coverage, gap, and next-step sections/i);
+    expect(text).toMatch(/never name missing technologies, mechanisms, categories/i);
+    expect(text).toMatch(/do not relabel the\s+relationship as causal or correlational/i);
+    expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
+    expect(text).toMatch(/headings and bullet labels are\s+claims too/i);
+    expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
+    expect(text).toMatch(/if the sub-agent added a prohibited gap or next-step section, omit that\s+section/i);
+    expect(text).toMatch(/verify every citation against\s+the provided module and item paths/i);
+    expect(text).toMatch(/for a facts-only request[\s\S]{0,120}end\s+after the last fact/i);
+    expect(text).toMatch(/remove cross-source comparisons, coverage notes, and missing-topic summaries/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
   });
-  it("context discipline explicitly omits irrelevant/rejected candidates from the final brief", async () => {
+  it("context discipline keeps rejected candidates out of the selected working set", async () => {
     const text = await buildContext(targets, "Debug CSV import");
-    // The discipline must explicitly forbid listing rejected candidates, not just omit them silently
-    expect(text).toMatch(/omit.{0,120}(irrelevant|rejected)/is);
+    expect(text).toMatch(/caller's original request is authoritative/i);
+    expect(text).toMatch(/only user-stated details define scope/i);
+    expect(text).toMatch(/never create a bullet\s+for an excluded item/i);
+    expect(text).toMatch(/gap summary[\s\S]{0,120}must not name or cite[\s\S]{0,80}rejected item/i);
+    expect(text).toMatch(/never select.{0,160}(filename|recency)/is);
+    expect(text).toMatch(/do not\s+open clearly irrelevant candidates merely to confirm their rejection/i);
+    expect(text).toMatch(/do not select a debugging skill[\s\S]{0,100}unless the task includes a failure to debug/i);
+    expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
+    expect(text).toMatch(/do not invent concrete libraries, algorithms/i);
+    expect(text).toMatch(/same broad\s+level without examples or an invented checklist/i);
+    expect(text).toMatch(/complete listed\s+item path/i);
+    expect(text).toMatch(/under a `## Gaps` heading/i);
+  });
+  it("context discipline includes relevant nested files from custom and tool modules", async () => {
+    const text = await buildContext(targets, "Debug CSV import");
+    expect(text).toMatch(/custom\/tool modules/i);
+    expect(text).toMatch(/utilities and references/i);
   });
   it("onboard includes staged guidance, the wake phrase, and config routing", async () => {
     const text = await buildOnboard(targets, { wakePhrase: "sam" });
     expect(text).toContain("sam");
     expect(text).toMatch(/Stage 1/);
     expect(text).toContain("config { set: { wakePhrase");
+    expect(text).toMatch(/confirmation must be a later user message/i);
+    expect(text).toMatch(/once the preview returns,[\s\S]{0,100}end the turn/i);
     expect(text).not.toContain("onboard { wakePhrase");
     // Confirmation is only for setup (folders/containers/modules), not ordinary sync
     expect(text).not.toMatch(/never.*sync.*without.*explicit confirmation/i);

@@ -203,7 +203,11 @@ export default async function todoMarkdown(_output: string, context: Context): P
     candidate,
     mismatches: mismatches(candidate, config),
   }));
-  const match = evaluated.find((entry) => entry.mismatches.length === 0);
+  const matches = evaluated.filter((entry) => entry.mismatches.length === 0);
+  if (matches.length > 1) {
+    return failure(`expected exactly one matching todo, found ${matches.length}`);
+  }
+  const match = matches[0];
   if (match) {
     return {
       pass: true,

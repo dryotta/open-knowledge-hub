@@ -56,6 +56,12 @@ the setup here, so create it directly rather than invoking the standalone `add_m
 workflow. Then run the module's `initialize` skill
 (`run { container, module, skill: "initialize" }`) to populate it.
 
+The confirmation must be a later user message sent after the preview. During
+onboarding, a request such as "create a new folder" describes the desired plan; it
+does not authorize applying that plan in the same turn. Once the preview returns,
+show it and end the turn. Do not call `add_container` with `create: true`,
+`add_module`, or `initialize` until the user replies.
+
 ## Stage 3 — Everyday use (required)
 
 Wrap up by showing how to use the hub day to day, addressing it by the chosen wake

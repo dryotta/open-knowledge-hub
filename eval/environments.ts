@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, cp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, cp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -71,6 +71,36 @@ export type EnvName = keyof typeof environments;
 
 export function isEnvName(v: unknown): v is EnvName {
   return typeof v === "string" && Object.prototype.hasOwnProperty.call(environments, v);
+}
+
+const RUN_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export function validateRunId(runId: string): void {
+  if (!RUN_ID_PATTERN.test(runId)) {
+    throw new Error(`invalid eval run id: ${JSON.stringify(runId)}`);
+  }
+}
+
+/** Prefix an environment label with the current automated run id for scoped cleanup. */
+export function evalEnvironmentLabel(env: EnvName, runId = process.env.OKH_EVAL_RUN_ID): string {
+  if (!runId) return env;
+  validateRunId(runId);
+  return `${runId}-${env}`;
+}
+
+/** Remove only temp roots created by one automated eval run. */
+export async function cleanupEvalEnvironments(
+  runId: string,
+  tempRoot = tmpdir(),
+  remove: RemoveTempRoot = (root) => rm(root, { recursive: true, force: true }),
+): Promise<string[]> {
+  validateRunId(runId);
+  const prefix = `okh-eval-${runId}-`;
+  const roots = (await readdir(tempRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
+    .map((entry) => join(tempRoot, entry.name));
+  await Promise.all(roots.map((root) => remove(root)));
+  return roots;
 }
 
 export interface Provisioned {

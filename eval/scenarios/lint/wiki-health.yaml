@@ -3,9 +3,8 @@
     - vars:
         env: health
         prompt: |
-          Use the open-knowledge-hub MCP tools. Run the "wiki" module's `lint` skill in
-          container "health-hub" to inspect the ml-wiki's health, fix what it safely can,
-          and log the pass. Then sync.
+          hub, run the "wiki" module's `lint` skill in container "health-hub" to inspect
+          the ml-wiki's health, fix what it safely can, and log the pass.
   tests:
     - description: Lint - wiki health - inspects, fixes dangling link, logs
       assert:
@@ -28,9 +27,6 @@
           config:
             artifacts: { module: wiki, maxFiles: 10 }
             criteria:
-              - id: ran-lint
-                text: The agent invoked the wiki module's lint skill.
-                required: false
               - id: inspected-health
                 text: The agent ran inspect and used its Wiki health report (orphans / dangling links).
               - id: handled-orphan

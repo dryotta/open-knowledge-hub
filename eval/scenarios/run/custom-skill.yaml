@@ -3,20 +3,19 @@
     - vars:
         env: custom
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "custom-hub", use the
-          "recipes" module's cooking skill to help me make pancakes.
+          hub, in container "custom-hub", use the "recipes" module's "cook" skill to
+          help me make pancakes.
   tests:
     - description: Run - custom module skill - dispatches the module's cook skill
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run] }
-        - type: javascript
-          value: file://assertions/judge.ts
           config:
-            criteria:
-              - id: ran-cook-skill
-                text: The agent invoked the run tool targeting the recipes module's "cook" skill.
-                check: { kind: transcript-contains, pattern: '"skill":\s*"cook"' }
-              - id: followed-guidance
-                text: The agent then followed the cook skill's step-by-step cooking guidance for pancakes.
+            expect:
+              - name: run
+                arguments: { container: custom-hub, module: recipes, skill: cook }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustContain: [ingredients?, flour, milk, egg, sugar, salt]

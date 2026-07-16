@@ -39,6 +39,7 @@ describe("effective skills + resolveSkill", () => {
     expectTerms(s.body, [
       /append/i,
       /ISO timestamp/i,
+      /new file[\s\S]{0,100}do not add YAML frontmatter/i,
       /action|commitment|reminder|todo/i,
       "todos",
       /inspect existing labels/i,
@@ -91,6 +92,15 @@ describe("effective skills + resolveSkill", () => {
     expect(s.body).not.toMatch(/needsConfirmation/i);
     expect(s.body).not.toMatch(/exact returned preview/i);
     expect(s.body).not.toMatch(/require.*confirmation|await.*confirm|wait.*confirm/i);
+  });
+
+  it("resolveSkill keeps reflection proposal-only until application is explicit", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "mem"), { type: "memory", name: "Mem", description: "" });
+    const s = await svc.resolveSkill("h", "mem", "reflect");
+    expect(s.body).toMatch(/non-mutating by default/i);
+    expect(s.body).toMatch(/unless the caller explicitly asks to apply/i);
+    expect(s.body).toMatch(/call `sync` immediately after writing/i);
   });
 
   it("knowledge type exposes learn + initialize", async () => {
@@ -168,6 +178,13 @@ describe("shared skills", () => {
     const { svc } = await setup();
     const s = await svc.resolveSharedSkill("grilling");
     expect(s.body.length).toBeGreaterThan(0);
+    expect(s.body).toMatch(/one decision at a time/i);
+    expect(s.body).toMatch(/do\s+not\s+bundle\s+separate\s+decisions/i);
+    expect(s.body).toMatch(/at most three tightly related question marks/i);
+    expect(s.body).toMatch(/prefer exactly one question mark/i);
+    expect(s.body).toMatch(/option bullets[\s\S]{0,100}without\s+question marks/i);
+    expect(s.body).toMatch(/do not restate the decision as a trailing follow-up question/i);
+    expect(s.body).toMatch(/recommendation adjacent to the question/i);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
   });
 
@@ -177,6 +194,9 @@ describe("shared skills", () => {
     expect(s.name).toBe("ingest");
     expect(s.body).toMatch(/route/i);
     expect(s.body).toMatch(/llmwiki/);
+    expect(s.body).toMatch(/hard turn boundary/i);
+    expect(s.body).toMatch(/internal scope-gate decision is not user confirmation/i);
+    expect(s.body).toMatch(/do not copy sources, call the target skill, edit module files, or sync/i);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
   });
 });
@@ -200,6 +220,7 @@ describe("llmwiki skill body contracts", () => {
     expect(s.body).toMatch(/declared.*type/i);
     // final inspect
     expect(s.body).toMatch(/inspect/i);
+    expect(s.body).toMatch(/name every affected page by its exact\s+bundle-relative path/i);
   });
 
   it("write skill requires repeated inspect until all health arrays are empty before completion", async () => {

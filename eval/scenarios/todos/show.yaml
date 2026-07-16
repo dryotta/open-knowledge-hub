@@ -3,8 +3,8 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. Show me every open todo labeled
-          "shopping" across all registered memory modules.
+          hub, show me every open todo labeled "shopping" across all registered
+          memory modules.
   tests:
     - description: Todos - shopping - shows matching open tasks across modules
       assert:
@@ -13,7 +13,7 @@
           config: { expect: [todos] }
         - type: javascript
           value: file://assertions/transcript.ts
-          config: { mustContain: [Buy milk, shopping] }
+          config: { source: final-message, mustContain: [Buy milk, shopping] }
         - type: javascript
           value: file://assertions/judge.ts
           config:

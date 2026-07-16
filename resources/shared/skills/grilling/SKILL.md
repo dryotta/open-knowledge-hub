@@ -10,8 +10,15 @@ decision until you reach a shared understanding. Walk down each branch of the
 decision tree, resolving dependencies between decisions one by one. For each
 question, provide your recommended answer.
 
-Ask questions **one at a time**, waiting for the answer before continuing. Asking
-several at once is bewildering.
+Ask questions **one decision at a time**, waiting for the answer before continuing.
+A short framing question plus one same-topic decision question is acceptable, but do
+not bundle separate decisions or add "deeper" follow-ups. Give your recommended answer
+for that single decision, then stop. Use at most three tightly related question marks
+that can all be answered as one decision. Prefer exactly one question mark. Ask the
+decision once: if you show option bullets, write them as declarative choices without
+question marks, and do not restate the decision as a trailing follow-up question.
+Place the recommendation adjacent to the question; ordering does not matter. Do not
+introduce a different decision afterward. Asking several decisions at once is bewildering.
 
 If a *fact* can be found by exploring the codebase or the materials at hand, look it
 up rather than asking. The *decisions* are the user's — put each one to them and

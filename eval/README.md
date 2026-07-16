@@ -4,7 +4,7 @@ End-to-end tests that exercise the **real** Open Knowledge Hub MCP server **insi
 GitHub Copilot CLI** against real fixture containers. There is **no external grader
 key** — both the agent and the judge run through Copilot CLI.
 
-The same 28 scenarios run two ways:
+The same 29 scenarios run two ways:
 
 - **Automated** — [promptfoo](https://promptfoo.dev) drives a custom Copilot-CLI
   provider, applies deterministic `javascript` assertions plus a Copilot-CLI **judge**,
@@ -22,7 +22,7 @@ Design notes: `docs/superpowers/specs/2026-07-02-okh-e2e-copilot-cli-design.md` 
 One eval run for a scenario is:
 
 ```
-promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios: [file://scenarios/**/*.yaml])
+promptfoo (full or smoke config — one {{prompt}} pass-through + ordered scenario files)
   └─ shared provider (scenarios/shared/provider.ts → provider/copilotProvider.ts)
        ├─ provisionEnvironment(env)  ← environments.ts
        │    builds an isolated temp Root:
@@ -30,9 +30,11 @@ promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios
        │      copilot-home/  (COPILOT_HOME: mcp-config.json → node dist/index.js)
        │      workspace/     (the agent's cwd)
        ├─ runConversation(...)  ← copilot.ts
-       │    turn 1:  copilot -p "<prompt>" --session-id <uuid> --allow-all --output-format json --model <model>
+       │    turn 1:  copilot -p "<prompt>" --session-id <uuid> --allow-all --output-format json
+       │             --no-custom-instructions --disable-builtin-mcps --no-remote-export
+       │             --no-auto-update --model <model>
        │    then per scripted reply:  copilot -p "<reply>" --resume=<uuid> ...   (single-turn = just turn 1)
-       └─ returns the aggregated transcript + metadata (containerPath, originPath, toolCalls, toolEvents, cost, …)
+       └─ returns the aggregated transcript + metadata (root, workspace, containerPath, originPath, toolCalls, toolEvents, cost, …)
   └─ assertions grade the transcript + on-disk side-effects:
        • deterministic javascript assertions (tools called, files changed, git commits…)
        • a Copilot-CLI judge (binary criteria, self-consistency)
@@ -40,20 +42,22 @@ promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios
 
 Everything is isolated per run: each scenario gets its own `OKH_HOME`, `COPILOT_HOME`,
 and working directory in a throwaway temp dir, so runs never touch your real hub or
-each other.
+each other. Automated runs remove their run-scoped temp roots on exit, including
+interrupts. Set `OKH_EVAL_KEEP_WORKSPACES=1` only when debugging artifacts manually.
 
 Key files:
 
 | File | Role |
 |------|------|
-| `promptfooconfig.yaml` | the single default config: `{{prompt}}` pass-through + shared provider + `scenarios:` glob |
+| `promptfooconfig.yaml` | full release tier with every scenario ordered slow-first |
+| `promptfooconfig.smoke.yaml` | representative local tier used by `npm run eval:smoke` |
 | `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout |
 | `scenarios/<verb>/<case>.yaml` | one scenario (a one-element list): `config.vars` (prompt+env) + `tests[0].assert` |
 | `environments.ts` | defines the 6 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, drives the (multi-turn) conversation, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
-| `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
+| `run-scenarios.ts` | selects the tier, configures concurrency/judge votes, runs promptfoo, and reports run/cleanup timing |
 | `manual.ts` | one-shot manual harness (`npm run manual`) with isolated homes and automatic cleanup |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`, `custom-hub`, `health-hub`, `wiki-hub`) |
 
@@ -77,8 +81,10 @@ Key files:
 
 ## How test cases work
 
-`eval/promptfooconfig.yaml` is the single default config. It declares one pass-through
-prompt, the shared provider once, and a glob of every scenario file:
+`eval/promptfooconfig.yaml` is the full release tier. It declares one pass-through
+prompt, the shared provider once, and every scenario file in measured slow-first order.
+`promptfooconfig.smoke.yaml` uses the same provider and scenarios but selects eight
+representative cases for local iteration.
 
 ```yaml
 prompts:
@@ -86,13 +92,14 @@ prompts:
 providers:
   - file://scenarios/shared/provider.ts
 scenarios:
-  - file://scenarios/**/*.yaml
+  - file://scenarios/onboard/cold-start-conversation.yaml
+  # ...all remaining scenarios, slowest first
 ```
 
 Each `scenarios/<verb>/<case>.yaml` is a **one-element scenario list**: its `config[0].vars`
 supplies the case's `prompt` (rendered into `{{prompt}}`) and `env`, and its `tests[0].assert`
 holds the case's assertions. One prompt template × N scenarios means no prompt×test
-cross-product — promptfoo runs the scenarios concurrently (default 4 workers) in a single run,
+cross-product — promptfoo runs the scenarios concurrently (default 2 workers) in a single run,
 so all cases land in **one** eval record you can browse in `npm run eval:view`.
 
 ```yaml
@@ -101,19 +108,22 @@ so all cases land in **one** eval record you can browse in `npm run eval:view`.
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
-          from its knowledge module: How does auth work?
+          hub, in container "kb-hub", answer strictly from its knowledge module:
+          How does auth work? Do not add details the module does not state.
+          Cite the source concept path.
   tests:
     - description: Ask - answerable question - grounded answer, cites source
       assert:
         - { type: javascript, value: file://assertions/tools-called.ts, config: { expect: [ask] } }
-        - { type: javascript, value: file://assertions/transcript.ts, config: { mustContain: ["token"] } }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config: { source: final-message, mustContain: ["session tokens?", "(?:kb[/\\\\])?auth\\.md"] }
         - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
-              - id: grounded-token-auth
-                text: The answer reflects token-based auth from the Auth concept.
+              - id: no-fabrication
+                text: The answer invents nothing beyond the container's knowledge module.
 ```
 
 - **Assertion `file://` paths are relative to `eval/`** (the config dir) — `file://assertions/…`,
@@ -171,8 +181,10 @@ Each `turns` entry is `{ id, after, when?, send }`:
 - **`when`** — optional case-insensitive regex matched against the agent's last message. **Use `when` only for true sibling-branch discrimination** (e.g. the agent may ask about purpose *or* goals first and you need different replies). For linear sequencing, omit `when` — the `after` chain alone drives turn order.
 - **`send`** — the user message to send.
 
-A `terminal: { after, requiredTools? }` block marks the finishing state. The conversation
-stops when that state is reached and all `requiredTools` have been successfully called.
+A `terminal: { after, requiredTools?, finalTool? }` block marks the finishing state. The
+conversation stops when that state is reached and all `requiredTools` have been called
+successfully. When set, `finalTool` must be the final successful OKH event on the
+terminal turn.
 
 Unmatched state (no eligible turn matches the current state), hitting `maxTurns` (default
 `responses.length + 2`), or a non-zero process exit are all **explicit failures** and
@@ -183,7 +195,7 @@ surface as `metadata.failure`.
 # All turns are unguarded — `after` state drives the linear conversation.
 vars:
   env: empty
-  prompt: "Use the Open Knowledge Hub MCP and run onboard to set me up."
+  prompt: "I just installed Open Knowledge Hub. Help me set it up for the first time."
   turns:
     - id: wake-phrase
       after: start
@@ -202,12 +214,16 @@ vars:
     requiredTools: [onboard, config, add_container]
 ```
 
-The provider reads each turn via `--output-format json`, extracting the agent's message,
-OKH tool calls, and the run's cumulative cost. `metadata.toolEvents` is the full ordered
-list of **completed + successful** OKH tool executions across all turns, each retaining
-`server`, `tool`, `arguments`, and `turn` index. `metadata.toolCalls` is the deduped
-sorted name list derived from the same events. The aggregated transcript (labelled
-`USER`/`AGENT` blocks per turn) is what the judge and `transcript` assertions grade.
+The provider reads each turn via `--output-format json`, extracting assistant messages,
+tool events, and cumulative cost. `metadata.toolEvents` is the full ordered event list
+across all turns; each event retains `server`, `tool`, `arguments`, completion/success
+state, and turn index. `metadata.toolCalls` is the deduped sorted list of successful OKH
+tools. `metadata.finalMessage` is the last spoken assistant message without tool traces.
+The aggregated transcript (labelled `USER`/`AGENT` blocks per turn) remains available for
+conversation-level judging. The shared provider retries one typed timeout or spawn failure in a
+fresh environment; ordinary non-zero exits, state-machine failures, and cancellation are not
+retried. Retry diagnostics and attempt count are retained in metadata, and `costIncomplete` marks
+usage totals that may omit a failed process's unreported requests.
 
 ### Assertions
 
@@ -216,10 +232,12 @@ side-effects — no model needed:
 
 | assertion | checks |
 |-----------|--------|
-| `tools-called` | every expected OKH tool was completed successfully; `expect` items are tool-name strings or `{ name, arguments?, server?, turn? }` tuples; `ordered: true` requires event-order match |
-| `transcript` | substrings that must / must not appear (`mustContain` / `mustNotContain`) |
-| `okf-valid` | a module's OKF concepts are valid; optionally changed vs. the fixture |
+| `tools-called` | every expected OKH tool was completed successfully and every `forbid` item was never attempted; items are tool-name strings or `{ name, arguments?, server?, turn? }` tuples; `ordered: true` requires one-to-one event-order matches |
+| `transcript` | substrings that must / must not appear (`mustContain` / `mustNotContain`); `source: final-message` checks only the final spoken response |
+| `okf-valid` | a module's OKF concepts are valid; optionally changed vs. the fixture and containing configured `requiredChangedPatterns` in changed concept files |
 | `memory-append` | exactly one new Markdown entry was appended (no prior content rewritten); entry contains exactly one ISO timestamp heading and the configured `observation` preserved verbatim |
+| `todo-apply-sync` | exactly one todo mutation used `apply: true`, followed immediately by a successful same-turn `sync` |
+| `todo-module-change` | todo creation/update changed exactly the intended task while preserving unrelated memory content |
 | `module-unchanged` | a module was **not** modified (guardrail / rejection cases) |
 | `git-committed` | the git origin gained commits beyond the seed (i.e. `sync` pushed) |
 | `container-registered` | a container is registered with the expected backend/module |
@@ -249,14 +267,18 @@ side-effects — no model needed:
 0–1 score), through Copilot CLI. For robustness it uses **self-consistency**: the agent
 runs once, then the judge grades that transcript **`k` times** (default 3; override with
 `config.k` per assertion or the `OKH_JUDGE_K` env var) and each criterion is decided by
-**majority vote**. A criterion with fewer than `ceil(k/2)` valid votes, or a tie, is
-`UNRELIABLE` and fails.
+**strict majority vote across the configured `k` runs**. Without `floor(k/2)+1` matching
+PASS or FAIL votes, the result is `UNRELIABLE` and fails. A failed or timed-out judge
+subprocess is an invalid vote rather than an exception; malformed votes are rejected as a
+whole, and invalid-run diagnostics are reported.
 
-Judge votes run concurrently by default. `OKH_JUDGE_CONCURRENCY` caps parallel votes per
-scenario (maximum `k`); set it to `1` to restore sequential judging. Invalid values fall
-back to `k`. The tested agent is pinned to `claude-sonnet-4.5`, while the judge defaults
-to the faster `gpt-5.6-luna`. Override the judge globally with `OKH_JUDGE_MODEL`, or per
-assertion with `graderModel`.
+Up to two judge votes run concurrently per scenario by default.
+`OKH_JUDGE_CONCURRENCY` overrides that cap (maximum `k`); set it to `1` for sequential
+judging. Invalid values fall back to `min(k, 2)`. The tested agent is pinned to
+`claude-sonnet-4.5`, while the judge defaults to the faster `gpt-5.6-luna`. Override the
+judge globally with `OKH_JUDGE_MODEL`, or per assertion with `graderModel`.
+Adaptive judging launches only the votes still needed to fix every criterion, so the
+concurrency value is a ceiling rather than a guarantee that all `k` votes start together.
 
 A criterion carrying a `check` (`tool`, `container`, `manifest`, `wake-phrase`,
 `transcript-contains`, `transcript-absent`) is evaluated **deterministically** — the
@@ -272,23 +294,51 @@ insufficient votes) fails.
 ```powershell
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
-npm run eval:validate    # structural promptfoo validation
-npm run eval             # full live run (premium usage) — all scenarios, concurrently
+npm run eval:validate    # validate both full and smoke configs
+npm run eval:smoke       # 8 representative scenarios, one judge vote (local iteration)
+npm run eval             # full release tier, adaptive three-vote judging
+npm run eval -- --filter-pattern "Ask - answerable"   # one scenario
+npm run eval -- --filter-pattern "Learn -" --repeat 3 --max-concurrency 2
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
-# a single scenario: filter by description, e.g. promptfoo eval -c eval/promptfooconfig.yaml --filter-pattern "Ask - answerable"
 ```
 
-> **One config, concurrent scenarios.** `npm run eval` / `eval:validate` run a **single**
-> `promptfoo` process on `eval/promptfooconfig.yaml` (via `run-scenarios.ts`), which globs
-> every `scenarios/**/*.yaml` scenario and runs them with promptfoo's default concurrency.
+> **Tiered, concurrent scenarios.** `npm run eval` runs the full slow-first config;
+> `npm run eval:smoke` runs the representative local config. Each tier uses one promptfoo
+> process and runs at most two scenarios concurrently by default. Pass
+> `--max-concurrency N` for one run or set `OKH_EVAL_CONCURRENCY` (1–8) for a CI/matrix
+> configuration.
 > All cases share one eval record — pick a row in `npm run eval:view`. Both invoke promptfoo
 > through `node --import tsx` so the TypeScript provider keeps NodeNext `.js` import specifiers;
-> validation prints `Configuration is valid.`
+> validation checks both configs. Additional CLI arguments are forwarded to promptfoo.
+> Update checks are disabled during runs to avoid startup network noise.
 
-**Cost:** each scenario is **N agent turns + `k` judge calls** (single-turn scenarios have
-`N=1`; multi-turn scenarios run one agent turn per scripted reply; `k` defaults to 3). Set
-`OKH_JUDGE_K=1` for cheap local iteration. Parallel voting reduces wall time, not premium
-usage. Response caching is disabled for the agent (`--no-cache`).
+**Cost:** each scenario uses **N agent turns**, plus `k` judge calls only when semantic
+grading remains necessary (single-turn scenarios have `N=1`; multi-turn scenarios run one
+agent turn per scripted reply; `k` defaults to 3). Judges launch two votes first and stop
+once every criterion's configured-majority result is fixed; a third vote runs only for a
+split or otherwise unresolved outcome. Deterministic-only scenarios skip the judge.
+`npm run eval:smoke` sets `k=1`; set `OKH_JUDGE_K=1` explicitly for other cheap local
+runs. A `borderline` annotation is best-effort because an unlaunched vote cannot reveal
+later dissent after a majority is already fixed. Response caching is disabled for the
+agent (`--no-cache`).
+
+**Timing telemetry:** automated runs emit one-line provisioning, agent, tool, judge,
+retry-cleanup, run-cleanup, and total timings. Provider and judge details are also attached
+to result metadata when JSON output is requested. Set `OKH_EVAL_TIMINGS=0` to suppress
+the per-scenario lines. Tool timing uses JSONL event arrival time; buffered start/complete
+events can understate tool time and correspondingly overstate agent time.
+
+**Concurrency reliability comparison:** keep the release default at 2, then evaluate a
+candidate setting with repeated identical runs:
+
+```powershell
+$env:OKH_EVAL_CONCURRENCY = "3"
+npm run eval -- --repeat 3 --output concurrency-3.json --no-table
+Remove-Item Env:OKH_EVAL_CONCURRENCY
+```
+
+Compare pass/error counts, retry telemetry, duration, and leaked roots against the same
+repeat at concurrency 2 before changing the default.
 
 **Model matrix:** change the default `model` in `scenarios/shared/provider.ts` (one place),
 then compare runs in `npm run eval:view`. **Comparing builds:** run the suite on two OKH
@@ -332,36 +382,43 @@ $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
 `npm run manual -- [env]` prints all of an environment's prompts; a few highlights:
 
 - **ask** (env `local-and-git`):
-  > Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly from its
-  > knowledge module: How does auth work?
+  > hub, in container "kb-hub", answer strictly from its knowledge module: How does auth work?
+  > Do not add details the module does not state. Cite the source concept path.
 
   Expect: calls `ask`, mentions session tokens, cites the Auth concept, invents nothing.
   The sibling "decline" test asks for a vacation policy and should **decline** rather than
   fabricate.
 
 - **context** (env `local-and-git`):
-  > …assemble a working set for this task in container "kb-hub": debug a failing test that
-  > parses a CSV file. Include every module type that helps and cite each by path.
+  > hub, assemble a focused working set from container "kb-hub" for a failing CSV parser test.
+  > Include only task-relevant items, explain why each helps, and cite each exact path. Keep rejected
+  > files out of the selected working set and verify relevance from content, not filename/recency.
 
   Expect: selects the nested `debugging` skill and the `csv2json` tool, not just knowledge.
 
 - **learn** (env `git`):
-  > Learn the following into container "git-hub" and persist it: "Session tokens are signed
-  > with RS256 and the public keys are rotated weekly." Then sync.
+  > hub, in container "git-hub"'s knowledge module, learn this fact: "Session tokens are signed
+  > with RS256 and the public keys are rotated weekly."
 
   Expect: writes a valid OKF concept and `sync` commits **and pushes** to the bare origin
   (`git-committed` verifies it). The sibling "reject" test ("the sky is blue") should be
   **rejected** by the learn gate (`module-unchanged` verifies nothing changed).
 
+- **ingest** (env `health`):
+  > hub, use the shared "ingest" skill to ingest `./lab-results.txt` into my existing Health module.
+
+  Expect: routes through `ingest` and the module's `learn` skill, writes valid OKF, retains the
+  source under `sources/`, avoids re-initialization, and syncs.
+
 - **remember** (env `local-and-git`):
-  > Remember this observation in container "kb-hub": "The login endpoint returned 500s for
+  > hub, remember this observation in container "kb-hub": "The login endpoint returned 500s for
   > ~3 minutes at 14:05 UTC during deploy."
 
   Expect: a new timestamped `mem/` entry (append-only), raw fact only, no conclusions.
 
 - **reflect** (env `local-and-git`):
-  > Reflect on the memory module of container "kb-hub" and produce lessons and proposed
-  > updates.
+  > hub, use container "kb-hub"'s "mem" memory module "reflect" skill to produce lessons and
+  > proposed updates from its entries. Do not apply the updates yet.
 
   Expect: identifies the recurring token-refresh / clock-skew pattern across both memory
   entries and proposes a concrete update.
@@ -371,9 +428,9 @@ $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
   > module named "kb". Show me the plan and wait for my confirmation; assume I say yes.
 
   Expect: previews a plan, then `add` creates & registers `my-notes` with a `kb` module.
-  The `empty` environment also covers explaining OKH, the cold-start phrase ("Use the Open
-  Knowledge Hub MCP and run onboard to set me up."), setting a wake phrase, adding an
-  existing folder, and cloning a hub from GitHub.
+  The `empty` environment also covers explaining OKH, the natural cold-start request
+  ("I just installed Open Knowledge Hub. Help me set it up for the first time."),
+  setting a wake phrase, adding an existing folder, and cloning a hub from GitHub.
 
 ### Exploratory (free-form) testing
 
@@ -415,12 +472,16 @@ Automated e2e can't open real pull requests. To test `shared`-mode by hand:
 
 - **Don't gate required CI on this suite.** Copilot CLI temperature isn't directly
   controllable; rely on self-consistent judging (and promptfoo `repeat`).
+- Interrupted promptfoo processes can leave partial rows in the local results database.
+  Treat records without a final `Results`/`Duration` log line as incomplete, regardless
+  of the pass rate shown for the subset that finished.
 - `onboard/github-repo` clones the private repo `dryotta/okh-eval-hub`, which relies on the
   machine's `gh` credential helper (macOS/Windows) or a token with `repo` read (Linux/CI).
   No push/sync is exercised.
-- Fixture workspaces are disposable temp dirs — inspect and mutate them freely during the
-  session; the harness removes the full temp Root on exit. Each interactive turn consumes
-  premium requests.
+- Fixture workspaces are disposable temp dirs. Manual sessions always clean on exit;
+  automated runs launched through `npm run eval` clean their run-scoped roots unless
+  `OKH_EVAL_KEEP_WORKSPACES=1`.
+  Each interactive turn consumes premium requests.
 - On Windows, promptfoo may print a libuv assertion on process exit **after** a successful
   run — cosmetic.
 - If a future Copilot CLI version changes its `--output-format json` event shape (currently

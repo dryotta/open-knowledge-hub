@@ -93,6 +93,19 @@ describe("todo-markdown assertion", () => {
     });
   });
 
+  it("rejects duplicate matching todos", async () => {
+    const root = await makeRoot({
+      "tasks.md": "- [ ] Buy printer ink #shopping\n- [ ] Buy printer ink #shopping\n",
+    });
+    const result = await todoMarkdown("", ctx(root, {
+      text: "buy printer ink",
+      status: "open",
+      labels: ["shopping"],
+    }));
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/exactly one matching todo/i);
+  });
+
   it("does not crash on prose or malformed checkbox metadata", async () => {
     const root = await makeRoot({
       "mixed.md": [

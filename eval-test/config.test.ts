@@ -49,19 +49,123 @@ describe("shared provider", () => {
     // extends the real provider (import resolves one level above the shared folder)
     expect(src).toContain("../../provider/copilotProvider.js");
     expect(await exists(resolve(SCENARIOS, "shared", "../../provider/copilotProvider.ts"))).toBe(true);
-    // the shared defaults (model + timeout) live here, in one place
+    // the shared defaults (model + timeout + transient-process retry) live here, in one place
     expect(src).toMatch(/model:/);
     expect(src).toMatch(/timeoutMs:/);
+    expect(src).toMatch(/maxAttempts:\s*2/);
   });
 });
 
-describe("promptfooconfig.yaml (single default)", () => {
-  it("has the {{prompt}} pass-through, the shared provider, and the scenarios glob", async () => {
+describe("deterministic custom, context, and ingest scenarios", () => {
+  async function loadScenario(path: string) {
+    const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+    return doc[0];
+  }
+
+  it("custom cook uses structured routing and fixture-backed response checks", async () => {
+    const sc = await loadScenario("run/custom-skill.yaml");
+    const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+    const tools = assertions.find((a) => String(a.value).endsWith("tools-called.ts"));
+    expect(tools?.config?.expect).toEqual([
+      expect.objectContaining({
+        name: "run",
+        arguments: { container: "custom-hub", module: "recipes", skill: "cook" },
+      }),
+    ]);
+    const transcriptAssert = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+    expect(transcriptAssert?.config?.mustContain).toEqual(expect.arrayContaining(["flour", "milk", "egg"]));
+    expect(assertions.some((a) => String(a.value).endsWith("judge.ts"))).toBe(false);
+    expect(sc.config[0].vars.prompt).toMatch(/"cook" skill/i);
+  });
+
+  it("login context selects auth evidence without selecting unrelated utilities", async () => {
+    const sc = await loadScenario("context/login-task.yaml");
+    const assertion = sc.tests[0].assert.find(
+      (a: { value?: string }) => String(a.value).endsWith("working-set-selection.ts"),
+    );
+    expect(assertion.config.required).toEqual(expect.arrayContaining([
+      "kb/auth\\.md",
+      "mem/2026-01-01\\.md",
+      "mem/2026-02-15\\.md",
+    ]));
+    expect(assertion.config.forbidden).toEqual(expect.arrayContaining([
+      "engineering/testing/debugging/SKILL\\.md",
+      "tools/csv2json/README\\.md",
+    ]));
+    expect(sc.config[0].vars.prompt).toMatch(/new implementation work, not an existing\s+failure investigation/i);
+    expect(sc.tests[0].assert.some((a: { value?: string }) => String(a.value).endsWith("judge.ts"))).toBe(false);
+  });
+
+  it("ingest uses structured skill routing plus deterministic artifact checks", async () => {
+    const sc = await loadScenario("ingest/into-existing-module.yaml");
+    const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+    const tools = assertions.find((a) => String(a.value).endsWith("tools-called.ts"));
+    expect(tools?.config?.ordered).toBe(true);
+    expect(tools?.config?.expect).toEqual([
+      expect.objectContaining({ name: "run", arguments: { skill: "ingest" } }),
+      expect.objectContaining({ name: "run", arguments: { container: "health-hub", module: "health", skill: "learn" } }),
+      expect.objectContaining({ name: "sync", arguments: { container: "health-hub" } }),
+    ]);
+    expect(tools?.config?.forbid).toEqual([
+      expect.objectContaining({ name: "run", arguments: { skill: "initialize" } }),
+      expect.objectContaining({
+        name: "run",
+        turn: 1,
+        arguments: expect.objectContaining({ skill: "learn" }),
+      }),
+      expect.objectContaining({ name: "sync", turn: 1 }),
+    ]);
+    expect(assertions.map((a) => a.value)).toEqual(expect.arrayContaining([
+      "file://assertions/okf-valid.ts",
+      "file://assertions/source-retained.ts",
+    ]));
+    expect(assertions.some((a) => String(a.value).endsWith("judge.ts"))).toBe(false);
+    expect(sc.config[0].vars.prompt).toMatch(/shared "ingest" skill/i);
+    expect(sc.config[0].vars.turns).toEqual([
+      expect.objectContaining({ id: "routing-confirmed", after: "start" }),
+    ]);
+    expect(sc.config[0].vars.terminal).toMatchObject({
+      after: "routing-confirmed",
+      requiredTools: ["run", "sync"],
+    });
+    expect((tools?.config?.expect as Array<{ turn?: number }>).map((entry) => entry.turn)).toEqual([1, 2, 2]);
+  });
+});
+
+describe("promptfoo tier configs", () => {
+  const scenarioPath = (ref: string) => ref.replace("file://scenarios/", "");
+
+  it("orders every full-tier scenario slow-first without omissions", async () => {
     const cfg = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
     expect(cfg.prompts).toEqual(["{{prompt}}"]);
     expect(cfg.providers).toEqual(["file://scenarios/shared/provider.ts"]);
     expect(await exists(join(SCENARIOS, "shared", "provider.ts"))).toBe(true);
-    expect(cfg.scenarios).toEqual(["file://scenarios/**/*.yaml"]);
+    const configured = (cfg.scenarios as string[]).map(scenarioPath);
+    expect([...configured].sort()).toEqual(await scenarioFiles());
+    expect(configured.slice(0, 4)).toEqual([
+      "onboard/cold-start-conversation.yaml",
+      "initialize/llmwiki.yaml",
+      "ask/llmwiki-compounding.yaml",
+      "ingest/into-existing-module.yaml",
+    ]);
+  });
+
+  it("defines a representative smoke tier as a strict full-tier subset", async () => {
+    const full = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
+    const smoke = parseYaml(await readFile(join(EVAL, "promptfooconfig.smoke.yaml"), "utf8"));
+    expect(smoke.prompts).toEqual(full.prompts);
+    expect(smoke.providers).toEqual(full.providers);
+    const fullRefs = new Set(full.scenarios as string[]);
+    const smokeRefs = smoke.scenarios as string[];
+    expect(smokeRefs).toHaveLength(8);
+    expect(smokeRefs.length).toBeLessThan(fullRefs.size);
+    expect(smokeRefs.every((ref) => fullRefs.has(ref))).toBe(true);
+    expect(smokeRefs).toEqual(expect.arrayContaining([
+      "file://scenarios/ingest/into-existing-module.yaml",
+      "file://scenarios/write/into-wiki.yaml",
+      "file://scenarios/ask/answerable.yaml",
+      "file://scenarios/run/shared-grilling.yaml",
+    ]));
   });
 });
 
@@ -77,7 +181,7 @@ describe("scenario configs", () => {
     expect(counts).toEqual(EXPECTED_COUNTS);
   });
 
-  it("every file is a one-element scenario list: config.vars(prompt+env), a test with asserts, judge criteria, eval-relative assertion paths", async () => {
+  it("every file is a one-element scenario list with natural prompts and valid assertions", async () => {
     const seenDescriptions = new Set<string>();
     for (const file of await scenarioFiles()) {
       const doc = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
@@ -103,6 +207,22 @@ describe("scenario configs", () => {
       expect(vars.prompt.trim().length).toBeGreaterThan(0);
       expect(vars.prompt).not.toContain("{{prompt}}");
       expect(Object.keys(environments)).toContain(vars.env);
+      const userMessages = [
+        vars.prompt,
+        ...((Array.isArray(vars.turns) ? vars.turns : []) as Array<{ send?: unknown }>)
+          .map((turn) => turn.send)
+          .filter((send): send is string => typeof send === "string"),
+      ];
+      for (const message of userMessages) {
+        expect(message, `${file}: prompt should not tell the agent which MCP interface to use`)
+          .not.toMatch(/\bMCP\b/i);
+        expect(message, `${file}: prompt should request user intent, not invoke the onboard tool`)
+          .not.toMatch(/\brun\s+onboard\b/i);
+        expect(message, `${file}: sync behavior comes from OKH policy, not the user prompt`)
+          .not.toMatch(/\bsync\b/i);
+        expect(message, `${file}: prompts should not expose tool arguments`)
+          .not.toMatch(/\bapply\s*:\s*true\b/i);
+      }
 
       // exactly one test: only asserts, no per-test vars/prompt filter
       expect(Array.isArray(sc.tests)).toBe(true);
@@ -117,17 +237,19 @@ describe("scenario configs", () => {
       expect(test.prompts, `${file}: no prompt filter`).toBeUndefined();
       expect(Array.isArray(test.assert)).toBe(true);
 
-      // judge criteria present and well-formed
+      // Judge criteria are optional when deterministic assertions fully cover the case.
       const judges = test.assert.filter(
         (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
       );
-      expect(judges.length).toBeGreaterThanOrEqual(1);
-      const criteria = judges[0].config?.criteria;
-      expect(Array.isArray(criteria)).toBe(true);
-      expect(criteria.length).toBeGreaterThanOrEqual(1);
-      for (const c of criteria) {
-        expect(typeof c.id).toBe("string");
-        expect(typeof c.text).toBe("string");
+      expect(judges.length).toBeLessThanOrEqual(1);
+      if (judges.length === 1) {
+        const criteria = judges[0].config?.criteria;
+        expect(Array.isArray(criteria)).toBe(true);
+        expect(criteria.length).toBeGreaterThanOrEqual(1);
+        for (const c of criteria) {
+          expect(typeof c.id).toBe("string");
+          expect(typeof c.text).toBe("string");
+        }
       }
 
       // every javascript assertion path is eval-relative and exists
@@ -166,7 +288,7 @@ describe("scenario configs", () => {
 
       // terminal must exist and terminal.after must reference a declared turn ID
       expect(vars.terminal, `${file}: multi-turn scenario requires terminal`).toBeDefined();
-      const terminal = vars.terminal as { after: string; requiredTools?: string[] };
+      const terminal = vars.terminal as { after: string; requiredTools?: string[]; finalTool?: string };
       expect(typeof terminal.after, `${file}: terminal.after is a string`).toBe("string");
       expect(uniqueIds.has(terminal.after), `${file}: terminal.after "${terminal.after}" must be a declared turn ID`).toBe(true);
 
@@ -177,7 +299,240 @@ describe("scenario configs", () => {
           expect(typeof tool, `${file}: each requiredTool is a string`).toBe("string");
         }
       }
+      if (terminal.finalTool !== undefined) {
+        expect(typeof terminal.finalTool, `${file}: terminal.finalTool is a string`).toBe("string");
+        expect(terminal.finalTool.length, `${file}: terminal.finalTool is non-empty`).toBeGreaterThan(0);
+      }
     }
+  });
+});
+
+describe("scenario routing contracts", () => {
+  async function loadScenario(path: string) {
+    const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+    return doc[0];
+  }
+
+  function toolsConfig(sc: {
+    tests: Array<{
+      assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }>;
+    }>;
+  }) {
+    return sc.tests[0].assert.find(
+      (assertion) => assertion.type === "javascript" && String(assertion.value).endsWith("tools-called.ts"),
+    )?.config as {
+      expect: Array<string | { name: string; arguments?: Record<string, unknown> }>;
+      forbid?: Array<string | { name: string; arguments?: Record<string, unknown> }>;
+      ordered?: boolean;
+    };
+  }
+
+  it.each([
+    ["remember/todo.yaml", "remember"],
+    ["todo/complete.yaml", "todo"],
+  ])("%s routes natural-language todo work through the memory skill", async (file, skill) => {
+    const scenario = await loadScenario(file);
+    const cfg = toolsConfig(scenario);
+    expect(cfg.ordered).toBe(true);
+    expect(cfg.expect[0]).toMatchObject({
+      name: "run",
+      arguments: { container: "kb-hub", module: "mem", skill },
+    });
+    expect(cfg.expect.at(-1)).toMatchObject({
+      name: "sync",
+      arguments: { container: "kb-hub" },
+    });
+    expect(scenario.config[0].vars.terminal.finalTool).toBe("sync");
+    const assertionValues = scenario.tests[0].assert.map((assertion: { value?: string }) => assertion.value);
+    expect(assertionValues).toContain("file://assertions/todo-apply-sync.ts");
+    expect(assertionValues).toContain("file://assertions/todo-module-change.ts");
+    expect(assertionValues).not.toContain("file://assertions/judge.ts");
+  });
+
+  it("todo/complete asks for the module workflow without naming implementation steps", async () => {
+    const scenario = await loadScenario("todo/complete.yaml");
+    const prompt = scenario.config[0].vars.prompt as string;
+    expect(prompt).toMatch(/todo workflow/i);
+    expect(prompt).toMatch(/"mem" memory module/i);
+    expect(prompt).not.toMatch(/\bsync\b|apply\s*:\s*true|\bMCP\b/i);
+  });
+
+  it.each([
+    ["learn/useful-fact.yaml", "git-hub"],
+    ["learn/trivial-fact.yaml", "kb-hub"],
+  ])("%s targets the knowledge module's learn skill", async (file, container) => {
+    const cfg = toolsConfig(await loadScenario(file));
+    expect(cfg.expect[0]).toMatchObject({
+      name: "run",
+      arguments: { container, module: "kb", skill: "learn" },
+    });
+  });
+
+  describe("live-run regression contracts", () => {
+    async function loadScenario(path: string) {
+      const doc = parseYaml(await readFile(join(SCENARIOS, path), "utf8"));
+      return doc[0];
+    }
+
+    it("answerable ask explicitly requests and deterministically validates a source citation", async () => {
+      const sc = await loadScenario("ask/answerable.yaml");
+      expect(sc.config[0].vars.prompt).toMatch(/cite the source concept path/i);
+      const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+      const transcriptAssert = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+      expect(transcriptAssert?.config?.source).toBe("final-message");
+      const mustContain = transcriptAssert?.config?.mustContain as string[];
+      const mustNotContain = transcriptAssert?.config?.mustNotContain as string[];
+      expect(mustContain).toEqual(expect.arrayContaining([
+        expect.stringMatching(/session token/i),
+        expect.stringMatching(/sign/i),
+        "(?:^|[\\s`(])(?:(?:kb-hub[/\\\\])?kb[/\\\\])?auth\\.md(?=$|[\\s`),.;:\\]])",
+      ]));
+      const validParaphrase = "Authentication uses signed session tokens. Tokens have a 24-hour expiration, and refresh tokens are rotated on use. Source: auth.md";
+      for (const pattern of mustContain) {
+        expect(new RegExp(pattern, "i").test(validParaphrase), `pattern should match valid paraphrase: ${pattern}`).toBe(true);
+      }
+      const reversedParaphrase = "Authentication uses signed session tokens. Tokens expire after 24 hours. Rotated refresh tokens are used. Source: auth.md";
+      for (const pattern of mustContain) {
+        expect(new RegExp(pattern, "i").test(reversedParaphrase), `pattern should match reversed paraphrase: ${pattern}`).toBe(true);
+      }
+      expect(new RegExp(mustContain.at(-1)!, "i").test("Source: kb-hub/kb/auth.md")).toBe(true);
+      const citationPattern = mustContain.at(-1)!;
+      expect(new RegExp(citationPattern, "i").test("Auth uses signed session tokens.")).toBe(false);
+      expect(new RegExp(citationPattern, "i").test("Source: kb/auth.md")).toBe(true);
+      expect(new RegExp(citationPattern, "i").test("Source: auth.md")).toBe(true);
+      expect(new RegExp(citationPattern, "i").test("[source: kb-hub/kb/auth.md]")).toBe(true);
+      expect(new RegExp(citationPattern, "i").test("Source: concepts/auth.md")).toBe(false);
+      expect(mustNotContain).toEqual([
+        "\\baccess tokens?\\b",
+        "\\b(?:JWT|opaque tokens?|signing algorithms?|key management|token format|validation logic|rotation mechan\\w*|error handling|token scopes?|permissions?|server-side|client-side)\\b",
+      ]);
+      expect(new RegExp(mustNotContain[0]!, "i").test("Access tokens expire after 24 hours.")).toBe(true);
+      expect(new RegExp(mustNotContain[1]!, "i").test("The module lacks signing algorithms and key management.")).toBe(true);
+      const judgeAssert = assertions.find((a) => String(a.value).endsWith("judge.ts"));
+      expect(judgeAssert?.config?.criteria).toEqual([
+        expect.objectContaining({ id: "no-fabrication" }),
+      ]);
+    });
+
+    it("ask scenarios require sub-agents and forbid background mode where sequencing requires it", async () => {
+      for (const file of [
+        "ask/answerable.yaml",
+        "ask/missing-info.yaml",
+        "ask/across-hubs.yaml",
+        "ask/llmwiki-compounding.yaml",
+      ]) {
+        const sc = await loadScenario(file);
+        const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+        const tools = assertions.find((a) => String(a.value).endsWith("tools-called.ts"));
+        expect(tools?.config?.expect, file).toContainEqual({
+          name: "task",
+          server: "",
+        });
+        if (file === "ask/across-hubs.yaml") {
+          expect(tools?.config?.forbid ?? [], file).not.toContainEqual(expect.objectContaining({
+            name: "task",
+            arguments: { mode: "background" },
+          }));
+        } else {
+          expect(tools?.config?.forbid, file).toContainEqual({
+            name: "task",
+            server: "",
+            arguments: { mode: "background" },
+          });
+        }
+      }
+    });
+
+    it("ask scenarios require a substantive final user-facing answer", async () => {
+      const representativeFinalMessages: Record<string, string> = {
+        "ask/missing-info.yaml": "The vacation policy is not documented in this knowledge base.",
+        "ask/across-hubs.yaml": "Session tokens are signed in kb-hub / knowledge / kb and git-hub / knowledge / kb.",
+        "ask/llmwiki-compounding.yaml": "Attention is the core mechanism used by a Transformer. Filed at syntheses/attention-in-transformer.md.",
+      };
+      for (const file of [
+        "ask/answerable.yaml",
+        "ask/missing-info.yaml",
+        "ask/across-hubs.yaml",
+        "ask/llmwiki-compounding.yaml",
+      ]) {
+        const sc = await loadScenario(file);
+        const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+        const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+        expect(transcript?.config?.source, file).toBe("final-message");
+        const patterns = transcript?.config?.mustContain as string[];
+        expect(patterns.length, file).toBeGreaterThan(0);
+        const sample = representativeFinalMessages[file];
+        if (sample) {
+          for (const pattern of patterns) {
+            expect(new RegExp(pattern, "i").test(sample), `${file}: ${pattern}`).toBe(true);
+          }
+        }
+      }
+    });
+
+    it("across-hubs rejects invented gap categories and causal labels", async () => {
+      const sc = await loadScenario("ask/across-hubs.yaml");
+      expect(sc.config[0].vars.prompt).toMatch(/preserve each source's\s+evidentiary strength/i);
+      expect(sc.config[0].vars.prompt).toMatch(/without turning correlation into causation/i);
+      expect(sc.config[0].vars.prompt).toMatch(/separate\s+per-hub fact lists and stop after the facts/i);
+      const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+      const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+      const judge = assertions.find((a) => String(a.value).endsWith("judge.ts"));
+      const required = transcript?.config?.mustContain as string[];
+      const patterns = transcript?.config?.mustNotContain as string[];
+      expect((judge?.config?.criteria as Array<{ id: string }>).map((criterion) => criterion.id)).toEqual([
+        "no-fabrication",
+      ]);
+      expect(new RegExp(required[0]!, "i").test(
+        "Here are the authentication and session tokens:\n\n**Token mechanisms:**\n- Tokens are signed",
+      )).toBe(true);
+      expect(new RegExp(required[1]!, "i").test(
+        "## kb-hub\n- Signed session tokens are verified. (source: kb/auth.md)",
+      )).toBe(true);
+      expect(new RegExp(required[2]!, "i").test(
+        "## git-hub\n- Signed session tokens are verified. (source: kb/auth.md)",
+      )).toBe(true);
+      expect(patterns).toHaveLength(5);
+      expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
+      expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);
+      expect(new RegExp(patterns[1]!, "i").test(
+        "Tokens are issued at login and verified on each request; these are two separate behaviors that occur (correlation)",
+      )).toBe(true);
+      expect(new RegExp(patterns[2]!, "i").test(
+        "The git-hub module confirms verification but does not document expiration timing",
+      )).toBe(true);
+      expect(new RegExp(patterns[3]!, "i").test("Citation: concepts/auth.md")).toBe(true);
+      expect(new RegExp(patterns[4]!, "i").test("Clock Skew as Shared Root Cause")).toBe(true);
+    });
+
+    it("CSV context requests only selected entries and rejects cited irrelevant paths", async () => {
+      const sc = await loadScenario("context/csv-debug.yaml");
+      expect(sc.config[0].vars.prompt).toMatch(/rejected files out of the selected working set/i);
+      expect(sc.config[0].vars.prompt).toMatch(/relevance\s+from\s+content/i);
+      expect(sc.config[0].vars.prompt).toMatch(/exact file paths/i);
+      expect(sc.config[0].vars.prompt).toMatch(/bullet items/i);
+      expect(sc.config[0].vars.prompt).toMatch(/separate "## Gaps" heading/i);
+      const selectionAssert = sc.tests[0].assert.find(
+        (a: { value?: string }) => String(a.value).endsWith("working-set-selection.ts"),
+      );
+      expect(selectionAssert).toBeDefined();
+      expect(selectionAssert!.config.forbidden).toEqual(expect.arrayContaining([
+        "kb[/\\\\]auth(?:\\.md)?",
+        "mem/",
+      ]));
+      expect(selectionAssert!.config.required).toEqual(expect.arrayContaining([
+        "engineering/testing/debugging/SKILL\\.md",
+        "tools/csv2json/README\\.md",
+      ]));
+    });
+  });
+
+  it("learn/trivial-fact forbids unnecessary sync after rejection", async () => {
+    const scenario = await loadScenario("learn/trivial-fact.yaml");
+    const cfg = toolsConfig(scenario);
+    expect(cfg.forbid).toContain("sync");
+    expect(scenario.config[0].vars.prompt).toMatch(/"learn" skill/i);
+    expect(scenario.config[0].vars.prompt).toMatch(/"kb" knowledge module/i);
   });
 });
 
@@ -191,7 +546,11 @@ describe("llmwiki scenario structured tool expectations", () => {
     const assertion = sc.tests[0].assert.find(
       (a: { type: string; value?: string }) => a.type === "javascript" && String(a.value).includes("tools-called"),
     );
-    return assertion?.config as { expect: Array<string | { name: string; arguments?: Record<string, unknown> }>; ordered?: boolean } | undefined;
+    return assertion?.config as {
+      expect: Array<string | { name: string; arguments?: Record<string, unknown> }>;
+      forbid?: Array<string | { name: string; arguments?: Record<string, unknown> }>;
+      ordered?: boolean;
+    } | undefined;
   }
 
   function getLlmwikiStateConfig(sc: { tests: Array<{ assert: Array<{ type: string; value?: string; config?: Record<string, unknown> }> }> }) {
@@ -228,9 +587,11 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(grillExp.arguments).not.toHaveProperty("module");
 
     // Last: sync
-    const syncExp = expectations[expectations.length - 1] as { name: string } | string;
+    const syncExp = expectations[expectations.length - 1] as { name: string; turn?: number } | string;
     const syncName = typeof syncExp === "string" ? syncExp : syncExp.name;
     expect(syncName).toBe("sync");
+    expect(typeof syncExp === "string" ? undefined : syncExp.turn).toBeUndefined();
+    expect(sc.config[0].vars.terminal.finalTool).toBeUndefined();
   });
 
   it("initialize/llmwiki.yaml has llmwiki-state assertion config", async () => {
@@ -253,33 +614,25 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.noContentPages).toBe(true);
   });
 
-  it("initialize/llmwiki.yaml scope-confirmed turn has after:sources, no when guard, and agreement/build send text", async () => {
+  it("initialize/llmwiki.yaml completes the scope and requests the build in the sources reply", async () => {
     const sc = await loadScenario("initialize/llmwiki.yaml");
     const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; send: string; when?: string }>;
-    const scopeTurn = turns.find((t) => t.id === "scope-confirmed");
-    expect(scopeTurn, "scope-confirmed turn must exist").toBeDefined();
-    // Must be unguarded — no `when` property
-    expect(scopeTurn!.when, "scope-confirmed must not have a when guard").toBeUndefined();
-    // Must follow exactly sources
-    const after = Array.isArray(scopeTurn!.after) ? scopeTurn!.after : [scopeTurn!.after];
-    expect(after).toEqual(["sources"]);
-    // Send text must contain the agreement and build instruction
-    expect(scopeTurn!.send).toMatch(/decisions are final/i);
-    expect(scopeTurn!.send).toMatch(/build.*empty structure|empty structure.*build/i);
+    const sourcesTurn = turns.find((t) => t.id === "sources");
+    expect(sourcesTurn, "sources turn must exist").toBeDefined();
+    expect(sourcesTurn!.when, "sources must not have a when guard").toBeUndefined();
+    expect(sourcesTurn!.after).toBe("tags");
+    expect(sourcesTurn!.send).toMatch(/completes the scope decisions/i);
+    expect(sourcesTurn!.send).toMatch(/build[\s\S]*empty structure|empty structure[\s\S]*build/i);
+    expect(turns.some((turn) => turn.id === "scope-confirmed")).toBe(false);
   });
 
-  it("initialize/llmwiki.yaml sync-confirmed turn is unguarded and follows scope-confirmed with correct send text", async () => {
+  it("initialize/llmwiki.yaml completes after the last scope answer without a user sync turn", async () => {
     const sc = await loadScenario("initialize/llmwiki.yaml");
     const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; send: string; when?: string }>;
-    const syncTurn = turns.find((t) => t.id === "sync-confirmed");
-    expect(syncTurn, "sync-confirmed turn must exist").toBeDefined();
-    // Must be unguarded — no `when` property
-    expect(syncTurn!.when, "sync-confirmed must not have a when guard").toBeUndefined();
-    // Must follow exactly scope-confirmed
-    const after = Array.isArray(syncTurn!.after) ? syncTurn!.after : [syncTurn!.after];
-    expect(after).toEqual(["scope-confirmed"]);
-    // Send text must be the explicit sync authorization
-    expect(syncTurn!.send.trim()).toBe("Yes, sync those changes now.");
+    expect(turns.some((turn) => turn.id === "sync-confirmed")).toBe(false);
+    expect(sc.config[0].vars.terminal.after).toBe("sources");
+    const sourcesTurn = turns.find((turn) => turn.id === "sources");
+    expect(sourcesTurn!.send).toMatch(/build\s+the empty structure now/i);
   });
 
   it("write/into-wiki.yaml uses ordered structured tool expectations", async () => {
@@ -366,28 +719,38 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.ordered, "compounding must use ordered expectations").toBe(true);
 
     const expectations = cfg!.expect;
-    expect(expectations.length).toBeGreaterThanOrEqual(4);
+    expect(expectations.length).toBeGreaterThanOrEqual(6);
 
-    // 1: module run write
-    const writeExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
+    // 1: ask the wiki before writing
+    const askExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
+    expect(askExp.name).toBe("ask");
+    expect(askExp.arguments!.container).toBe("wiki-hub");
+    expect(askExp.arguments!.module).toBe("wiki");
+
+    // 2: foreground task reads the returned bundle
+    const taskExp = expectations[1] as { name: string; server?: string; arguments?: Record<string, unknown> };
+    expect(taskExp).toMatchObject({ name: "task", server: "" });
+
+    // 3: module run write
+    const writeExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
     expect(writeExp.name).toBe("run");
     expect(writeExp.arguments!.container).toBe("wiki-hub");
     expect(writeExp.arguments!.module).toBe("wiki");
     expect(writeExp.arguments!.skill).toBe("write");
 
-    // 2: shared okf-writer (no container/module)
-    const writerExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
+    // 4: shared okf-writer (no container/module)
+    const writerExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
     expect(writerExp.name).toBe("run");
     expect(writerExp.arguments!.skill).toBe("okf-writer");
     expect(writerExp.arguments).not.toHaveProperty("container");
     expect(writerExp.arguments).not.toHaveProperty("module");
 
-    // 3: inspect
-    const inspectExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
+    // 5: inspect
+    const inspectExp = expectations[4] as { name: string; arguments?: Record<string, unknown> };
     expect(inspectExp.name).toBe("inspect");
 
-    // 4: sync
-    const syncExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
+    // 6: sync
+    const syncExp = expectations[5] as { name: string; arguments?: Record<string, unknown> };
     expect(typeof syncExp === "string" ? syncExp : syncExp.name).toBe("sync");
   });
 
@@ -402,6 +765,39 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(page.terms.some((t: string) => /transformer/i.test(t))).toBe(true);
     expect(cfg!.requireIndexAndLogChanged).toBe(true);
     expect(cfg!.requireCleanHealth).toBe(true);
+    const transcript = sc.tests[0].assert.find(
+      (assertion: { value?: string }) => String(assertion.value).endsWith("transcript.ts"),
+    );
+    const relationPattern = transcript.config.mustContain[2] as string;
+    expect(new RegExp(relationPattern, "i").test(
+      "Attention is the fundamental building block of Transformer architecture.",
+    )).toBe(true);
+    expect(new RegExp(relationPattern, "i").test(
+      "Attention serves as the foundational component of the Transformer.",
+    )).toBe(true);
+  });
+
+  it("run/shared-grilling.yaml routes a concrete plan through the module-less shared skill", async () => {
+    const sc = await loadScenario("run/shared-grilling.yaml");
+    const cfg = getToolsCalledConfig(sc);
+    expect(cfg, "tools-called config must exist").toBeDefined();
+    expect(cfg!.expect[0]).toMatchObject({
+      name: "run",
+      arguments: { skill: "grilling" },
+    });
+    const args = (cfg!.expect[0] as { arguments: Record<string, unknown> }).arguments;
+    expect(args).not.toHaveProperty("container");
+    expect(args).not.toHaveProperty("module");
+    expect(sc.config[0].vars.prompt).toMatch(/GitHub OAuth/i);
+    expect(sc.config[0].vars.prompt).toMatch(/shared "grilling" skill/i);
+    expect(sc.config[0].vars.prompt).toMatch(/one decision at a time/i);
+    expect(cfg!.forbid).toEqual(expect.arrayContaining(["add_container", "add_module", "sync", "config", "todos"]));
+    const assertionValues = sc.tests[0].assert.map((assertion: { value?: string }) => assertion.value);
+    expect(assertionValues).toContain("file://assertions/grilling-response.ts");
+    expect(assertionValues).toContain("file://assertions/judge.ts");
+    expect(getJudgeCriteria(sc)).toEqual([
+      expect.objectContaining({ id: "one-decision-topic" }),
+    ]);
   });
 
   function getJudgeCriteria(sc: {
@@ -415,28 +811,27 @@ describe("llmwiki scenario structured tool expectations", () => {
     return judgeAssert?.config?.criteria as Array<{ id: string; text: string; required?: boolean; advisory?: unknown }> | undefined;
   }
 
-  const MECHANICAL_IDS: Record<string, string[]> = {
+  const REDUNDANT_MECHANICAL_IDS: Record<string, string[]> = {
     "initialize/llmwiki.yaml": ["ran-initialize", "used-grilling", "persisted-via-sync"],
     "write/into-wiki.yaml": ["ran-write", "persisted-via-sync"],
     "lint/wiki-health.yaml": ["ran-lint"],
     "ask/llmwiki-compounding.yaml": ["ran-write", "persisted-via-sync"],
   };
 
-  it("mechanical judge criteria use required:false (not advisory:true) in all four llmwiki scenarios", async () => {
-    for (const [file, ids] of Object.entries(MECHANICAL_IDS)) {
+  it("does not spend judge calls re-grading deterministic llmwiki tool assertions", async () => {
+    for (const [file, ids] of Object.entries(REDUNDANT_MECHANICAL_IDS)) {
       const sc = await loadScenario(file);
       const criteria = getJudgeCriteria(sc);
       expect(criteria, `${file}: judge criteria must exist`).toBeDefined();
       for (const id of ids) {
         const c = criteria!.find((c) => c.id === id);
-        expect(c, `${file}: criterion "${id}" must exist`).toBeDefined();
-        expect(c!.required, `${file}: criterion "${id}" must have required:false`).toBe(false);
+        expect(c, `${file}: criterion "${id}" is already covered deterministically`).toBeUndefined();
       }
     }
   });
 
   it("no judge criterion in the four llmwiki scenarios uses the unsupported advisory key", async () => {
-    for (const file of Object.keys(MECHANICAL_IDS)) {
+    for (const file of Object.keys(REDUNDANT_MECHANICAL_IDS)) {
       const sc = await loadScenario(file);
       const criteria = getJudgeCriteria(sc);
       expect(criteria, `${file}: judge criteria must exist`).toBeDefined();
@@ -481,16 +876,36 @@ describe("state-driven linear conversations — cold-start", () => {
     return doc[0];
   }
 
-  it("cold-start chain is start→wake-phrase→container-choice→create-confirmed→wrap-up", async () => {
+  it("cold-start chain includes confirmation and a module-purpose answer before wrap-up", async () => {
     const sc = await loadScenario("onboard/cold-start-conversation.yaml");
     const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; when?: string; send: string }>;
     const ids = turns.map((t) => t.id);
-    expect(ids).toEqual(["wake-phrase", "container-choice", "create-confirmed", "wrap-up"]);
+    expect(ids).toEqual(["wake-phrase", "container-choice", "create-confirmed", "module-purpose", "wrap-up"]);
     // Verify the after chain
     expect(turns[0]!.after).toBe("start");
     expect(turns[1]!.after).toBe("wake-phrase");
     expect(turns[2]!.after).toBe("container-choice");
     expect(turns[3]!.after).toBe("create-confirmed");
+    expect(turns[4]!.after).toBe("module-purpose");
+    expect(turns[1]!.send).toMatch(/I'd like a brand-new folder/i);
+    expect(turns[3]!.send).toMatch(/engineering notes and decisions/i);
+  });
+
+  it("cold-start setup enforces preview and apply on separate turns", async () => {
+    const sc = await loadScenario("onboard/cold-start-conversation.yaml");
+    const tools = sc.tests[0].assert.find(
+      (assertion: { value?: string }) => String(assertion.value).endsWith("tools-called.ts"),
+    );
+    expect(tools?.config?.ordered).toBe(true);
+    expect(tools?.config?.expect).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "add_container", turn: 3 }),
+      expect.objectContaining({ name: "add_container", turn: 4, arguments: { create: true } }),
+      expect.objectContaining({ name: "sync", turn: 5, arguments: { container: "my-notes" } }),
+    ]));
+    expect(tools?.config?.forbid).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "add_container", turn: 3, arguments: { create: true } }),
+      expect.objectContaining({ name: "add_module", turn: 3 }),
+    ]));
   });
 
   it("ALL cold-start turns are unguarded (no when property)", async () => {
@@ -508,11 +923,11 @@ describe("state-driven linear conversations — llmwiki", () => {
     return doc[0];
   }
 
-  it("llmwiki linear chain is start→purpose→goals→scope→template→tags→sources→scope-confirmed→sync-confirmed", async () => {
+  it("llmwiki linear chain ends at the final source-retention answer", async () => {
     const sc = await loadScenario("initialize/llmwiki.yaml");
     const turns = sc.config[0].vars.turns as Array<{ id: string; after: string | string[]; when?: string }>;
     const ids = turns.map((t) => t.id);
-    expect(ids).toEqual(["purpose", "goals", "scope", "template", "tags", "sources", "scope-confirmed", "sync-confirmed"]);
+    expect(ids).toEqual(["purpose", "goals", "scope", "template", "tags", "sources"]);
     // Verify the linear after chain
     expect(turns[0]!.after).toBe("start");
     expect(turns[1]!.after).toBe("purpose");
@@ -520,8 +935,6 @@ describe("state-driven linear conversations — llmwiki", () => {
     expect(turns[3]!.after).toBe("scope");
     expect(turns[4]!.after).toBe("template");
     expect(turns[5]!.after).toBe("tags");
-    expect(turns[6]!.after).toBe("sources");
-    expect(turns[7]!.after).toBe("scope-confirmed");
   });
 
   it("ALL llmwiki turns are unguarded (no when property)", async () => {
@@ -566,7 +979,7 @@ describe("health-hub lint fixture", () => {
 });
 
 describe("ask/across-hubs — no-fabrication criterion", () => {
-  it("states complete fixture-backed fact boundary, allows coverage-gap/inference, rejects unsupported claims presented as known facts", async () => {
+  it("states the fact boundary, permits bare coverage/inference, and rejects unsupported claims", async () => {
     const doc = parseYaml(await readFile(join(SCENARIOS, "ask/across-hubs.yaml"), "utf8"));
     const sc = doc[0];
     const judgeAssert = sc.tests[0].assert.find(
@@ -589,9 +1002,11 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
     // Must name memory evidence with the fixture-backed >60-second threshold
     expect(text, "must reference clock skew or drift (memory evidence)").toMatch(/clock skew|clock drift/i);
     expect(text, "must name fixture-backed >60-second drift threshold").toMatch(/greater than 60/i);
+    expect(text, "must name the fixture-backed root-cause-family link").toMatch(/same root-cause\s+family/i);
 
-    // Must explicitly allow coverage-gap statements
-    expect(text, "must explicitly allow coverage-gap statements").toMatch(/coverage.gap/i);
+    // Must allow only a bare coverage label under this user's no-absent-topics constraint
+    expect(text, "must allow a bare coverage label").toMatch(/bare coverage label/i);
+    expect(text, "must forbid named absent topics").toMatch(/without named absent topics/i);
     // Must explicitly allow clearly labeled inference or synthesis
     expect(text, "must explicitly allow labeled inference or synthesis").toMatch(/inference|synthesis/i);
 
@@ -607,48 +1022,72 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
   });
 });
 
-describe("remember scenarios — prose criteria are advisory", () => {
+describe("remember scenarios — deterministic append validation", () => {
   const REMEMBER_FILES = ["remember/test-result.yaml", "remember/incident.yaml"];
 
   for (const file of REMEMBER_FILES) {
-    it(`${file}: every judge criterion has required:false at criterion level, no dead config-level required key`, async () => {
+    it(`${file}: uses memory-append without advisory judge calls`, async () => {
       const doc = parseYaml(await readFile(join(SCENARIOS, file), "utf8"));
       const sc = doc[0];
       const asserts: Array<{ type: string; value?: string; config?: Record<string, unknown> }> = sc.tests[0].assert;
 
-      // memory-append assertion must be present
       const memAppend = asserts.find(
         (a) => a.type === "javascript" && String(a.value).endsWith("memory-append.ts"),
       );
       expect(memAppend, `${file}: memory-append assertion must exist`).toBeDefined();
 
-      // judge assertion must be present
       const judgeAssert = asserts.find(
         (a) => a.type === "javascript" && String(a.value).endsWith("judge.ts"),
       );
-      expect(judgeAssert, `${file}: judge assertion must exist`).toBeDefined();
+      expect(judgeAssert, `${file}: deterministic evidence should avoid judge calls`).toBeUndefined();
 
-      const cfg = judgeAssert!.config as Record<string, unknown>;
-      expect(cfg, `${file}: judge assertion must have config`).toBeDefined();
+      const toolsAssert = asserts.find(
+        (a) => a.type === "javascript" && String(a.value).endsWith("tools-called.ts"),
+      );
+      expect(toolsAssert?.config?.ordered, `${file}: routing expectations must be ordered`).toBe(true);
+      const expected = toolsAssert?.config?.expect as Array<{ name: string; arguments?: Record<string, unknown> }>;
+      expect(expected[0]).toMatchObject({
+        name: "run",
+        arguments: { container: "kb-hub", module: "mem", skill: "remember" },
+      });
 
-      // No dead config-level required key
-      expect(
-        Object.prototype.hasOwnProperty.call(cfg, "required"),
-        `${file}: judge config must not have a top-level required key`,
-      ).toBe(false);
-
-      // Every criterion must carry required:false at criterion level
-      const criteria = cfg.criteria as Array<{ id: string; text: string; required?: boolean }>;
-      expect(Array.isArray(criteria), `${file}: criteria must be an array`).toBe(true);
-      expect(criteria.length, `${file}: must have at least one criterion`).toBeGreaterThanOrEqual(1);
-      for (const c of criteria) {
-        expect(
-          c.required,
-          `${file}: criterion "${c.id}" must have required:false at criterion level`,
-        ).toBe(false);
-      }
+      expect(expected.at(-1)).toMatchObject({
+        name: "sync",
+        arguments: { container: "kb-hub" },
+      });
+      expect(sc.config[0].vars.terminal).toMatchObject({
+        after: "start",
+        requiredTools: ["run", "sync"],
+        finalTool: "sync",
+      });
     });
   }
+});
+
+describe("reflect scenario — deterministic proposal validation", () => {
+  it("uses the requested memory skill, cites both entries, and does not mutate modules", async () => {
+    const doc = parseYaml(await readFile(join(SCENARIOS, "reflect/memory-module.yaml"), "utf8"));
+    const sc = doc[0];
+    const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+    const toolsAssert = assertions.find((a) => String(a.value).endsWith("tools-called.ts"));
+    expect(toolsAssert?.config?.expect).toEqual([
+      expect.objectContaining({
+        name: "run",
+        arguments: { container: "kb-hub", module: "mem", skill: "reflect" },
+      }),
+    ]);
+    expect(toolsAssert?.config?.forbid).toEqual(expect.arrayContaining(["sync", "todos"]));
+    const transcriptAssert = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+    expect(transcriptAssert?.config?.source).toBe("final-message");
+    expect(transcriptAssert?.config?.mustContain).toEqual(expect.arrayContaining(["2026-01-01", "2026-02-15"]));
+    const unchangedModules = assertions
+      .filter((a) => String(a.value).endsWith("module-unchanged.ts"))
+      .map((a) => a.config?.module);
+    expect(unchangedModules).toEqual(["mem", "kb"]);
+    expect(assertions.some((a) => String(a.value).endsWith("judge.ts"))).toBe(false);
+    expect(sc.config[0].vars.prompt).toMatch(/"reflect" skill/i);
+    expect(sc.config[0].vars.prompt).toMatch(/do not apply/i);
+  });
 });
 
 describe("lint scenario uses health environment", () => {

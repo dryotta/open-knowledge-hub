@@ -219,6 +219,10 @@ function withRequiredConfirmation(text: string): string {
   return `${text}\n\nExplicit confirmation is required before applying this preview.`;
 }
 
+function withMutationRoutingReminder(text: string): string {
+  return `${text}\n\nBefore create/update for a natural-language request, call \`run\` for the target memory module: use skill \`remember\` for explicit remember requests, otherwise skill \`todo\`. If one of those skills is already active, continue its instructions.`;
+}
+
 function withWebUrl(
   structured: Record<string, unknown>,
   webUrl: string | undefined,
@@ -269,7 +273,7 @@ export async function registerTodoTools(
       }
 
       const result = await todos.list(toTodoQuery(args as TodosListArgs));
-      return ok(withWebLink(formatTodos(result.tasks, result.counts), options.webUrl), withWebUrl({
+      return ok(withWebLink(withMutationRoutingReminder(formatTodos(result.tasks, result.counts)), options.webUrl), withWebUrl({
         operation: "list",
         tasks: result.tasks,
         warnings: result.warnings,

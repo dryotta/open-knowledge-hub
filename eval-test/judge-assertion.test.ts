@@ -3,7 +3,7 @@ import { rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
 import judge from "../eval/assertions/judge.js";
-import type { Criterion, CriterionResult } from "../eval/judge.js";
+import type { Criterion, CriterionResult, JudgeTelemetry } from "../eval/judge.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -18,6 +18,10 @@ function fakeJudge(results: Array<Partial<CriterionResult> & { id: string; verdi
     passVotes: r.passVotes ?? (r.verdict === "PASS" ? 3 : 0),
     failVotes: r.failVotes ?? (r.verdict === "FAIL" ? 3 : 0),
     validVotes: r.validVotes ?? 3,
+    invalidVotes: r.invalidVotes ?? 0,
+    configuredVotes: r.configuredVotes ?? 3,
+    skippedVotes: r.skippedVotes ?? 0,
+    invalidReasons: r.invalidReasons ?? [],
     evidence: [],
   }));
   return { runJudgeCriteria: async () => full };
@@ -191,26 +195,55 @@ describe("judge assertion", () => {
   });
 
   it("forwards k and graderModel config to runJudgeCriteria", async () => {
-    let recordedOpts: { k?: number; model?: string } | undefined;
+    let recordedOpts: { k?: number; model?: string; onTelemetry?: (telemetry: JudgeTelemetry) => void } | undefined;
+    const metadata: {
+      timings?: Record<string, unknown> & { judgeMs?: number; judge?: JudgeTelemetry };
+    } = {};
     const r = await judge(
       "t",
       {
         config: { k: 5, graderModel: "m", criteria: [{ id: "x", text: "x" }] },
-        providerResponse: { metadata: {} },
+        providerResponse: { metadata },
       },
       {
         runJudgeCriteria: async (
           _criteria: Criterion[],
           _transcript: string,
-          opts: { k?: number; model?: string } = {},
+          opts: { k?: number; model?: string; onTelemetry?: (telemetry: JudgeTelemetry) => void } = {},
         ): Promise<CriterionResult[]> => {
           recordedOpts = opts;
-          return [{ id: "x", verdict: "PASS", passVotes: 3, failVotes: 0, validVotes: 3, evidence: [] }];
+          opts.onTelemetry?.({
+            configuredRuns: 5,
+            launchedRuns: 3,
+            completedRuns: 3,
+            skippedRuns: 2,
+            invalidRuns: 0,
+            durationMs: 12,
+          });
+          return [{
+            id: "x",
+            verdict: "PASS",
+            passVotes: 3,
+            failVotes: 0,
+            validVotes: 3,
+            invalidVotes: 0,
+            configuredVotes: 3,
+            skippedVotes: 0,
+            invalidReasons: [],
+            evidence: [],
+          }];
         },
       },
     );
     expect(r.pass).toBe(true);
-    expect(recordedOpts).toEqual({ k: 5, model: "m" });
+    expect(recordedOpts).toMatchObject({ k: 5, model: "m" });
+    expect((recordedOpts as { abortSignal?: AbortSignal }).abortSignal).toBeInstanceOf(AbortSignal);
+    expect(metadata).toMatchObject({
+      timings: {
+        judgeMs: 12,
+        judge: { launchedRuns: 3, configuredRuns: 5, skippedRuns: 2 },
+      },
+    });
   });
 
   it("fails fast when no criteria are provided", async () => {

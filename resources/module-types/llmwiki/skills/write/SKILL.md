@@ -58,6 +58,11 @@ catalog every uncataloged page in `index.md`, and ensure every page carries a va
 This includes pre-existing health issues — they must be fixed, not deferred. Repeat `inspect` after
 fixes until every health array is empty (orphans, dangling, uncataloged, missingType).
 
+## Stage 6 — Report
+
+Summarize what was created or updated and name every affected page by its exact
+bundle-relative path so the caller can find the durable result.
+
 ## Completion criterion
 
 - Every admitted piece of material is filed into OKF pages within scope, cross-linked both ways, and

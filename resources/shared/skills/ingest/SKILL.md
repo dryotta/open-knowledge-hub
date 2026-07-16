@@ -33,16 +33,17 @@ library, or `pdftotext`); use OCR or table extraction only for scanned or image 
 **can't be read or extracted**, do not invent its contents — list it as a failure and ask how to
 proceed.
 
-## Stage 3 — Retain sources (if the module's policy says so)
+## Stage 3 — Plan source retention
 
 Read the target module's `index.md` `## Sources` policy — via `inspect { container, module }`
-(its overview includes `index.md`) or by reading `index.md` directly. Then:
+(its overview includes `index.md`) or by reading `index.md` directly. Record what should happen
+after confirmation, but do not copy or modify anything yet:
 
-- **Retain copies: yes** → for each source you **successfully extracted**, copy the original file
+- **Retain copies: yes** → plan to copy each source you **successfully extracted**
   into `<module>/<folder>/<bucket>/<original-filename>` (default `<module>/sources/<YYYY-MM>/`,
-  bucketed by the ingest date). Create folders as needed; overwrite on a name collision. Never
+  bucketed by the ingest date). After confirmation, create folders as needed and overwrite on a name collision. Never
   retain a source you could **not** read.
-- **Retain copies: no**, or no `## Sources` section → retain nothing.
+- **Retain copies: no**, or no `## Sources` section → plan no retention.
 
 Retained copies are committed on the next `sync` — flag this for large, binary, or sensitive
 documents so the user can opt out.
@@ -59,16 +60,16 @@ a **source citation**:
 Group candidates by their likely target module, and (for a knowledge module) by its declared
 structure.
 
-## Stage 5 — Route to the target (delegate scope and writing)
+## Stage 5 — Confirm the routing plan
 
-Identify the **target module**; if the request doesn't make it clear, ask. Then hand candidates to
-the target's own skill — **do not write module files yourself**:
+Identify the **target module**; if the request doesn't make it clear, ask. The target's own skill
+will own scope-gating and writing after confirmation:
 
 - **knowledge** → `run { container, module, skill: "learn" }`
 - **memory** → `run { container, module, skill: "remember" }`
 - **llmwiki** → `run { container, module, skill: "write" }`
 
-Before writing in bulk, present a short **routing plan**: what goes to which module, and which
+Present a short **routing plan**: what goes to which module, and which
 candidates look **out of scope**. Get the user's confirmation. Respect the target's scope
 contract — if material falls outside it (e.g. a Health module whose contract excludes
 metrics/vitals versus attached lab panels), **surface the conflict**: propose a scope change
@@ -77,7 +78,16 @@ never silently expand scope. If the target module already has a scope contract i
 **not** re-initialize it — `learn` reads the existing contract; a module with zero concepts is not
 the same as an uninitialized one.
 
-## Stage 6 — Report
+**Hard turn boundary:** after presenting the routing plan, end the response and wait for a later
+user message that explicitly confirms it. An internal scope-gate decision is not user confirmation.
+Before that reply, do not copy sources, call the target skill, edit module files, or sync.
+
+## Stage 6 — Apply the confirmed plan
+
+After explicit confirmation, retain sources according to Stage 3, then call the target module's
+skill for scope-gating and writing. Do not write module knowledge files directly.
+
+## Stage 7 — Report
 
 Summarize the run: sources ingested; candidates written, grouped by target module; out-of-scope or
 deferred candidates; and any sources that failed extraction.
@@ -90,3 +100,4 @@ deferred candidates; and any sources that failed extraction.
 - Every **written** candidate carries a source citation and passed the target skill's scope gate.
 - Scope conflicts were **surfaced** to the user, not silently resolved.
 - No filesystem crawling occurred; missing sources were requested from the user.
+- No source or module mutation occurred before the user confirmed the routing plan.

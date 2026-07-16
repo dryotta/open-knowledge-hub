@@ -3,24 +3,26 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. Remember this observation in container
-          "kb-hub": "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
+          hub, remember this observation in container "kb-hub": "The login endpoint
+          returned 500s for ~3 minutes at 14:05 UTC during deploy."
+        terminal:
+          after: start
+          requiredTools: [run, sync]
+          finalTool: sync
   tests:
     - description: Remember - incident - appends raw timestamped entry
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: kb-hub, module: mem, skill: remember }
+              - name: sync
+                arguments: { container: kb-hub }
         - type: javascript
           value: file://assertions/memory-append.ts
           config:
             module: mem
             observation: "The login endpoint returned 500s for ~3 minutes at 14:05 UTC during deploy."
-        - type: javascript
-          value: file://assertions/judge.ts
-          config:
-            artifacts: { module: mem }
-            criteria:
-              - id: recorded-incident
-                text: A factual, timestamped memory entry capturing the 500s incident was recorded (see the ON-DISK ARTIFACTS).
-                required: false

@@ -3,9 +3,9 @@
     - vars:
         env: wiki
         prompt: |
-          Use the open-knowledge-hub MCP tools. Run the "wiki" module's `write` skill in
-          container "wiki-hub" to add: "KV cache stores past keys and values so decoding
-          is linear per new token instead of quadratic." Then sync.
+          hub, run the "wiki" module's `write` skill in container "wiki-hub" to add:
+          "KV cache stores past keys and values so decoding is linear per new token
+          instead of quadratic."
   tests:
     - description: Write - in-scope page - integrates, cross-links, syncs
       assert:
@@ -37,15 +37,9 @@
           config:
             artifacts: { module: wiki, maxFiles: 10 }
             criteria:
-              - id: ran-write
-                text: The agent invoked the wiki module's write skill.
-                required: false
               - id: created-kv-page
                 text: A new OKF page about the KV cache was created under the wiki module (e.g. concepts/kv-cache.md).
               - id: cross-linked
                 text: The new page links to and/or is linked from a related page (e.g. Attention), not left as an orphan.
               - id: index-and-log-updated
                 text: The root index.md catalog and log.md were updated to reflect the new page.
-              - id: persisted-via-sync
-                text: The change was persisted via the sync tool.
-                required: false

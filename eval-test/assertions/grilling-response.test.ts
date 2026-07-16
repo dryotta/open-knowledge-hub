@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import grillingResponse from "../../eval/assertions/grilling-response.js";
+
+const evaluate = (finalMessage?: string) =>
+  grillingResponse("", { providerResponse: { metadata: { finalMessage } } });
+
+describe("grilling-response assertion", () => {
+  it("accepts one plan-specific question with a recommendation", () => {
+    const result = evaluate(
+      "Which OAuth callback origins should be trusted?\n\n*Recommendation:* Start with the callback boundary.",
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  it("accepts a framing question plus one same-topic decision question", () => {
+    const result = evaluate(
+      "Why GitHub OAuth? Are your users primarily developers? My recommendation is GitHub-only for a developer audience.",
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  it("accepts three compact questions for semantic grading", () => {
+    const result = evaluate(
+      "Why GitHub? Are your users GitHub developers? Will other OAuth providers follow? My recommendation is GitHub-only first.",
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  it.each([
+    "Which OAuth provider should launch first? Recommended: GitHub.",
+    "Which OAuth provider should launch first? My recommended answer is GitHub.",
+    "Which OAuth provider should launch first? I'd suggest GitHub.",
+    "Which OAuth provider should launch first? I\u2019d recommend GitHub.",
+    "Which OAuth provider should launch first? We'd recommend GitHub.",
+    "Which OAuth provider should launch first? We\u2019d suggest GitHub.",
+    "Which OAuth provider should launch first? Here is my recommendation: GitHub.",
+    "Which OAuth provider should launch first? Our recommendation is GitHub.",
+    "Which OAuth provider should launch first?\n- Recommendation: GitHub.",
+  ])("accepts recommendation wording: %s", (message) => {
+    expect(evaluate(message).pass).toBe(true);
+  });
+
+  it("rejects a repetitive four-question prompt even within one topic", () => {
+    const result = evaluate(
+      "Why GitHub? Are users on GitHub? Will Google follow? Is GitLab needed? My recommendation is GitHub-only first.",
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/compact decision prompt.*found 4/i);
+  });
+
+  it("requires both a recommendation and plan relevance", () => {
+    expect(evaluate("What decision comes first?").pass).toBe(false);
+    expect(evaluate("Which OAuth flow comes first?").reason).toMatch(/recommendation/i);
+  });
+
+  it.each([
+    "Should we recommend GitHub OAuth?",
+    "Must we recommend GitHub OAuth?",
+    "- Should we recommend GitHub OAuth?",
+    "Which OAuth provider should launch first? Recommendation: Should we choose GitHub?",
+    "Which OAuth provider should launch first? Recommendation:",
+    "Which OAuth provider should launch first?\n- Recommendation:",
+  ])("rejects a question or empty recommendation: %s", (message) => {
+    expect(evaluate(message).reason).toMatch(/missing a recommendation/i);
+  });
+
+  it("rejects a missing final message", () => {
+    expect(evaluate().reason).toMatch(/missing or empty/i);
+  });
+});

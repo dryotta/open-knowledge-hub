@@ -29,6 +29,7 @@
     "typecheck:eval": "tsc -p tsconfig.eval.json",
     "test:eval": "vitest run --config vitest.eval.config.ts",
     "eval": "node --import tsx eval/run-scenarios.ts eval",
+    "eval:smoke": "node --import tsx eval/run-scenarios.ts eval --tier smoke --judge-k 1",
     "eval:validate": "node --import tsx eval/run-scenarios.ts validate",
     "eval:view": "promptfoo view",
     "build:server": "tsc -p tsconfig.json",

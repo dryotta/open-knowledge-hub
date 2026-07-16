@@ -337,6 +337,8 @@ describe("MCP server surface", () => {
     const result = await client.callTool({ name: "todos", arguments: {} });
 
     expect(textOf(result)).toContain(`Todo web UI: ${webUrl}`);
+    expect(textOf(result)).toContain("Before create/update for a natural-language request, call `run`");
+    expect(textOf(result)).toContain("otherwise skill `todo`");
     expect(structuredOf(result)).toMatchObject({
       operation: "list",
       webUrl,

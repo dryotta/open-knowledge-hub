@@ -4,8 +4,8 @@
     - vars:
         env: wiki
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "wiki-hub", run module
-          "new-wiki"'s `initialize` skill and guide me through setting up the wiki.
+          hub, in container "wiki-hub", run module "new-wiki"'s `initialize` skill and
+          guide me through setting up the wiki.
         turns:
           - id: purpose
             after: start
@@ -32,21 +32,11 @@
             send: "Skip tags; the group structure and links are enough."
           - id: sources
             after: tags
-            send: "Do not retain source copies."
-          - id: scope-confirmed
-            after: sources
             send: |
-              These decisions are final: build an engineering handbook for backend
-              developers and coding agents; cover backend components, request flows,
-              architecture decisions, and terminology; exclude product roadmaps and
-              customer data; use the Encyclopedia groups and matching singular types;
-              use no tags and retain no source copies. Build the empty structure locally
-              and show me a diff summary.
-          - id: sync-confirmed
-            after: scope-confirmed
-            send: "Yes, sync those changes now."
+              Do not retain source copies. That completes the scope decisions; build
+              the empty structure now.
         terminal:
-          after: sync-confirmed
+          after: sources
           requiredTools: [run, sync]
   tests:
     - description: Initialize - llmwiki - grills scope and builds template structure
@@ -73,18 +63,9 @@
           config:
             artifacts: { module: new-wiki, maxFiles: 10 }
             criteria:
-              - id: ran-initialize
-                text: The agent invoked the new-wiki module's initialize skill.
-                required: false
-              - id: used-grilling
-                text: The agent invoked the shared grilling skill and gathered decisions one at a time.
-                required: false
               - id: offered-template-menu
                 text: The agent offered multiple structure templates before the user selected Encyclopedia.
               - id: wrote-scope-contract
                 text: The resulting new-wiki/index.md contains the agreed purpose, audience/goals, in-scope topics, out-of-scope topics, and declared concept types.
               - id: built-empty-structure
                 text: The resulting module has group index files for concepts, entities, summaries, and syntheses, without invented concept content.
-              - id: persisted-via-sync
-                text: The initialized wiki was persisted via the sync tool.
-                required: false

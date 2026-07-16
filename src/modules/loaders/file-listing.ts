@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { shallowFiles } from "../fs.js";
+import { walkFiles } from "../fs.js";
 import type { Item, Loader } from "../types.js";
 
 function isNotFound(err: unknown): boolean {
@@ -12,10 +12,15 @@ function isNotFound(err: unknown): boolean {
   );
 }
 
-/** A minimal loader for TBD-format modules: lists shallow files, README as overview header. */
+/** A minimal loader for TBD-format modules: lists files recursively, README as overview header. */
 export function fileListingLoader(kind: string, heading: string): Loader {
   async function enumerate(moduleRoot: string): Promise<Item[]> {
-    const files = await shallowFiles(moduleRoot);
+    const ignoredDirectories = new Set(["node_modules", "__pycache__", "vendor", "venv"]);
+    const files = await walkFiles(
+      moduleRoot,
+      (name) => !name.startsWith("."),
+      (name) => !name.startsWith(".") && !ignoredDirectories.has(name),
+    );
     return files
       .filter((f) => f !== "README.md")
       .map((f) => ({ path: f, title: f, description: "", type: kind }));

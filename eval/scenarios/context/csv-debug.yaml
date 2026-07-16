@@ -3,11 +3,12 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools to assemble a working set for this task
-          in container "kb-hub": debug a failing test that parses a CSV file. Inspect
-          the relevant modules and include every module type that helps — not just
-          knowledge, but any applicable skill and any tool that can do part of the
-          work — and cite each selected item by its path.
+          hub, assemble a focused working set from container "kb-hub" for debugging a
+          failing test that parses a CSV file. List only task-relevant skills,
+          tools, or knowledge, explain why each item helps, and cite each path. Keep
+          rejected files out of the selected working set. Verify relevance from
+          content, not a filename or recency, cite exact file paths in bullet items,
+          and put any gap summary under a separate "## Gaps" heading.
   tests:
     - description: Context - CSV debug task - includes skill and tool
       assert:
@@ -16,14 +17,17 @@
           config: { expect: [context] }
         - type: javascript
           value: file://assertions/transcript.ts
-          config: { mustContain: ["engineering/testing/debugging/SKILL.md", "csv2json"] }
-        - type: javascript
-          value: file://assertions/judge.ts
           config:
-            criteria:
-              - id: selects-skill-and-tool
-                text: The working set selects the nested debugging skill and the csv2json tool, each cited by path.
-              - id: one-line-why
-                text: It notes one line on why each selected item matters.
-              - id: no-auth-pad
-                text: It does NOT pad the set with the unrelated Auth knowledge concept.
+            source: final-message
+            mustContain:
+              - "engineering/testing/debugging/SKILL\\.md"
+              - "tools/csv2json/README\\.md"
+              - "debug|reproduc|isolat|root.?cause"
+              - "CSV|JSON|convert|inspect"
+        - type: javascript
+          value: file://assertions/working-set-selection.ts
+          config:
+            required:
+              - "engineering/testing/debugging/SKILL\\.md"
+              - "tools/csv2json/README\\.md"
+            forbidden: ["kb[/\\\\]auth(?:\\.md)?", "mem/"]

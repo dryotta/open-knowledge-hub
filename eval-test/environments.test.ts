@@ -1,7 +1,13 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdir, rm, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { provisionEnvironment, environments, isEnvName } from "../eval/environments.js";
+import {
+  cleanupEvalEnvironments,
+  evalEnvironmentLabel,
+  provisionEnvironment,
+  environments,
+  isEnvName,
+} from "../eval/environments.js";
 import { makeTempDir, testRun } from "../test/helpers.js";
 
 const cleanups: string[] = [];
@@ -15,6 +21,35 @@ describe("environments", () => {
     expect(Object.keys(environments).sort()).toEqual(["custom", "empty", "git", "health", "local-and-git", "wiki"]);
     expect(isEnvName("git")).toBe(true);
     expect(isEnvName("nope")).toBe(false);
+  });
+
+  it("scopes automated environment labels to one validated run id", () => {
+    expect(evalEnvironmentLabel("git", "run-123")).toBe("run-123-git");
+    expect(() => evalEnvironmentLabel("git", "../other")).toThrow(/invalid eval run id/i);
+    const previous = process.env.OKH_EVAL_RUN_ID;
+    delete process.env.OKH_EVAL_RUN_ID;
+    try {
+      expect(evalEnvironmentLabel("git")).toBe("git");
+    } finally {
+      if (previous === undefined) delete process.env.OKH_EVAL_RUN_ID;
+      else process.env.OKH_EVAL_RUN_ID = previous;
+    }
+  });
+
+  it("cleans only temp roots belonging to the requested eval run", async () => {
+    const parent = await makeTempDir("okh-eval-clean-");
+    cleanups.push(parent);
+    const ownedA = join(parent, "okh-eval-run-123-git-a");
+    const ownedB = join(parent, "okh-eval-run-123-wiki-b");
+    const other = join(parent, "okh-eval-run-999-git-c");
+    await Promise.all([mkdir(ownedA), mkdir(ownedB), mkdir(other)]);
+
+    const removed = await cleanupEvalEnvironments("run-123", parent);
+
+    expect(removed.sort()).toEqual([ownedA, ownedB].sort());
+    expect(await exists(ownedA)).toBe(false);
+    expect(await exists(ownedB)).toBe(false);
+    expect(await exists(other)).toBe(true);
   });
 
   it("local-and-git registers a local kb-hub + a git git-hub with isolated homes + mcp-config", async () => {

@@ -9,12 +9,13 @@ Record either an ordinary observation or todo-bearing input in exactly one targe
 
 Use this branch for factual, small observations with no explicit action, commitment, reminder, or tracked task.
 
-1. Append a single dated entry to a markdown file in this memory module (e.g. `YYYY-MM-DD.md`), newest entries at the bottom.
+1. Append a single dated entry to a markdown file in this memory module (e.g. `YYYY-MM-DD.md`), newest entries at the bottom. A new file starts with the entry; do not add YAML frontmatter or other metadata.
 2. Each entry: an ISO timestamp heading (`## <ISO-8601>`), then the caller's observation preserved verbatim. Retain concrete references (paths, commands, outcomes).
 3. Do NOT add a second summary, status line, certainty qualifier, cause hypothesis, conclusion, or recommendation — synthesis belongs in `reflect`.
+4. Call `sync` for the affected container immediately after writing.
 
 Keep entries append-only; never rewrite history.
-Maintain valid YAML frontmatter if the file already has one.
+Preserve valid YAML frontmatter if an existing file already has it.
 
 ## Todo-bearing input
 

@@ -4,21 +4,37 @@
         env: local-and-git
         prompt: |
           hub, across all my registered hubs, what do we know about authentication and
-          session tokens? Cite the module path for each fact.
+          session tokens? Cite the module path for each fact and preserve each source's
+          evidentiary strength without turning correlation into causation. Return separate
+          per-hub fact lists and stop after the facts, without a coverage comparison or
+          missing-topic note.
   tests:
     - description: Ask - across hubs - cites each module path
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [ask] }
+          config:
+            expect:
+              - ask
+              - { name: task, server: "" }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustContain:
+              - "(?:signed\\W+session\\W+tokens?|session\\W+tokens?(?:\\s+(?:are|is)\\s+signed\\b|[\\s\\S]{0,200}\\btokens?\\s+(?:are|is)\\s+signed\\b))"
+              - "kb-hub(?:\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb|[\\s\\S]{0,600}\\bkb[/\\\\]auth\\.md\\b)"
+              - "git-hub(?:\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb|[\\s\\S]{0,600}\\bkb[/\\\\]auth\\.md\\b)"
+            mustNotContain:
+              - "\\b(?:storage|algorithms?|MFA|authorization scopes?)\\b"
+              - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"
+              - "git-hub[^.\\n]{0,160}\\b(?:does not|doesn't|lacks|omits?|not\\s+(?:mention|document|specify|cover))\\b"
+              - "concepts?[/\\\\]auth\\.md"
+              - "(?:clock\\s+(?:skew|drift)[^.\\n]{0,80}(?:root\\s+caus|caus\\w*)|(?:root\\s+caus|caus\\w*)[^.\\n]{0,80}clock\\s+(?:skew|drift))"
         - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
-              - id: answered-with-citations
-                text: The agent answered from the registered knowledge modules with module-path citations.
-              - id: spans-hubs
-                text: The answer draws on more than one hub where the relevant facts live.
               - id: no-fabrication
                 text: >-
                   Supported facts the agent may state as source-backed: (1) authentication uses
@@ -26,7 +42,12 @@
                   kb-hub additionally says tokens are issued at login, expire after 24 hours, and
                   refresh tokens rotate on use; (3) if the response draws on memory evidence,
                   kb-hub memory reports refresh failures correlated with client clock drift greater
-                  than 60 seconds. Coverage gaps and clearly labeled synthesis or inference drawn
-                  from the listed facts are allowed. Unsupported specific algorithms, timeout
-                  values, or implementation details not present in any fixture remain disallowed
-                  even when labeled as inference/synthesis.
+                  than 60 seconds, and identifies the February regression as the same root-cause
+                  family as the January auth spike. A bare coverage label without named absent topics
+                  and clearly labeled synthesis or inference drawn from the listed facts are allowed.
+                  The user's constraint forbids enumerating absent-topic gaps. Unsupported specific algorithms, timeout
+                  values, or implementation details not present in any fixture remain disallowed even
+                  when labeled as inference/synthesis. None of the source facts classifies the
+                  implementation statements as causal or correlational; the answer may say that neither
+                  relationship is established but must not assign either classification to them.
+                  A citation to nonexistent `concepts/auth.md` is also a fabrication.

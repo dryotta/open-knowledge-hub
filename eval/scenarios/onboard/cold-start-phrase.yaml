@@ -3,7 +3,7 @@
     - vars:
         env: empty
         prompt: |
-          Use the Open Knowledge Hub MCP and run onboard to set me up.
+          I just installed Open Knowledge Hub. Help me set it up for the first time.
   tests:
     - description: Onboard - cold-start phrase - runs onboard flow
       assert:

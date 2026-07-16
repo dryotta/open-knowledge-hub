@@ -1,9 +1,37 @@
-# Single default eval config: one {{prompt}} pass-through, the shared Copilot
-# provider, and every case pulled in as a scenario. Run via `npm run eval`.
+# Full release tier. Slow scenarios come first so both workers remain occupied
+# instead of leaving a long multi-turn scenario at the end of the run.
 description: OKH E2E eval (Copilot CLI)
 prompts:
   - "{{prompt}}"
 providers:
   - file://scenarios/shared/provider.ts
 scenarios:
-  - file://scenarios/**/*.yaml
+  - file://scenarios/onboard/cold-start-conversation.yaml
+  - file://scenarios/initialize/llmwiki.yaml
+  - file://scenarios/ask/llmwiki-compounding.yaml
+  - file://scenarios/ingest/into-existing-module.yaml
+  - file://scenarios/lint/wiki-health.yaml
+  - file://scenarios/write/into-wiki.yaml
+  - file://scenarios/ask/across-hubs.yaml
+  - file://scenarios/learn/useful-fact.yaml
+  - file://scenarios/remember/incident.yaml
+  - file://scenarios/remember/todo.yaml
+  - file://scenarios/remember/test-result.yaml
+  - file://scenarios/ask/missing-info.yaml
+  - file://scenarios/context/login-task.yaml
+  - file://scenarios/onboard/new-hub.yaml
+  - file://scenarios/reflect/memory-module.yaml
+  - file://scenarios/context/csv-debug.yaml
+  - file://scenarios/ask/answerable.yaml
+  - file://scenarios/onboard/github-repo.yaml
+  - file://scenarios/todo/complete.yaml
+  - file://scenarios/run/custom-skill.yaml
+  - file://scenarios/onboard/existing-folder.yaml
+  - file://scenarios/learn/trivial-fact.yaml
+  - file://scenarios/run/nested-skill.yaml
+  - file://scenarios/run/shared-grilling.yaml
+  - file://scenarios/onboard/explain.yaml
+  - file://scenarios/onboard/custom-name.yaml
+  - file://scenarios/todos/show.yaml
+  - file://scenarios/inspect/custom-module.yaml
+  - file://scenarios/onboard/cold-start-phrase.yaml
