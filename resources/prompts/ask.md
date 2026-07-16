@@ -28,13 +28,15 @@ answer. It must **not** see the raw concept docs.
 ### Stage 1 — Collect the question(s) and pack location
 
 Gather the question(s) the user wants answered and the bundle root path (the directory containing
-`index.md`). If the path is unknown, ask. Do **not** open the concept docs yourself.
+`index.md`). If the path is unknown, ask. Do **not** open the source files yourself.
 
 ### Stage 2 — Fork: spawn the analysis sub-agent
 
 Spawn a **fresh sub-agent** whose entire job is to answer the question(s) from the pack and return
-a token-efficient result. Run it in the foreground and wait for its result. Do not use background
-mode or inspect the bundle in parallel. Give it **only**:
+a token-efficient result. For one pack, run it in the foreground and wait for its result. For
+independent packs, background sub-agents may run in parallel only if you explicitly wait for every
+result before answering; never leave an agent running. Do not inspect a delegated bundle yourself.
+Give each sub-agent **only**:
 
 - the bundle root path, and
 - the verbatim question(s).

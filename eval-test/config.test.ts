@@ -115,6 +115,14 @@ describe("deterministic custom, context, and ingest scenarios", () => {
     ]));
     expect(assertions.some((a) => String(a.value).endsWith("judge.ts"))).toBe(false);
     expect(sc.config[0].vars.prompt).toMatch(/shared "ingest" skill/i);
+    expect(sc.config[0].vars.turns).toEqual([
+      expect.objectContaining({ id: "routing-confirmed", after: "start" }),
+    ]);
+    expect(sc.config[0].vars.terminal).toMatchObject({
+      after: "routing-confirmed",
+      requiredTools: ["run", "sync"],
+    });
+    expect((tools?.config?.expect as Array<{ turn?: number }>).map((entry) => entry.turn)).toEqual([1, 2, 2]);
   });
 });
 
@@ -372,7 +380,7 @@ describe("scenario routing contracts", () => {
       ]);
     });
 
-    it("ask scenarios require foreground sub-agents and forbid background mode", async () => {
+    it("ask scenarios require sub-agents and forbid background mode where sequencing requires it", async () => {
       for (const file of [
         "ask/answerable.yaml",
         "ask/missing-info.yaml",
@@ -386,11 +394,18 @@ describe("scenario routing contracts", () => {
           name: "task",
           server: "",
         });
-        expect(tools?.config?.forbid, file).toContainEqual({
-          name: "task",
-          server: "",
-          arguments: { mode: "background" },
-        });
+        if (file === "ask/across-hubs.yaml") {
+          expect(tools?.config?.forbid ?? [], file).not.toContainEqual(expect.objectContaining({
+            name: "task",
+            arguments: { mode: "background" },
+          }));
+        } else {
+          expect(tools?.config?.forbid, file).toContainEqual({
+            name: "task",
+            server: "",
+            arguments: { mode: "background" },
+          });
+        }
       }
     });
 

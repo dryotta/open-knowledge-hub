@@ -58,8 +58,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/never attach a source citation\s+to a detail that source does not contain/i);
     expect(text).toMatch(/<container>\/<module>\/<exact item path>/i);
     expect(text).toMatch(/do not remove, weaken,\s+combine, or rewrite the sub-agent's citations/i);
-    expect(text).toMatch(/run it in the foreground and wait for its result/i);
-    expect(text).toMatch(/do not use background\s+mode/i);
+    expect(text).toMatch(/for one pack, run it in the foreground and wait for its result/i);
+    expect(text).toMatch(/background sub-agents may run in parallel[\s\S]{0,100}wait for every\s+result/i);
     expect(text).toMatch(/still include the distilled answer itself/i);
     expect(text).toMatch(/do not replace it with a\s+statement that the answer was retrieved or handled/i);
     expect(text).toMatch(/explicit user constraints\s+override the default gap elaboration/i);
