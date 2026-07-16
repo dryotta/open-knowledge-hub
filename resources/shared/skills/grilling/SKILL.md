@@ -15,8 +15,8 @@ A short framing question plus one same-topic decision question is acceptable, bu
 not bundle separate decisions or add "deeper" follow-ups. Give your recommended answer
 for that single decision, then stop. Use at most three tightly related question marks
 that can all be answered as one decision.
-Ask no question after the recommendation, and do not repeat or rephrase the decision
-prompt at the end. Asking several decisions at once is bewildering.
+Place the recommendation adjacent to the question; ordering does not matter. Do not
+introduce a different decision afterward. Asking several decisions at once is bewildering.
 
 If a *fact* can be found by exploring the codebase or the materials at hand, look it
 up rather than asking. The *decisions* are the user's — put each one to them and

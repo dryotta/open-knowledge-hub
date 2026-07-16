@@ -15,8 +15,7 @@ export default function grillingResponse(_output: string, context: Ctx) {
   const questionText = message.split(/\b(?:my recommendation|I (?:recommend|suggest)|recommendation|I'd recommend)\b/i)[0]!;
   const decisionTopicCount = [
     /\b(?:GitHub|Google|GitLab|Microsoft|OAuth providers?|email\/password)\b/i,
-    /\b(?:access tokens?|refresh tokens?|tokens?)\b/i,
-    /\b(?:sessions?|backend|cookies?)\b/i,
+    /\b(?:access tokens?|refresh tokens?|tokens?|sessions?|backend|cookies?|database|KMS|secrets?)\b/i,
     /\b(?:callback|state|redirect)\b/i,
     /\b(?:expir\w*|idle|TTL|timeout)\b/i,
   ].filter((pattern) => pattern.test(questionText)).length;

@@ -181,7 +181,7 @@ describe("shared skills", () => {
     expect(s.body).toMatch(/one decision at a time/i);
     expect(s.body).toMatch(/do\s+not\s+bundle\s+separate\s+decisions/i);
     expect(s.body).toMatch(/at most three tightly related question marks/i);
-    expect(s.body).toMatch(/ask no question after the recommendation/i);
+    expect(s.body).toMatch(/recommendation adjacent to the question/i);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
   });
 
@@ -217,6 +217,7 @@ describe("llmwiki skill body contracts", () => {
     expect(s.body).toMatch(/declared.*type/i);
     // final inspect
     expect(s.body).toMatch(/inspect/i);
+    expect(s.body).toMatch(/name every affected page by its exact\s+bundle-relative path/i);
   });
 
   it("write skill requires repeated inspect until all health arrays are empty before completion", async () => {

@@ -28,10 +28,17 @@ describe("grilling-response assertion", () => {
 
   it("rejects bundled decisions", () => {
     const result = evaluate(
-      "Which OAuth tokens are stored? Do you need refresh tokens? Which session backend will you use? My recommendation is to start with token storage.",
+      "Why GitHub instead of Google? How should callback state be validated? When should idle logins expire? My recommendation is to decide the provider first.",
     );
     expect(result.pass).toBe(false);
-    expect(result.reason).toMatch(/span 2 decision topics/i);
+    expect(result.reason).toMatch(/span 3 decision topics/i);
+  });
+
+  it("treats token and session storage as one threat-model decision", () => {
+    const result = evaluate(
+      "Should OAuth tokens live in encrypted server-side sessions? What database threat are we defending against? My recommendation is envelope encryption.",
+    );
+    expect(result.pass).toBe(true);
   });
 
   it("rejects a repetitive four-question prompt even within one topic", () => {

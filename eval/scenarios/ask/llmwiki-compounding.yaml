@@ -34,7 +34,7 @@
               - "\\battention\\b"
               - "\\btransformer\\b"
               - "(?:transformer[\\s\\S]{0,120}(?:built|stack|blocks?)[\\s\\S]{0,120}attention|attention[\\s\\S]{0,120}(?:core|mechanism)[\\s\\S]{0,120}transformer)"
-              - "(?:attention|transformer)[\\w-]*\\.md"
+              - "\\b(?:filed|synthesis|new page)\\b"
         - type: javascript
           value: file://assertions/llmwiki-state.ts
           config:
