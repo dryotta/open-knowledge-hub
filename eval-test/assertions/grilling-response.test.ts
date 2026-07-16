@@ -31,6 +31,9 @@ describe("grilling-response assertion", () => {
     "Which OAuth provider should launch first? My recommended answer is GitHub.",
     "Which OAuth provider should launch first? I'd suggest GitHub.",
     "Which OAuth provider should launch first? I\u2019d recommend GitHub.",
+    "Which OAuth provider should launch first? Here is my recommendation: GitHub.",
+    "Which OAuth provider should launch first? Our recommendation is GitHub.",
+    "Which OAuth provider should launch first?\n- Recommendation: GitHub.",
   ])("accepts recommendation wording: %s", (message) => {
     expect(evaluate(message).pass).toBe(true);
   });
@@ -46,6 +49,14 @@ describe("grilling-response assertion", () => {
   it("requires both a recommendation and plan relevance", () => {
     expect(evaluate("What decision comes first?").pass).toBe(false);
     expect(evaluate("Which OAuth flow comes first?").reason).toMatch(/recommendation/i);
+  });
+
+  it.each([
+    "Should we recommend GitHub OAuth?",
+    "Which OAuth provider should launch first? Recommendation:",
+    "Which OAuth provider should launch first?\n- Recommendation:",
+  ])("rejects a question or empty recommendation: %s", (message) => {
+    expect(evaluate(message).reason).toMatch(/missing a recommendation/i);
   });
 
   it("rejects a missing final message", () => {
