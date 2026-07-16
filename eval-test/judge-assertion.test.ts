@@ -197,8 +197,7 @@ describe("judge assertion", () => {
   it("forwards k and graderModel config to runJudgeCriteria", async () => {
     let recordedOpts: { k?: number; model?: string; onTelemetry?: (telemetry: JudgeTelemetry) => void } | undefined;
     const metadata: {
-      timings?: Record<string, unknown> & { judgeMs?: number };
-      judge?: JudgeTelemetry;
+      timings?: Record<string, unknown> & { judgeMs?: number; judge?: JudgeTelemetry };
     } = {};
     const r = await judge(
       "t",
@@ -240,8 +239,10 @@ describe("judge assertion", () => {
     expect(recordedOpts).toMatchObject({ k: 5, model: "m" });
     expect((recordedOpts as { abortSignal?: AbortSignal }).abortSignal).toBeInstanceOf(AbortSignal);
     expect(metadata).toMatchObject({
-      timings: { judgeMs: 12 },
-      judge: { launchedRuns: 3, configuredRuns: 5, skippedRuns: 2 },
+      timings: {
+        judgeMs: 12,
+        judge: { launchedRuns: 3, configuredRuns: 5, skippedRuns: 2 },
+      },
     });
   });
 

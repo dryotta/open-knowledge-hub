@@ -71,8 +71,7 @@ interface Ctx {
       okhHome?: string;
       toolCalls?: string[];
       toolEvents?: import("../copilot.js").ToolEvent[];
-      timings?: Record<string, unknown> & { judgeMs?: number };
-      judge?: JudgeTelemetry;
+      timings?: Record<string, unknown> & { judgeMs?: number; judge?: JudgeTelemetry };
     };
   };
 }
@@ -119,7 +118,7 @@ export default async function judge(
   if (judgeTelemetry) {
     meta.timings ??= {};
     meta.timings.judgeMs = (meta.timings.judgeMs ?? 0) + judgeTelemetry.durationMs;
-    meta.judge = judgeTelemetry;
+    meta.timings.judge = judgeTelemetry;
     if (process.env.OKH_EVAL_TIMINGS !== undefined && process.env.OKH_EVAL_TIMINGS !== "0") {
       console.log(
         `[eval timing] ${meta.scenario ?? "unnamed scenario"}: judge=${judgeTelemetry.durationMs}ms `
