@@ -67,6 +67,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/never name missing technologies, mechanisms, categories/i);
     expect(text).toMatch(/do not relabel the\s+relationship as causal or correlational/i);
     expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
+    expect(text).toMatch(/headings and bullet labels are\s+claims too/i);
     expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
     expect(text).toMatch(/if the sub-agent added a prohibited gap or next-step section, omit that\s+section/i);
     expect(text).toMatch(/verify every citation against\s+the provided module and item paths/i);

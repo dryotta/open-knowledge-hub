@@ -30,6 +30,7 @@
               - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"
               - "git-hub[^.\\n]{0,160}\\b(?:does not|doesn't|lacks|omits?|not\\s+(?:mention|document|specify|cover))\\b"
               - "concepts?[/\\\\]auth\\.md"
+              - "(?:clock\\s+(?:skew|drift)[^.\\n]{0,80}(?:root\\s+caus|caus\\w*)|(?:root\\s+caus|caus\\w*)[^.\\n]{0,80}clock\\s+(?:skew|drift))"
         - type: javascript
           value: file://assertions/judge.ts
           config:

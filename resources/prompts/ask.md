@@ -64,7 +64,9 @@ Instruct the sub-agent to:
    happens "after", "during", or "on" another event, preserve that wording; do not relabel the
    relationship as causal or correlational unless the source explicitly does so. If asked to
    distinguish the two and the sources establish neither, say that neither classification is
-   established rather than forcing each fact into a category.
+   established rather than forcing each fact into a category. Headings and bullet labels are
+   claims too: keep them neutral or source-verbatim, and never use them to add a causal,
+   evidentiary, or scope classification that the cited text does not state.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
 4. **Honor the caller's output boundary before assessing scope.** Explicit user constraints
