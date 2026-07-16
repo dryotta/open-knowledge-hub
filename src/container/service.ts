@@ -57,6 +57,10 @@ const modulePathString = z
   .refine(
     (s) => normalize(s).replace(/\\/g, "/") !== ".",
     "module path must not be the container root",
+  )
+  .refine(
+    (s) => !normalize(s).replace(/\\/g, "/").includes("/"),
+    "module path must be a single top-level folder name (modules cannot be nested)",
   );
 
 function validate<T>(schema: ZodType<T>, value: unknown, field: string): T {
@@ -124,7 +128,6 @@ export interface AddModulePlan {
   container: string;
   path: string;
   type: string;
-  name: string;
   description: string;
   moduleRoot: string;
   config?: Record<string, unknown>;
@@ -132,13 +135,12 @@ export interface AddModulePlan {
 
 export type AddModuleOutcome =
   | { kind: "plan"; plan: AddModulePlan }
-  | { kind: "applied"; entry: { path: string; type: string; name: string }; moduleRoot: string };
+  | { kind: "applied"; entry: { path: string; type: string }; moduleRoot: string };
 
 export interface AddModuleInput {
   container: string;
   path: string;
   type: string;
-  name: string;
   description?: string;
   config?: Record<string, unknown>;
   create?: boolean;
@@ -155,7 +157,6 @@ export interface GitStatus {
 export interface ModuleStatus {
   path: string;
   type: string;
-  name: string;
   description: string;
   items: number;
 }
@@ -185,7 +186,7 @@ export interface SkillRef {
 export interface HubModule {
   path: string;
   type: string;
-  name: string;
+  description: string;
   items: number;
   local?: SkillRef[];
   overrides?: string[];
@@ -221,7 +222,7 @@ export type InspectResult =
   | { kind: "container"; status: ContainerStatus }
   | {
       kind: "module";
-      module: { path: string; type: string; name: string; description: string; config?: Record<string, unknown> };
+      module: { path: string; type: string; description: string; config?: Record<string, unknown> };
       overview: string;
       items: Item[];
       skills: Array<{ name: string; description: string; source: string; path?: string }>;
@@ -240,7 +241,6 @@ export interface SyncResult extends BackendSyncResult {
 export interface ResolvedModule {
   type: string;
   path: string;
-  name: string;
   description: string;
   absPath: string;
 }
@@ -357,7 +357,6 @@ export class ContainerService {
         .map(async (d) => ({
           path: d.path,
           type: d.manifest.type,
-          name: d.manifest.name,
           description: d.manifest.description,
           items: (await this.safeEnumerate(d.manifest.type, this.moduleRoot(root, d.path))).length,
         })),
@@ -394,6 +393,9 @@ export class ContainerService {
       if (d.error) { issues.push(`module "${d.path}": ${d.error}`); continue; }
       const m = d.manifest!;
       const moduleRoot = this.moduleRoot(root, d.path);
+      if (m.description.trim().length === 0) {
+        issues.push(`module "${d.path}": missing description (run dream to consolidate one).`);
+      }
       const loader = getLoader(m.type);
       for (const requiredFile of loader.requiredFiles ?? []) {
         const file = await stat(join(moduleRoot, requiredFile)).catch(() => null);
@@ -428,7 +430,7 @@ export class ContainerService {
     const health = await loader.health?.(moduleRoot).catch(() => undefined);
     return {
       kind: "module",
-      module: { path: module, type: manifest.type, name: manifest.name, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
+      module: { path: module, type: manifest.type, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
       overview,
       items,
       skills: skillSet.skills.map((s) => ({
@@ -502,7 +504,7 @@ export class ContainerService {
     return {
       path: m.path,
       type: m.type,
-      name: m.name,
+      description: m.description,
       items: m.items,
       ...(local.length ? { local } : {}),
       ...(overrides.length ? { overrides } : {}),
@@ -577,7 +579,7 @@ export class ContainerService {
         syncActions: [...this.backends.actions(entry)],
         root: entry.localPath,
         modules: discovered.map((d) => ({
-          type: d.manifest!.type, path: d.path, name: d.manifest!.name,
+          type: d.manifest!.type, path: d.path,
           description: d.manifest!.description, absPath: this.moduleRoot(entry.localPath, d.path),
         })),
       });
@@ -755,6 +757,67 @@ export class ContainerService {
     return this.mutex.run(() => this.addModuleImpl(input));
   }
 
+  /** Read a module's manifest (type, description, and arbitrary config map). */
+  async getModuleManifest(container: string, module: string): Promise<ModuleManifest> {
+    const reg = await this.loadRegistryData();
+    const entry = requireContainer(reg, container);
+    const moduleRoot = this.moduleRoot(entry.localPath, module);
+    if (!(await moduleManifestExists(moduleRoot))) {
+      throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+    }
+    return loadModuleManifest(moduleRoot);
+  }
+
+  /**
+   * Apply a key/value patch to a module's manifest. `description` maps to the
+   * top-level field (validated non-blank); `type` is rejected (it selects the
+   * loader); every other key is written into the manifest's arbitrary `config`
+   * map. A `null` value deletes an arbitrary config key. Returns the saved
+   * manifest. Legacy fields (e.g. `name`) are dropped as a side effect of the
+   * rewrite through the schema.
+   */
+  setModuleConfig(container: string, module: string, patch: Record<string, unknown>): Promise<ModuleManifest> {
+    return this.mutex.run(async () => {
+      if (Object.keys(patch).length === 0) {
+        throw new OkhError("INVALID_ARGUMENT", "config { set } must include at least one key.");
+      }
+      const reg = await this.loadRegistryData();
+      const entry = requireContainer(reg, container);
+      const moduleRoot = this.moduleRoot(entry.localPath, module);
+      if (!(await moduleManifestExists(moduleRoot))) {
+        throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+      }
+      const manifest = await loadModuleManifest(moduleRoot);
+      const cfg: Record<string, unknown> = { ...(manifest.config ?? {}) };
+      let description = manifest.description;
+      for (const [key, value] of Object.entries(patch)) {
+        if (key === "type") {
+          throw new OkhError(
+            "INVALID_ARGUMENT",
+            "A module's type cannot be changed via config (it selects the loader). Recreate the module to change its type.",
+          );
+        }
+        if (key === "description") {
+          if (value === null) {
+            throw new OkhError("INVALID_ARGUMENT", "Module description is required and cannot be deleted.");
+          }
+          if (typeof value !== "string" || value.trim().length === 0) {
+            throw new OkhError("INVALID_ARGUMENT", "Module description must be a non-empty string.");
+          }
+          description = value.trim();
+          continue;
+        }
+        if (value === null) delete cfg[key];
+        else cfg[key] = value;
+      }
+      const next: ModuleManifest = { ...manifest, description };
+      if (Object.keys(cfg).length > 0) next.config = cfg;
+      else delete next.config;
+      await saveModuleManifest(moduleRoot, next);
+      return next;
+    });
+  }
+
   async planAddModule(input: AddModuleInput): Promise<AddModulePlan> {
     validate(modulePathString, input.path, "module path");
     const reg = await this.loadRegistryData();
@@ -777,7 +840,6 @@ export class ContainerService {
       container: input.container,
       path: input.path,
       type: input.type,
-      name: input.name,
       description: input.description ?? "",
       moduleRoot,
       ...(input.config ? { config: input.config } : {}),
@@ -790,7 +852,7 @@ export class ContainerService {
     return { kind: "applied", ...(await this.applyAddModule(plan)) };
   }
 
-  private async applyAddModule(plan: AddModulePlan): Promise<{ entry: { path: string; type: string; name: string }; moduleRoot: string }> {
+  private async applyAddModule(plan: AddModulePlan): Promise<{ entry: { path: string; type: string }; moduleRoot: string }> {
     await mkdir(plan.moduleRoot, { recursive: true });
     const loader = getLoader(plan.type);
     if (loader.scaffold) {
@@ -801,10 +863,10 @@ export class ContainerService {
       }
     }
     await saveModuleManifest(plan.moduleRoot, {
-      type: plan.type, name: plan.name, description: plan.description,
+      type: plan.type, description: plan.description,
       ...(plan.config ? { config: plan.config } : {}),
     });
-    return { entry: { path: plan.path, type: plan.type, name: plan.name }, moduleRoot: plan.moduleRoot };
+    return { entry: { path: plan.path, type: plan.type }, moduleRoot: plan.moduleRoot };
   }
 
   /** Absolute path to a container's root on disk. */

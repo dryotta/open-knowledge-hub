@@ -24,9 +24,11 @@ does all the reasoning.
   (cloned + synced). Registered in a per-machine `registry.json` under `$OKH_HOME`
   (default `~/.open-knowledge-hub`); git containers are cloned into
   `$OKH_HOME/containers/`, local/OneDrive folders are registered in place.
-- **Module** — a self-contained typed subfolder. Each module carries its own
-  `.okh/module.yaml` manifest (`type`, `name`, `description`, optional `config`).
-  The hub auto-discovers modules by scanning the container for these manifests.
+- **Module** — a self-contained typed **top-level** subfolder. Each module carries its
+  own `.okh/module.yaml` manifest (`type`, `description`, optional `config`); the
+  folder name is the module's identity. The hub auto-discovers modules by scanning the
+  container's direct children for these manifests (a manifest nested deeper is flagged
+  as misplaced, not loaded).
   Built-in types: `knowledge` (OKF markdown), `llmwiki` (OKF-backed living wiki),
   `memory`, and `skills` (an indexed tree of `SKILL.md` leaves; a skill can also
   launch/run a CLI tool). Containers may hold multiple modules of the same type.
@@ -36,10 +38,15 @@ does all the reasoning.
 ### Module manifest (`<module>/.okh/module.yaml`)
 ```yaml
 type: knowledge   # built-in (knowledge, skills, memory, llmwiki) or any custom string
-name: my-kb
-description: Project notes   # optional
+description: Project notes   # required at creation; keep it routing-quality
 # config: {}                 # optional, type-specific
 ```
+
+The module's **folder name is its identity** — there is no `name` field. Modules must
+be top-level folders in the container (no nesting). The `description` is required when a
+module is created and should describe what the module holds well enough to route work to
+it; run the `dream` tool to regenerate it from the module's `index.md` when it drifts. A
+legacy `name:` key is stripped on read.
 
 The container's `name` and `sync` mode (`auto` | `shared`) are set in the **registry
 entry** at `add_container`-time, not in a per-container file.
@@ -194,10 +201,16 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 ## Typical usage
 
 - `add_container { source: "https://github.com/me/my-notes.git", name: "my-notes" }` → clone + register a container.
-- `add_module` → returns a step-by-step workflow; after proposing the module, `add_module { container: "my-notes", path: "kb", type: "knowledge", name: "kb", create: true }` adds it.
+- `add_module` → returns a step-by-step workflow; after proposing the module, `add_module { container: "my-notes", path: "kb", type: "knowledge", description: "project notes", create: true }` adds it.
 - `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
   folds knowledge in, then `sync { container: "my-notes" }` commits+pushes.
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
+- `dream { container: "my-notes" }` → run the consolidation pass to refresh each
+  module's `description` from its `index.md` so `inspect` routes work accurately.
+- `config { container: "my-notes", module: "kb", set: { description: "..." } }` → set a
+  module's description deterministically (what `dream` persists under the hood). The
+  same tool edits arbitrary global keys (`config { set: { … } }`) and module keys
+  (`config { container, module, set: { … } }`); a `null` value deletes a key.
 - `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback).
 - `todos {}` → list todos and return the live hosted `/todos` URL.
 - `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"], apply: true }` → write the todo immediately and sync.

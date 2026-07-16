@@ -19,12 +19,13 @@ describe("module manifest", () => {
   it("round-trips a valid manifest", async () => {
     const dir = await tmp();
     try {
-      await saveModuleManifest(dir, { type: "knowledge", name: "KB", description: "team kb", config: {} });
+      await saveModuleManifest(dir, { type: "knowledge", description: "team kb", config: {} });
       expect(await moduleManifestExists(dir)).toBe(true);
       const m = await loadModuleManifest(dir);
-      expect(m).toEqual({ type: "knowledge", name: "KB", description: "team kb", config: {} });
+      expect(m).toEqual({ type: "knowledge", description: "team kb", config: {} });
       const raw = await readFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "utf8");
       expect(raw).toContain("type: knowledge");
+      expect(raw).not.toContain("name:");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -34,7 +35,7 @@ describe("module manifest", () => {
     const dir = await tmp();
     try {
       await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
-      await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "type: recipes\nname: Recipes\ndescription: my food\n");
+      await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "type: recipes\ndescription: my food\n");
       const m = await loadModuleManifest(dir);
       expect(m.type).toBe("recipes");
     } finally {
@@ -42,19 +43,55 @@ describe("module manifest", () => {
     }
   });
 
-  it("rejects a manifest missing required fields", async () => {
+  it("strips a legacy name key on read (older manifests keep loading)", async () => {
+    const dir = await tmp();
+    try {
+      await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
+      await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "type: knowledge\nname: KB\ndescription: team kb\n");
+      const m = await loadModuleManifest(dir);
+      expect(m).toEqual({ type: "knowledge", description: "team kb" });
+      expect("name" in m).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("tolerates a missing description on read (defaults to empty)", async () => {
     const dir = await tmp();
     try {
       await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
       await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "type: knowledge\n");
-      await expect(loadModuleManifest(dir)).rejects.toThrow(/INVALID_MANIFEST|name/i);
+      const m = await loadModuleManifest(dir);
+      expect(m).toEqual({ type: "knowledge", description: "" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a manifest missing the required type field", async () => {
+    const dir = await tmp();
+    try {
+      await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
+      await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "description: no type here\n");
+      await expect(loadModuleManifest(dir)).rejects.toThrow(/INVALID_MANIFEST|type/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unknown key other than the legacy name", async () => {
+    const dir = await tmp();
+    try {
+      await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
+      await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "type: knowledge\nbogus: nope\n");
+      await expect(loadModuleManifest(dir)).rejects.toMatchObject({ code: "INVALID_MANIFEST" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
   it("scaffolds a manifest with defaults", () => {
-    const m = scaffoldModuleManifest("memory", "notes", "");
-    expect(m).toEqual({ type: "memory", name: "notes", description: "" });
+    const m = scaffoldModuleManifest("memory", "");
+    expect(m).toEqual({ type: "memory", description: "" });
   });
 });

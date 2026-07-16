@@ -104,14 +104,14 @@ describe("addModule", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
     expect((await stat(join(moduleRoot, "index.md"))).isFile()).toBe(true);
     expect(await moduleManifestExists(moduleRoot)).toBe(true);
     const m = await loadModuleManifest(moduleRoot);
     expect(m.type).toBe("knowledge");
-    expect(m.name).toBe("KB");
+    expect(m.description).toBe("team kb");
     expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toContain("okf_version");
   });
 
@@ -119,7 +119,7 @@ describe("addModule", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "skills", type: "skills", name: "My Skills", create: true });
+    const out = await service.addModule({ container: "hub", path: "skills", type: "skills", description: "my skills", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
     expect((await stat(join(moduleRoot, "index.md"))).isFile()).toBe(true);
@@ -130,7 +130,7 @@ describe("addModule", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "mem", type: "memory", name: "Memory", create: true });
+    const out = await service.addModule({ container: "hub", path: "mem", type: "memory", description: "notes", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     await expect(stat(join(out.moduleRoot, "index.md"))).rejects.toBeTruthy();
   });
@@ -139,13 +139,13 @@ describe("addModule", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
-    await expect(service.addModule({ container: "hub", path: "kb", type: "skills", name: "X" })).rejects.toBeInstanceOf(OkhError);
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
+    await expect(service.addModule({ container: "hub", path: "kb", type: "skills", description: "x" })).rejects.toBeInstanceOf(OkhError);
   });
 
   it("rejects a module on an unknown container", async () => {
     const { service } = await setup();
-    await expect(service.addModule({ container: "ghost", path: "kb", type: "knowledge", name: "KB" })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.addModule({ container: "ghost", path: "kb", type: "knowledge", description: "kb" })).rejects.toBeInstanceOf(OkhError);
   });
 
   it("treats an existing knowledge index as already scaffolded", async () => {
@@ -155,7 +155,7 @@ describe("addModule", () => {
     await mkdir(join(dir, "kb"), { recursive: true });
     await writeFile(join(dir, "kb", "index.md"), "# Existing\n", "utf8");
 
-    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
     if (out.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = out;
 
@@ -163,7 +163,58 @@ describe("addModule", () => {
     expect(await readFile(join(moduleRoot, "index.md"), "utf8")).toBe("# Existing\n");
     const m = await loadModuleManifest(moduleRoot);
     expect(m.type).toBe("knowledge");
-    expect(m.name).toBe("KB");
+    expect(m.description).toBe("team kb");
+  });
+  it("rejects a nested (multi-segment) module path", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await expect(
+      service.addModule({ container: "hub", path: "nested/kb", type: "knowledge", description: "team kb", create: true }),
+    ).rejects.toBeInstanceOf(OkhError);
+  });
+});
+
+describe("setModuleConfig", () => {
+  it("sets the description via the description key and drops a legacy name", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "old", create: true });
+    const m = await service.setModuleConfig("hub", "kb", { description: "  auth flows  " });
+    expect(m.description).toBe("auth flows");
+    expect("name" in m).toBe(false);
+  });
+
+  it("stores arbitrary keys in the config map and deletes them with null", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "old", create: true });
+    const added = await service.setModuleConfig("hub", "kb", { owner: "team-auth", priority: 3 });
+    expect(added.config).toEqual({ owner: "team-auth", priority: 3 });
+    const removed = await service.setModuleConfig("hub", "kb", { owner: null });
+    expect(removed.config).toEqual({ priority: 3 });
+    const emptied = await service.setModuleConfig("hub", "kb", { priority: null });
+    expect(emptied.config).toBeUndefined();
+  });
+
+  it("rejects changing type, a blank description, and an empty patch", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "old", create: true });
+    await expect(service.setModuleConfig("hub", "kb", { type: "memory" })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.setModuleConfig("hub", "kb", { description: "   " })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.setModuleConfig("hub", "kb", { description: null })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.setModuleConfig("hub", "kb", {})).rejects.toBeInstanceOf(OkhError);
+  });
+
+  it("rejects an unknown module", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await expect(service.setModuleConfig("hub", "ghost", { owner: "x" })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

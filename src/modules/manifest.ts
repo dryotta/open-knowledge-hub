@@ -8,14 +8,26 @@ import { OkhError } from "../errors.js";
 export const MODULE_OKH_DIR = ".okh";
 export const MODULE_MANIFEST_BASENAME = "module.yaml";
 
-export const moduleManifestSchema = z
+const moduleManifestBodySchema = z
   .object({
     type: z.string().min(1),
-    name: z.string().min(1),
     description: z.string().default(""),
     config: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
+
+/**
+ * A module's `.okh/module.yaml`. `name` was removed — a module's identity and
+ * label is its folder name. A legacy `name:` key is stripped on read so older
+ * manifests keep loading; any other unknown key is still rejected.
+ */
+export const moduleManifestSchema = z.preprocess((value) => {
+  if (value && typeof value === "object" && !Array.isArray(value) && "name" in value) {
+    const { name: _legacyName, ...rest } = value as Record<string, unknown>;
+    return rest;
+  }
+  return value;
+}, moduleManifestBodySchema);
 export type ModuleManifest = z.infer<typeof moduleManifestSchema>;
 
 export function moduleManifestPath(moduleRoot: string): string {
@@ -71,6 +83,6 @@ export async function saveModuleManifest(moduleRoot: string, manifest: ModuleMan
 }
 
 /** Build a minimal in-memory manifest (no config). */
-export function scaffoldModuleManifest(type: string, name: string, description: string): ModuleManifest {
-  return { type, name, description };
+export function scaffoldModuleManifest(type: string, description: string): ModuleManifest {
+  return { type, description };
 }

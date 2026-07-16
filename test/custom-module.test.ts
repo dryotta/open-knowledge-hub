@@ -29,13 +29,13 @@ describe("custom module type end-to-end", () => {
         container: containerName,
         path: "recipes",
         type: "recipes",
-        name: "Food",
+        description: "family recipes",
         create: true,
       });
       if (addedModule.kind !== "applied") throw new Error("expected applied");
       const moduleRoot = addedModule.moduleRoot;
       expect(addedModule.entry.type).toBe("recipes");
-      expect(addedModule.entry.name).toBe("Food");
+      expect(addedModule.entry.path).toBe("recipes");
 
       // 3. Write a .claude/skills/cook/SKILL.md into the module folder
       const skillDir = join(moduleRoot, ".claude", "skills", "cook");
@@ -49,7 +49,7 @@ describe("custom module type end-to-end", () => {
       const inspected = await svc.inspect(containerName, "recipes");
       if (inspected.kind !== "module") throw new Error("expected module inspect result");
       expect(inspected.module.type).toBe("recipes");
-      expect(inspected.module.name).toBe("Food");
+      expect(inspected.module.description).toBe("family recipes");
       const cookSkill = inspected.skills.find((s) => s.name === "cook");
       expect(cookSkill).toBeDefined();
       expect(cookSkill!.description).toBe("How to cook a recipe");

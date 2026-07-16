@@ -3,7 +3,6 @@ import type { BackendType, SyncDescriptor } from "../registry/schema.js";
 export interface WebModuleSummary {
   path: string;
   type: string;
-  name: string;
 }
 
 export interface WebContainerSummary {

@@ -17,7 +17,7 @@ describe("migrateLegacyContainerManifest", () => {
       expect(sync).toBe("pr");
       const m = await loadModuleManifest(join(root, "kb"));
       expect(m.type).toBe("knowledge");
-      expect(m.name).toBe("kb");
+      expect("name" in m).toBe(false);
       // legacy file must NOT be deleted by migrateLegacyContainerManifest
       await expect(stat(join(root, ".okh", "okh.yaml"))).resolves.toBeDefined();
     } finally {

@@ -1,5 +1,5 @@
 import { readFile, rm, stat } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { saveModuleManifest, moduleManifestExists } from "../modules/manifest.js";
@@ -45,7 +45,6 @@ export async function migrateLegacyContainerManifest(root: string): Promise<Lega
     if ((await stat(moduleRoot).catch(() => null)) && !(await moduleManifestExists(moduleRoot))) {
       await saveModuleManifest(moduleRoot, {
         type: m.type,
-        name: basename(m.path),
         description: "",
         ...(m.config ? { config: m.config } : {}),
       });

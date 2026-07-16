@@ -57,7 +57,7 @@ export async function buildRun(
 ): Promise<string> {
   const targetBlock =
     target && module
-      ? `**Module:** ${module.type} · ${module.name} (\`${module.path}\`) → \`${module.absPath}\`\n` +
+      ? `**Module:** ${module.type} · \`${module.path}\` → \`${module.absPath}\`\n` +
         `**Container:** ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n`
       : "";
   return renderTemplate("run", {
@@ -68,4 +68,19 @@ export async function buildRun(
       resources: renderResources(await skillResourcePaths(skill)),
     },
   });
+}
+
+/** Render a "dream" consolidation run: the consolidation discipline applied to the resolved target module(s). */
+export async function buildDream(targets: ResolvedContainer[]): Promise<string> {
+  const modules = targets.flatMap((c) => c.modules.map((module) => ({ container: c, module })));
+  const list = modules.length
+    ? modules
+        .map(({ container, module }) =>
+          `- **${module.path}** (${module.type}) in container **${container.name}**\n` +
+          `    - overview / index: \`${module.absPath}/index.md\`\n` +
+          `    - current description: ${module.description ? `"${module.description}"` : "_(none — needs one)_"}`,
+        )
+        .join("\n")
+    : "_No modules to consolidate. Add one with `add_module` first._";
+  return renderTemplate("dream", { vars: { targets: list } });
 }

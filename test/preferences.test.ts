@@ -51,7 +51,16 @@ describe("preferences", () => {
     const wake = configFieldMeta.find((f) => f.key === "wakePhrase");
     expect(wake).toBeDefined();
     expect(wake!.description.length).toBeGreaterThan(0);
-    // configKeys must exactly cover the schema's keys, so it can't drift when a field is added/removed
+    // configKeys must exactly cover the schema's known keys, so it can't drift when a field is added/removed
     expect(configKeys).toEqual(Object.keys(preferencesSchema.shape));
+  });
+
+  it("keeps arbitrary (unknown) keys via passthrough while validating known ones", () => {
+    const parsed = preferencesSchema.parse({ wakePhrase: "brain", theme: "dark", nested: { a: 1 } });
+    expect(parsed.wakePhrase).toBe("brain");
+    expect((parsed as Record<string, unknown>).theme).toBe("dark");
+    expect((parsed as Record<string, unknown>).nested).toEqual({ a: 1 });
+    // Known keys are still validated.
+    expect(preferencesSchema.safeParse({ wakePhrase: "no spaces" }).success).toBe(false);
   });
 });

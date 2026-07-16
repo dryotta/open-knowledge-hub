@@ -389,7 +389,7 @@ async function handleApiRequest(
       ...(c.sync ? { sync: c.sync } : {}),
       ...(c.syncActions ? { syncActions: c.syncActions } : {}),
       moduleCount: c.modules.length,
-      modules: c.modules.map((m) => ({ path: m.path, type: m.type, name: m.name })),
+      modules: c.modules.map((m) => ({ path: m.path, type: m.type })),
       manifestValid: c.manifestValid,
       localPath: c.localPath,
     }));

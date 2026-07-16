@@ -43,15 +43,14 @@ export async function writeManifest(containerRoot: string, yaml: string): Promis
 export async function writeModule(
   containerRoot: string,
   modulePath: string,
-  opts: { type: string; name?: string; description?: string; config?: Record<string, unknown> },
+  opts: { type: string; description?: string; config?: Record<string, unknown> },
 ): Promise<void> {
   const moduleRoot = join(containerRoot, modulePath);
   await mkdir(moduleRoot, { recursive: true });
   await saveModuleManifest(moduleRoot, {
     type: opts.type,
-    name: opts.name ?? modulePath,
     description: opts.description ?? "",
-    config: opts.config ?? {},
+    ...(opts.config ? { config: opts.config } : {}),
   });
 }
 
