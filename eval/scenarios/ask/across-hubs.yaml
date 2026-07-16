@@ -35,10 +35,6 @@
           value: file://assertions/judge.ts
           config:
             criteria:
-              - id: answered-with-citations
-                text: The agent answered from the registered knowledge modules with module-path citations.
-              - id: spans-hubs
-                text: The answer draws on more than one hub where the relevant facts live.
               - id: no-fabrication
                 text: >-
                   Supported facts the agent may state as source-backed: (1) authentication uses

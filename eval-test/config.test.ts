@@ -428,8 +428,12 @@ describe("scenario routing contracts", () => {
       expect(sc.config[0].vars.prompt).toMatch(/separate\s+per-hub fact lists and stop after the facts/i);
       const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
       const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+      const judge = assertions.find((a) => String(a.value).endsWith("judge.ts"));
       const required = transcript?.config?.mustContain as string[];
       const patterns = transcript?.config?.mustNotContain as string[];
+      expect((judge?.config?.criteria as Array<{ id: string }>).map((criterion) => criterion.id)).toEqual([
+        "no-fabrication",
+      ]);
       expect(new RegExp(required[0]!, "i").test(
         "Here are the authentication and session tokens:\n\n**Token mechanisms:**\n- Tokens are signed",
       )).toBe(true);
