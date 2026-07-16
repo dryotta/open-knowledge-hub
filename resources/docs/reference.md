@@ -30,16 +30,16 @@ OKH does not register an MCP prompt surface.
 
 Direct resources:
 
-- `okh://hub`
+- `okh://containers`
 - `okh://docs/<path>`
 - `okh://instructions/<path>`
 - `ui://open-knowledge-hub/todos` for MCP App-capable hosts
 
 Templates:
 
-- `okh://hub/containers/{container}`
-- `okh://hub/containers/{container}/modules/{module}`
-- `okh://hub/containers/{container}/modules/{module}/files/{path}`
+- `okh://containers/{container}`
+- `okh://containers/{container}/modules/{module}`
+- `okh://containers/{container}/modules/{module}/files/{path}`
 
 Container and module instances are enumerated by `resources/list`. File leaves are
 discovered progressively from a module resource and read through the file template.

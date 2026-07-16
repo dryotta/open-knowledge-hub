@@ -12,7 +12,7 @@ import { listModuleFiles, readModuleFile } from "./moduleFiles.js";
 import type { ResourceProvider } from "./types.js";
 import {
   CONTAINER_URI_TEMPLATE,
-  HUB_URI,
+  CONTAINERS_URI,
   MODULE_FILE_URI_TEMPLATE,
   MODULE_URI_TEMPLATE,
   containerUri,
@@ -105,9 +105,9 @@ async function resolveModule(
   }
 }
 
-function renderHub(containers: ResolvedContainer[]): string {
+function renderContainerIndex(containers: ResolvedContainer[]): string {
   const lines = [
-    "# Open Knowledge Hub",
+    "# Containers",
     "",
     "Canonical documentation: [documentation index](okh://docs/index.md)",
     "",
@@ -192,17 +192,17 @@ async function renderModule(
   return `${lines.join("\n")}\n`;
 }
 
-export class HubResourceProvider implements ResourceProvider {
-  readonly id = "hub";
+export class ContainerResourceProvider implements ResourceProvider {
+  readonly id = "containers";
 
   constructor(private readonly service: ContainerService) {}
 
   async register(server: McpServer): Promise<void> {
     server.registerResource(
-      "hub",
-      HUB_URI,
+      "containers",
+      CONTAINERS_URI,
       {
-        title: "Open Knowledge Hub",
+        title: "Containers",
         description: "Browse registered containers and their modules.",
         mimeType: "text/markdown",
         annotations: { ...COMMON_ANNOTATIONS, priority: 1 },
@@ -211,14 +211,14 @@ export class HubResourceProvider implements ResourceProvider {
         contents: [{
           uri: uri.toString(),
           mimeType: "text/markdown",
-          text: renderHub(await this.service.resolveTargets()),
+          text: renderContainerIndex(await this.service.resolveTargets()),
           annotations: { ...COMMON_ANNOTATIONS, priority: 1 },
         }],
       }),
     );
 
     server.registerResource(
-      "hub-container",
+      "container",
       new ResourceTemplate(CONTAINER_URI_TEMPLATE, {
         list: async () => ({
           resources: (await this.service.resolveTargets()).map(containerResource),
@@ -250,7 +250,7 @@ export class HubResourceProvider implements ResourceProvider {
     );
 
     server.registerResource(
-      "hub-module",
+      "container-module",
       new ResourceTemplate(MODULE_URI_TEMPLATE, {
         list: async () => ({
           resources: (await this.service.resolveTargets()).flatMap((container) =>
@@ -302,7 +302,7 @@ export class HubResourceProvider implements ResourceProvider {
     );
 
     server.registerResource(
-      "hub-module-file",
+      "container-module-file",
       new ResourceTemplate(MODULE_FILE_URI_TEMPLATE, {
         list: undefined,
         complete: {

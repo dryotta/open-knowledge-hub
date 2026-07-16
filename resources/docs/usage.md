@@ -12,9 +12,9 @@ The default wake phrase is `hub`. Change it with
 
 MCP clients can browse:
 
-- `okh://hub` - containers
-- `okh://hub/containers/{container}` - one container's modules
-- `okh://hub/containers/{container}/modules/{module}` - overview and file links
+- `okh://containers` - containers
+- `okh://containers/{container}` - one container's modules
+- `okh://containers/{container}/modules/{module}` - overview and file links
 - `okh://docs/index.md` - canonical product documentation
 - `okh://instructions/index.md` - reusable built-in guidance
 

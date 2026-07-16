@@ -1,13 +1,13 @@
 import { McpError } from "@modelcontextprotocol/sdk/types.js";
 
-export const HUB_URI = "okh://hub";
+export const CONTAINERS_URI = "okh://containers";
 export const DOCS_URI_PREFIX = "okh://docs";
 export const INSTRUCTIONS_URI_PREFIX = "okh://instructions";
 
-export const CONTAINER_URI_TEMPLATE = `${HUB_URI}/containers/{container}`;
-export const MODULE_URI_TEMPLATE = `${HUB_URI}/containers/{container}/modules/{module}`;
+export const CONTAINER_URI_TEMPLATE = `${CONTAINERS_URI}/{container}`;
+export const MODULE_URI_TEMPLATE = `${CONTAINERS_URI}/{container}/modules/{module}`;
 export const MODULE_FILE_URI_TEMPLATE =
-  `${HUB_URI}/containers/{container}/modules/{module}/files/{path}`;
+  `${CONTAINERS_URI}/{container}/modules/{module}/files/{path}`;
 
 export function encodeUriSegment(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/gu, (character) =>
@@ -15,7 +15,7 @@ export function encodeUriSegment(value: string): string {
 }
 
 export function containerUri(container: string): string {
-  return `${HUB_URI}/containers/${encodeUriSegment(container)}`;
+  return `${CONTAINERS_URI}/${encodeUriSegment(container)}`;
 }
 
 export function moduleUri(container: string, module: string): string {

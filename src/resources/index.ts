@@ -10,7 +10,7 @@ import type {
 import { OkhError } from "../errors.js";
 import { skillResourcePaths, type Skill } from "../modules/skills.js";
 import { FileTreeResourceProvider, type FileTreeResourceEntry } from "./fileTree.js";
-import { HubResourceProvider } from "./hub.js";
+import { ContainerResourceProvider } from "./hub.js";
 import { mimeTypeForPath } from "./moduleFiles.js";
 import type { ResourceProvider } from "./types.js";
 import {
@@ -28,9 +28,9 @@ export class OkhResourceRegistry {
   constructor(
     readonly documentation: FileTreeResourceProvider,
     readonly instructions: FileTreeResourceProvider,
-    readonly hub: HubResourceProvider,
+    readonly containers: ContainerResourceProvider,
   ) {
-    this.providers = [hub, documentation, instructions];
+    this.providers = [containers, documentation, instructions];
   }
 
   async register(server: McpServer): Promise<void> {
@@ -130,7 +130,7 @@ export async function registerResources(
   const registry = new OkhResourceRegistry(
     documentation,
     instructions,
-    new HubResourceProvider(service),
+    new ContainerResourceProvider(service),
   );
   await registry.register(server);
   return registry;

@@ -72,7 +72,8 @@ describe("MCP resources", () => {
     const listed = await client.listResources();
     const uris = listed.resources.map((resource) => resource.uri);
 
-    expect(uris).toContain("okh://hub");
+    expect(uris).toContain("okh://containers");
+    expect(uris).not.toContain("okh://hub");
     expect(uris).toContain("okh://docs/index.md");
     expect(uris).toContain("okh://instructions/index.md");
     expect(uris).toContain("okh://instructions/okf/writer.md");
@@ -81,19 +82,24 @@ describe("MCP resources", () => {
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((template) => template.uriTemplate)).toEqual(
       expect.arrayContaining([
-        "okh://hub/containers/{container}",
-        "okh://hub/containers/{container}/modules/{module}",
-        "okh://hub/containers/{container}/modules/{module}/files/{path}",
+        "okh://containers/{container}",
+        "okh://containers/{container}/modules/{module}",
+        "okh://containers/{container}/modules/{module}/files/{path}",
       ]),
     );
   });
 
-  it("reads hub indexes, text module files, and binary module files", async () => {
+  it("reads the container index, text module files, and binary module files", async () => {
     const { client } = await connectWithKnowledgeModule();
 
-    const hub = await client.readResource({ uri: "okh://hub" });
-    expect(hub.contents[0]).toMatchObject({ uri: "okh://hub", mimeType: "text/markdown" });
-    expect("text" in hub.contents[0] ? hub.contents[0].text : "").toContain("hub");
+    const containers = await client.readResource({ uri: "okh://containers" });
+    expect(containers.contents[0]).toMatchObject({
+      uri: "okh://containers",
+      mimeType: "text/markdown",
+    });
+    expect("text" in containers.contents[0] ? containers.contents[0].text : "")
+      .toContain("# Containers");
+    await expect(client.readResource({ uri: "okh://hub" })).rejects.toThrow(/not found/);
 
     const moduleIndex = await client.readResource({ uri: moduleUri("hub", "kb") });
     const indexText = "text" in moduleIndex.contents[0] ? moduleIndex.contents[0].text : "";
