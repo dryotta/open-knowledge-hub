@@ -1,5 +1,5 @@
 ---
-name: okf-writer
+title: OKF writer
 description: Author an Open Knowledge Format (OKF) bundle from gathered findings, with every claim grounded in cited sources. Use when a skill needs to write knowledge as a portable markdown bundle.
 ---
 
@@ -8,7 +8,8 @@ description: Author an Open Knowledge Format (OKF) bundle from gathered findings
 Author a knowledge pack as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
 bundle — a directory of markdown concept docs with YAML frontmatter, cross-linked, git-tracked.
 
-The full format rules are in [OKF-FORMAT.md](OKF-FORMAT.md). Read it before writing. This file
+The full format rules are in the [OKF format instructions](okh://instructions/okf/format.md).
+Read them before writing. This file
 is about *how to write a good code-knowledge bundle*, not the spec.
 
 ## Where it goes
@@ -70,7 +71,8 @@ sources rather than re-deriving or contradicting them. Do not re-derive what the
 
 ## Completion criterion
 
-- The bundle is OKF-conformant (see [OKF-FORMAT.md](OKF-FORMAT.md) §Conformance): every
+- The bundle is OKF-conformant (see the
+  [OKF format instructions](okh://instructions/okf/format.md) §Conformance): every
   non-reserved `.md` has parseable frontmatter with a non-empty `type`.
 - Root `index.md` carries the scope contract (goals + target questions + out-of-scope), declared
   concept types, and the generation SHA.

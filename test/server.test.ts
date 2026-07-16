@@ -71,7 +71,7 @@ function normalizedWhitespace(text: string | undefined): string {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 12 tools and no prompts", async () => {
+  it("exposes exactly the 13 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([
@@ -82,6 +82,7 @@ describe("MCP server surface", () => {
       "config",
       "context",
       "dream",
+      "help",
       "inspect",
       "onboard",
       "run",
@@ -265,6 +266,7 @@ describe("MCP server surface", () => {
     const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations ?? {}]));
     expect(byName.inspect!.readOnlyHint).toBe(true);
     expect(byName.ask!.readOnlyHint).toBe(true);
+    expect(byName.help!.readOnlyHint).toBe(true);
     expect(byName.add_container!.openWorldHint).toBe(true);
     expect(byName.add_module!.openWorldHint).toBe(true);
     expect(byName.sync!.openWorldHint).toBe(true);
@@ -715,6 +717,15 @@ describe("MCP server surface", () => {
     expect(text).toContain("User prefers dark mode");
     expect(text).toContain("mem");
     expect(text).toMatch(/append|timestamp/i);
+  });
+
+  it("run requires an explicit container and module", async () => {
+    const { client } = await connect();
+    const res = await client.callTool({
+      name: "run",
+      arguments: { skill: "grilling" },
+    });
+    expect(isErrorResult(res)).toBe(true);
   });
 
   it("dream tool returns the consolidation discipline pointing at resolved modules", async () => {

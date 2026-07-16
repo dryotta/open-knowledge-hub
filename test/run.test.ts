@@ -173,52 +173,30 @@ describe("effective skills + resolveSkill", () => {
   });
 });
 
-describe("shared skills", () => {
-  it("resolveSharedSkill returns the grilling body; unknown throws with a list", async () => {
-    const { svc } = await setup();
-    const s = await svc.resolveSharedSkill("grilling");
-    expect(s.body.length).toBeGreaterThan(0);
-    expect(s.body).toMatch(/one decision at a time/i);
-    expect(s.body).toMatch(/do\s+not\s+bundle\s+separate\s+decisions/i);
-    expect(s.body).toMatch(/at most three tightly related question marks/i);
-    expect(s.body).toMatch(/prefer exactly one question mark/i);
-    expect(s.body).toMatch(/option bullets[\s\S]{0,100}without\s+question marks/i);
-    expect(s.body).toMatch(/do not restate the decision as a trailing follow-up question/i);
-    expect(s.body).toMatch(/recommendation adjacent to the question/i);
-    await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
-  });
-
-  it("resolveSharedSkill returns the ingest body; ingest is listed among shared skills", async () => {
-    const { svc } = await setup();
-    const s = await svc.resolveSharedSkill("ingest");
-    expect(s.name).toBe("ingest");
-    expect(s.body).toMatch(/route/i);
-    expect(s.body).toMatch(/llmwiki/);
-    expect(s.body).toMatch(/hard turn boundary/i);
-    expect(s.body).toMatch(/internal scope-gate decision is not user confirmation/i);
-    expect(s.body).toMatch(/do not copy sources, call the target skill, edit module files, or sync/i);
-    await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
-  });
-});
-
 describe("llmwiki skill body contracts", () => {
-  it("initialize skill body requires invoking shared grilling and states next-steps is not completion", async () => {
+  it("initialize declares common instructions and states next-steps is not completion", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", description: "" });
     const s = await svc.resolveSkill("h", "wiki", "initialize");
-    expect(s.body).toMatch(/must invoke.*grilling/i);
+    expect(s.resourceUris).toEqual(expect.arrayContaining([
+      "okh://instructions/grilling.md",
+      "okh://instructions/ingest.md",
+      "okh://instructions/okf/writer.md",
+    ]));
+    expect(s.body).toMatch(/must read and apply.*grilling/i);
     expect(s.body).toMatch(/next\s+steps.*not completion/is);
   });
 
-  it("write skill body requires shared okf-writer invocation omitting container/module, declared type, and final inspect", async () => {
+  it("write skill declares OKF instructions, keeps its module target, and requires final inspect", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", description: "" });
     const s = await svc.resolveSkill("h", "wiki", "write");
-    // shared okf-writer invocation omits container/module because it's shared
-    expect(s.body).toMatch(/omit.*container.*module|omitting.*container.*module/i);
-    // use declared type vocabulary
+    expect(s.resourceUris).toEqual(expect.arrayContaining([
+      "okh://instructions/grilling.md",
+      "okh://instructions/okf/writer.md",
+    ]));
+    expect(s.body).toMatch(/keep the active module target/i);
     expect(s.body).toMatch(/declared.*type/i);
-    // final inspect
     expect(s.body).toMatch(/inspect/i);
     expect(s.body).toMatch(/name every affected page by its exact\s+bundle-relative path/i);
   });

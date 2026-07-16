@@ -144,7 +144,7 @@ describe("validate", () => {
 });
 
 describe("inspect", () => {
-  it("returns a hub map with the container and global skills", async () => {
+  it("returns a hub map without module-less skills", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
@@ -152,10 +152,7 @@ describe("inspect", () => {
     expect(res.kind).toBe("hub");
     if (res.kind !== "hub") throw new Error("expected hub map");
     expect(res.containers[0]!.name).toBe("hub");
-    // Global (server-bundled, module-less) skills are always listed, with descriptions.
-    expect(res.globalSkills.length).toBeGreaterThan(0);
-    expect(res.globalSkills.map((s) => s.name)).toContain("ingest");
-    expect(res.globalSkills.every((s) => typeof s.description === "string")).toBe(true);
+    expect(res).not.toHaveProperty("globalSkills");
   });
 
   it("hoists module type skills once per in-use type and lists modules by type", async () => {

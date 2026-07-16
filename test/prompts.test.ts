@@ -137,7 +137,7 @@ describe("prompt builders", () => {
     const target: ResolvedContainer = targets[0]!;
     const mod: ResolvedModule = target.modules[1]!;
     const skill: Skill = { name: "remember", description: "Record an observation", body: "Append-only timestamped entries.", source: "vendored" };
-    const text = await buildRun(skill, "Observed X", target, mod);
+    const text = await buildRun(skill, target, mod, "Observed X");
     expect(text).toContain("remember");
     expect(text).toContain("Append-only timestamped entries.");
     expect(text).toContain("mem");
@@ -145,14 +145,6 @@ describe("prompt builders", () => {
     expect(text).toContain("Observed X");
     expect(text).toMatch(/for each changed container/i);
     expect(text).toMatch(/immediately call\s+`sync \{ container \}`/i);
-  });
-  it("buildRun without a target renders a module-less shared skill", async () => {
-    const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
-    const text = await buildRun(skill, "Draft the auth pack");
-    expect(text).toContain("okf-writer");
-    expect(text).toContain("Write cited concepts.");
-    expect(text).toContain("Draft the auth pack");
-    expect(text).not.toContain("**Module:**");
   });
   it("buildRun with shared sync renders branch not [object Object]", async () => {
     const sharedTarget: ResolvedContainer = {
@@ -163,7 +155,7 @@ describe("prompt builders", () => {
     };
     const mod = sharedTarget.modules[0]!;
     const skill: Skill = { name: "remember", description: "Record", body: "Append.", source: "vendored" };
-    const text = await buildRun(skill, undefined, sharedTarget, mod);
+    const text = await buildRun(skill, sharedTarget, mod);
     expect(text).toContain("shared");
     expect(text).toContain("user/alice/hub");
     expect(text).not.toContain("[object Object]");

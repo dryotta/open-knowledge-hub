@@ -4,7 +4,7 @@
 {{var:target}}# Input
 {{var:input}}
 
-{{var:resources}}<discipline name="{{var:skill/name}}">
+<discipline name="{{var:skill/name}}">
 
 {{var:skill/body}}
 

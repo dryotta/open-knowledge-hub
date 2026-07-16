@@ -1,5 +1,4 @@
 import type { ResolvedContainer, ResolvedModule } from "../container/service.js";
-import { skillResourcePaths } from "../modules/shared.js";
 import type { Skill } from "../modules/skills.js";
 import { renderTemplate } from "./templates.js";
 import { formatSyncDescriptor } from "../util/syncFormat.js";
@@ -18,12 +17,6 @@ function renderTargets(targets: ResolvedContainer[]): string {
       return `${header}\n${mods}`;
     })
     .join("\n");
-}
-
-/** Render a skill's resource paths block (empty when there are none). */
-function renderResources(paths: string[]): string {
-  if (paths.length === 0) return "";
-  return `# Skill resources\nOpen as needed:\n${paths.map((p) => `- \`${p}\``).join("\n")}\n\n`;
 }
 
 export function buildInstructions(config: Record<string, unknown>): Promise<string> {
@@ -48,25 +41,31 @@ export function buildAddModule(targets: ResolvedContainer[], moduleTypes: readon
   });
 }
 
-/** Render a skill run. With target+module it's a module skill; with neither, a module-less shared skill. */
-export async function buildRun(
+/** Render a module-scoped skill run. */
+export function buildRun(
   skill: Skill,
+  target: ResolvedContainer,
+  module: ResolvedModule,
   input?: string,
-  target?: ResolvedContainer,
-  module?: ResolvedModule,
 ): Promise<string> {
   const targetBlock =
-    target && module
-      ? `# Target\n` +
-        `- Module: ${module.type} · \`${module.path}\` → \`${module.absPath}\`\n` +
-        `- Container: ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n\n`
-      : "";
+    `# Target\n`
+    + `- Module: ${module.type} · \`${module.path}\` → \`${module.absPath}\`\n`
+    + `- Container: ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n\n`;
   return renderTemplate("run", {
     vars: {
       skill: { name: skill.name, description: skill.description, body: skill.body },
       input: input ?? NONE,
       target: targetBlock,
-      resources: renderResources(await skillResourcePaths(skill)),
+    },
+  });
+}
+
+export function buildHelp(question: string | undefined, resourceUris: string[]): Promise<string> {
+  return renderTemplate("help", {
+    vars: {
+      question: question?.trim() || "Explain how to use Open Knowledge Hub effectively.",
+      resources: resourceUris.map((uri) => `- \`${uri}\``).join("\n"),
     },
   });
 }

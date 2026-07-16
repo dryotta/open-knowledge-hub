@@ -1,6 +1,8 @@
 ---
 name: lint
 description: Health-check this llmwiki — read the deterministic structural report, then fix contradictions, stale claims, and missing links, and suggest what to write next.
+resources:
+  - okh://instructions/okf/writer.md
 ---
 
 # Lint an llmwiki module
@@ -19,7 +21,7 @@ Run `inspect { container, module }`. Its **Wiki health** block lists, determinis
 
 ## Stage 2 — Fix the mechanical issues
 
-Author edits with the global **okf-writer** skill (`run { skill: "okf-writer" }`):
+Author edits with the [OKF writer instructions](okh://instructions/okf/writer.md):
 
 - Add the missing inbound links (or, if a page truly belongs nowhere, question whether it should
   exist).

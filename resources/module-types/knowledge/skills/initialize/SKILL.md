@@ -1,6 +1,10 @@
 ---
 name: initialize
 description: Shape a newly-created knowledge module — grill out its requirements and structure, then scaffold that structure (empty module) or review and edit existing content to serve it.
+resources:
+  - okh://instructions/grilling.md
+  - okh://instructions/ingest.md
+  - okh://instructions/okf/writer.md
 ---
 
 # Initialize a knowledge module
@@ -14,8 +18,9 @@ know-how.
 
 ## Stage 1 — Grill the requirements and structure
 
-Run the global **grilling** skill (`run { skill: "grilling" }`), then record the agreed **scope
-contract** in the module's `index.md` (its skeleton already lays out these sections):
+Read and apply the [grilling instructions](okh://instructions/grilling.md), then record the
+agreed **scope contract** in the module's `index.md` (its skeleton already lays out these
+sections):
 
 - **Goals** — what this module is *for*: who reads it and what they need to accomplish (1–3
   sentences). Goals are the yardstick for every later decision.
@@ -34,7 +39,8 @@ Also decide **source retention** — whether documents ingested into this module
 the module** (default **no**). If yes, write a `## Sources` section to `index.md` recording
 **Retain copies: yes**, the **Folder** (default `./sources/`), and the **Bucketing** (default by
 month, `<YYYY-MM>/`, the ingest date). If retention stays off, either omit the section or write
-`Retain copies: no`. The `ingest` skill reads this section and honors it.
+`Retain copies: no`. The [ingest instructions](okh://instructions/ingest.md) read this section
+and honor it.
 
 Grill until goals, requirements, out-of-scope, and structure are sharp and consistent. Reject
 vague or unbounded requirements ("capture everything" is not a requirement).
@@ -48,8 +54,8 @@ the root `index.md`, and create the declared group folders with their own `index
 invent content** — concepts accrue later through the `learn` skill. You're done.
 
 **Existing content** (an imported pack, or material already in the folder) — review it against the
-requirements and edit it to fit. For an OKF bundle, author edits with the global **okf-writer**
-skill (`run { skill: "okf-writer" }`):
+requirements and edit it to fit. For an OKF bundle, author edits using the
+[OKF writer instructions](okh://instructions/okf/writer.md):
 
 - **Keep & organize** what serves a requirement; map it into the declared structure.
 - **Cut** anything no requirement needs.

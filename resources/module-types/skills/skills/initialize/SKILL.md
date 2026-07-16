@@ -1,6 +1,8 @@
 ---
 name: initialize
 description: Define a skills module's scope and organize its skills into a scalable area tree
+resources:
+  - okh://instructions/grilling.md
 ---
 
 # Initialize a skills module
@@ -8,7 +10,8 @@ description: Define a skills module's scope and organize its skills into a scala
 Build a cohesive, navigable skill collection. Do not default to one global skills
 module: module boundaries are part of the design.
 
-1. **Establish the contract.** Invoke `run { skill: "grilling" }` to clarify the
+1. **Establish the contract.** Read and apply the
+   [grilling instructions](okh://instructions/grilling.md) to clarify the
    users, recurring work, capability areas, ownership, access, and sync lifecycle.
    Decide what belongs here and what belongs in another skills module.
 2. **Choose module boundaries.** Use separate modules when skills have different

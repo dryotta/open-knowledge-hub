@@ -40,7 +40,8 @@ cited/checked (e.g. code: cite repo paths, pin a commit SHA). Keep this section 
 ## Sources
 
 <!-- Optional — ingestion retention policy. Default: do not keep copies.
-To keep a copy of each ingested source in this module, set Retain copies: yes and adjust:
+To keep a copy of each source handled through `okh://instructions/ingest.md` in this
+module, set Retain copies: yes and adjust:
 - **Retain copies:** yes
 - **Folder:** `./sources/`
 - **Bucketing:** by month — `<YYYY-MM>/` (the ingest date)

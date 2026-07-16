@@ -14,6 +14,8 @@ export interface Skill {
   dir?: string;
   /** POSIX path to SKILL.md, relative to the skill root represented by `source`. */
   path?: string;
+  /** MCP resources that must be read when applying this skill. */
+  resourceUris?: string[];
 }
 
 /** Module-local skill roots scanned, in precedence order: on a name collision an
@@ -44,6 +46,7 @@ export interface SkillRootScan {
 }
 
 const SKILL_TREE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+const SKILL_RESOURCE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
 
 function isNotFound(err: unknown): boolean {
   return (
@@ -67,6 +70,30 @@ function skillFromText(
   const { data, body } = parseFrontmatter(text);
   const name = stringField(data, "name")?.trim();
   if (!name) return undefined;
+  const rawResources = data["resources"];
+  let resourceUris: string[] | undefined;
+  if (rawResources !== undefined) {
+    if (
+      !Array.isArray(rawResources)
+      || rawResources.some((value) => typeof value !== "string" || value.trim().length === 0)
+    ) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Skill "${name}" frontmatter resources must be an array of non-empty URI strings.`,
+      );
+    }
+    resourceUris = rawResources.map((value) => value.trim());
+    for (const uri of resourceUris) {
+      try {
+        new URL(uri);
+      } catch {
+        throw new OkhError(
+          "INVALID_MANIFEST",
+          `Skill "${name}" has invalid resource URI "${uri}".`,
+        );
+      }
+    }
+  }
   return {
     name,
     description: stringField(data, "description")?.trim() ?? "",
@@ -74,6 +101,7 @@ function skillFromText(
     source,
     dir,
     ...(path ? { path } : {}),
+    ...(resourceUris?.length ? { resourceUris } : {}),
   };
 }
 
@@ -115,7 +143,13 @@ export async function scanSkillsInRoot(root: string, source: string): Promise<Sk
           issues.push(`${path}: cannot read file`);
           return;
         }
-        const skill = skillFromText(text, dir, source, path);
+        let skill: Skill | undefined;
+        try {
+          skill = skillFromText(text, dir, source, path);
+        } catch (error) {
+          issues.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+          return;
+        }
         if (!skill) {
           issues.push(`${path}: missing non-empty frontmatter name`);
           return;
@@ -248,4 +282,47 @@ export function mergeSkills(vendored: Skill[], local: Skill[]): Skill[] {
       (a.path ?? "").localeCompare(b.path ?? "") ||
       a.source.localeCompare(b.source),
   );
+}
+
+/** Absolute paths of a skill's sibling files, excluding SKILL.md and common cache/build noise. */
+export async function skillResourcePaths(skill: Skill): Promise<string[]> {
+  const rootDir = skill.dir;
+  if (!rootDir) return [];
+  const out: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") {
+        throw new OkhError(
+          "NOT_FOUND",
+          `Resources for skill "${skill.name}" are no longer available.`,
+        );
+      }
+      if (code === "EACCES" || code === "EPERM") {
+        throw new OkhError(
+          "INVALID_MANIFEST",
+          `Resources for skill "${skill.name}" cannot be read.`,
+        );
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (SKILL_RESOURCE_SKIP_DIRS.has(entry.name)) continue;
+        await walk(full);
+      } else if (entry.isFile()) {
+        if (dir === rootDir && entry.name === "SKILL.md") continue;
+        out.push(full);
+      }
+    }
+  }
+
+  await walk(rootDir);
+  return out.sort();
 }

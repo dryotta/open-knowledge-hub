@@ -48,8 +48,6 @@
             expect:
               - name: run
                 arguments: { container: wiki-hub, module: new-wiki, skill: initialize }
-              - name: run
-                arguments: { skill: grilling }
               - name: sync
         - type: javascript
           value: file://assertions/llmwiki-state.ts

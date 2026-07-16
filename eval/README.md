@@ -140,7 +140,7 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 | env | placement | hubs | used for |
 |-----|-----------|------|----------|
 | `local-and-git` | registered | `kb-hub` (local) + `git-hub` (git-auto) | `ask/*`, `context/*`, `remember/*`, `reflect/*`, `learn/trivial-fact` |
-| `empty` | workspace | `notes` (unregistered folder in the cwd) | `onboard/*`, `run/shared-grilling` |
+| `empty` | workspace | `notes` (unregistered folder in the cwd) | `onboard/*`, `help/grilling` |
 | `wiki` | registered | `wiki-hub` (local) | `initialize/llmwiki`, `ask/llmwiki-compounding`, `write/*` |
 | `custom` | registered | `custom-hub` (local) | `inspect/custom-module`, `run/custom-skill` |
 | `health` | registered | `health-hub` (local); `workspaceDir` = `fixtures/health-source` | `ingest/into-existing-module`, `lint/*` |
@@ -405,7 +405,7 @@ $env:GH_TOKEN = "..."                      # Linux/CI only, if needed for auth
   **rejected** by the learn gate (`module-unchanged` verifies nothing changed).
 
 - **ingest** (env `health`):
-  > hub, use the shared "ingest" skill to ingest `./lab-results.txt` into my existing Health module.
+  > hub, ingest `./lab-results.txt` into my existing Health module.
 
   Expect: routes through `ingest` and the module's `learn` skill, writes valid OKF, retains the
   source under `sources/`, avoids re-initialization, and syncs.

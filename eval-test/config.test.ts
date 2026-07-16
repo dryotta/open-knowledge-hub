@@ -23,7 +23,8 @@ const EXPECTED_COUNTS: Record<string, number> = {
   reflect: 1,
   onboard: 7,
   inspect: 1,
-  run: 3,
+  run: 2,
+  help: 1,
   write: 1,
   todo: 1,
   todos: 1,
@@ -102,31 +103,33 @@ describe("deterministic custom, context, and ingest scenarios", () => {
     const tools = assertions.find((a) => String(a.value).endsWith("tools-called.ts"));
     expect(tools?.config?.ordered).toBe(true);
     expect(tools?.config?.expect).toEqual([
-      expect.objectContaining({ name: "run", arguments: { skill: "ingest" } }),
+      expect.objectContaining({ name: "help" }),
       expect.objectContaining({ name: "run", arguments: { container: "health-hub", module: "health", skill: "learn" } }),
       expect.objectContaining({ name: "sync", arguments: { container: "health-hub" } }),
     ]);
-    expect(tools?.config?.forbid).toEqual([
+    expect(tools?.config?.forbid).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "run", arguments: { skill: "initialize" } }),
+      expect.objectContaining({ name: "run", arguments: { skill: "ingest" } }),
       expect.objectContaining({
         name: "run",
         turn: 1,
         arguments: expect.objectContaining({ skill: "learn" }),
       }),
       expect.objectContaining({ name: "sync", turn: 1 }),
-    ]);
+    ]));
     expect(assertions.map((a) => a.value)).toEqual(expect.arrayContaining([
       "file://assertions/okf-valid.ts",
       "file://assertions/source-retained.ts",
     ]));
     expect(assertions.some((a) => String(a.value).endsWith("judge.ts"))).toBe(false);
-    expect(sc.config[0].vars.prompt).toMatch(/shared "ingest" skill/i);
+    expect(sc.config[0].vars.prompt).toMatch(/\bingest\b/i);
+    expect(sc.config[0].vars.prompt).not.toMatch(/shared skill/i);
     expect(sc.config[0].vars.turns).toEqual([
       expect.objectContaining({ id: "routing-confirmed", after: "start" }),
     ]);
     expect(sc.config[0].vars.terminal).toMatchObject({
       after: "routing-confirmed",
-      requiredTools: ["run", "sync"],
+      requiredTools: ["help", "run", "sync"],
     });
     expect((tools?.config?.expect as Array<{ turn?: number }>).map((entry) => entry.turn)).toEqual([1, 2, 2]);
   });
@@ -164,7 +167,7 @@ describe("promptfoo tier configs", () => {
       "file://scenarios/ingest/into-existing-module.yaml",
       "file://scenarios/write/into-wiki.yaml",
       "file://scenarios/ask/answerable.yaml",
-      "file://scenarios/run/shared-grilling.yaml",
+      "file://scenarios/help/grilling.yaml",
     ]));
   });
 });
@@ -567,7 +570,7 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.ordered, "initialize must use ordered expectations").toBe(true);
 
     const expectations = cfg!.expect;
-    expect(expectations.length).toBeGreaterThanOrEqual(3);
+    expect(expectations).toHaveLength(2);
 
     // First: module initialize with container/module/skill args
     const initExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
@@ -576,15 +579,6 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(initExp.arguments!.container).toBe("wiki-hub");
     expect(initExp.arguments!.module).toBe("new-wiki");
     expect(initExp.arguments!.skill).toBe("initialize");
-
-    // Second: shared grilling (no container/module required)
-    const grillExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
-    expect(grillExp.name).toBe("run");
-    expect(grillExp.arguments).toBeDefined();
-    expect(grillExp.arguments!.skill).toBe("grilling");
-    // shared skill must not require container/module keys
-    expect(grillExp.arguments).not.toHaveProperty("container");
-    expect(grillExp.arguments).not.toHaveProperty("module");
 
     // Last: sync
     const syncExp = expectations[expectations.length - 1] as { name: string; turn?: number } | string;
@@ -642,7 +636,7 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.ordered, "write must use ordered expectations").toBe(true);
 
     const expectations = cfg!.expect;
-    expect(expectations.length).toBeGreaterThanOrEqual(4);
+    expect(expectations).toHaveLength(3);
 
     // 1: module run write
     const writeExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
@@ -651,21 +645,14 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(writeExp.arguments!.module).toBe("wiki");
     expect(writeExp.arguments!.skill).toBe("write");
 
-    // 2: shared okf-writer (no container/module)
-    const writerExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
-    expect(writerExp.name).toBe("run");
-    expect(writerExp.arguments!.skill).toBe("okf-writer");
-    expect(writerExp.arguments).not.toHaveProperty("container");
-    expect(writerExp.arguments).not.toHaveProperty("module");
-
-    // 3: inspect
-    const inspectExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
+    // 2: inspect
+    const inspectExp = expectations[1] as { name: string; arguments?: Record<string, unknown> };
     expect(inspectExp.name).toBe("inspect");
     expect(inspectExp.arguments!.container).toBe("wiki-hub");
     expect(inspectExp.arguments!.module).toBe("wiki");
 
-    // 4: sync
-    const syncExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
+    // 3: sync
+    const syncExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
     expect(typeof syncExp === "string" ? syncExp : syncExp.name).toBe("sync");
     if (typeof syncExp !== "string") {
       expect(syncExp.arguments!.container).toBe("wiki-hub");
@@ -719,7 +706,7 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.ordered, "compounding must use ordered expectations").toBe(true);
 
     const expectations = cfg!.expect;
-    expect(expectations.length).toBeGreaterThanOrEqual(6);
+    expect(expectations).toHaveLength(5);
 
     // 1: ask the wiki before writing
     const askExp = expectations[0] as { name: string; arguments?: Record<string, unknown> };
@@ -738,19 +725,12 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(writeExp.arguments!.module).toBe("wiki");
     expect(writeExp.arguments!.skill).toBe("write");
 
-    // 4: shared okf-writer (no container/module)
-    const writerExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
-    expect(writerExp.name).toBe("run");
-    expect(writerExp.arguments!.skill).toBe("okf-writer");
-    expect(writerExp.arguments).not.toHaveProperty("container");
-    expect(writerExp.arguments).not.toHaveProperty("module");
-
-    // 5: inspect
-    const inspectExp = expectations[4] as { name: string; arguments?: Record<string, unknown> };
+    // 4: inspect
+    const inspectExp = expectations[3] as { name: string; arguments?: Record<string, unknown> };
     expect(inspectExp.name).toBe("inspect");
 
-    // 6: sync
-    const syncExp = expectations[5] as { name: string; arguments?: Record<string, unknown> };
+    // 5: sync
+    const syncExp = expectations[4] as { name: string; arguments?: Record<string, unknown> };
     expect(typeof syncExp === "string" ? syncExp : syncExp.name).toBe("sync");
   });
 
@@ -777,21 +757,24 @@ describe("llmwiki scenario structured tool expectations", () => {
     )).toBe(true);
   });
 
-  it("run/shared-grilling.yaml routes a concrete plan through the module-less shared skill", async () => {
-    const sc = await loadScenario("run/shared-grilling.yaml");
+  it("help/grilling.yaml discovers common guidance without a module-less run", async () => {
+    const sc = await loadScenario("help/grilling.yaml");
     const cfg = getToolsCalledConfig(sc);
     expect(cfg, "tools-called config must exist").toBeDefined();
     expect(cfg!.expect[0]).toMatchObject({
-      name: "run",
-      arguments: { skill: "grilling" },
+      name: "help",
     });
-    const args = (cfg!.expect[0] as { arguments: Record<string, unknown> }).arguments;
-    expect(args).not.toHaveProperty("container");
-    expect(args).not.toHaveProperty("module");
     expect(sc.config[0].vars.prompt).toMatch(/GitHub OAuth/i);
-    expect(sc.config[0].vars.prompt).toMatch(/shared "grilling" skill/i);
+    expect(sc.config[0].vars.prompt).not.toMatch(/shared "grilling" skill/i);
     expect(sc.config[0].vars.prompt).toMatch(/one decision at a time/i);
-    expect(cfg!.forbid).toEqual(expect.arrayContaining(["add_container", "add_module", "sync", "config", "todos"]));
+    expect(cfg!.forbid).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "run", arguments: { skill: "grilling" } }),
+      "add_container",
+      "add_module",
+      "sync",
+      "config",
+      "todos",
+    ]));
     const assertionValues = sc.tests[0].assert.map((assertion: { value?: string }) => assertion.value);
     expect(assertionValues).toContain("file://assertions/grilling-response.ts");
     expect(assertionValues).toContain("file://assertions/judge.ts");

@@ -17,7 +17,15 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun, buildDream } from "../prompts/index.js";
+import {
+  buildAddModule,
+  buildAsk,
+  buildContext,
+  buildDream,
+  buildHelp,
+  buildOnboard,
+  buildRun,
+} from "../prompts/index.js";
 import { BUILTIN_MODULE_TYPES } from "../modules/types.js";
 import { vendoredSkills } from "../modules/vendored.js";
 import { TodoService } from "../todos/service.js";
@@ -30,14 +38,14 @@ import {
 } from "./capabilityProbes.js";
 import { formatSyncDescriptor } from "../util/syncFormat.js";
 import { loadPromptFile } from "../prompts/templates.js";
+import type { OkhResourceRegistry } from "../resources/index.js";
 
-/** Render the no-arg hub map as `#`-delimited sections: `# Hub` (wake phrase), `# Running skills`
- * (the two `run` invocation shapes + flow note), `# Global skills`, `# Built-in skills` (grouped by
- * module type), and `# Module skills` (containers → modules with each module's full runnable set —
+/** Render the no-arg hub map as `#`-delimited sections: `# Hub` (wake phrase), `# Running skills`,
+ * `# Built-in skills` (grouped by module type), and `# Module skills` (containers → modules with
+ * each module's full runnable set —
  * built-in skills by name, descriptions living once in the Built-in skills section, contrasted with
  * local skills as name — description). The `# Guardrails` footer is appended by the handler. */
 function formatHub(r: HubMap): string {
-  const globalExample = r.globalSkills[0]?.name;
   let moduleExample: { container: string; module: string; skill: string } | undefined;
   for (const c of r.containers) {
     const m = c.modules[0];
@@ -55,21 +63,17 @@ function formatHub(r: HubMap): string {
     "",
     "# Running skills",
     "Run any skill listed below with the `run` tool. Examples:",
-    `- a global skill: run { skill: ${JSON.stringify(globalExample ?? "<skill>")} }`,
     moduleExample
-      ? `- a built-in or local skill: run { container: ${JSON.stringify(moduleExample.container)}, module: ${JSON.stringify(moduleExample.module)}, skill: ${JSON.stringify(moduleExample.skill)} }`
-      : "- a built-in or local skill: run { container: \"<container>\", module: \"<module>\", skill: \"<skill>\" }",
+      ? `- run { container: ${JSON.stringify(moduleExample.container)}, module: ${JSON.stringify(moduleExample.module)}, skill: ${JSON.stringify(moduleExample.skill)} }`
+      : "- run { container: \"<container>\", module: \"<module>\", skill: \"<skill>\" }",
     "`run` returns the skill's instructions for you to carry out — it does not do the work itself.",
     "",
   ];
 
-  lines.push("# Global skills");
-  lines.push("Run with no container/module.");
-  lines.push(
-    ...(r.globalSkills.length
-      ? r.globalSkills.map((s) => `- ${s.name}${s.description ? ` — ${s.description}` : ""}`)
-      : ["- (none)"]),
-  );
+  lines.push("# Common instructions");
+  lines.push("Reusable guidance is read through MCP resources, not run as a module-less skill.");
+  lines.push("- index: okh://instructions/index.md");
+  lines.push("- source ingestion: okh://instructions/ingest.md");
   lines.push("");
 
   const types = Object.keys(r.moduleTypeSkills);
@@ -288,6 +292,7 @@ export async function registerTools(
   service: ContainerService,
   paths: OkhPaths,
   todoService: TodoService,
+  resources: OkhResourceRegistry,
   options: RegisterToolsOptions = {},
 ): Promise<void> {
   server.registerTool(
@@ -323,6 +328,7 @@ export async function registerTools(
       if (outcome.kind === "plan") {
         return ok(formatContainerPlan(outcome.plan), { plan: outcome.plan, needsConfirmation: true });
       }
+      await server.sendResourceListChanged();
       return ok(`Registered container "${outcome.entry.name}" [${outcome.entry.backend.type}] at ${outcome.entry.localPath}.`, { entry: outcome.entry });
     }),
   );
@@ -348,6 +354,7 @@ export async function registerTools(
         create: true,
       });
       if (outcome.kind !== "applied") return fail("add_module create:true did not apply.");
+      await server.sendResourceListChanged();
       const added = `Added ${outcome.entry.type} module "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
       const hasInit = (await vendoredSkills(outcome.entry.type)).some((s) => s.name === "initialize");
       const next = hasInit
@@ -363,6 +370,7 @@ export async function registerTools(
     handler(async (args: { container?: string; message?: string; /** Named action. Currently supports "publish-pr" for shared-mode containers. */ action?: string }) => {
       if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
       const results = await service.sync(args.container, args.message, args.action);
+      await server.sendResourceListChanged();
       return ok(formatSync(results), { results });
     }),
   );
@@ -431,6 +439,19 @@ export async function registerTools(
   );
 
   server.registerTool(
+    "help",
+    { ...(await toolReg("help")), annotations: { readOnlyHint: true, openWorldHint: false } },
+    handler(async (args: { question?: string }) => {
+      const links = resources.helpLinks(args.question);
+      return ok(
+        await buildHelp(args.question, links.map((link) => link.uri)),
+        { resources: links.map(({ uri, name, title, description }) => ({ uri, name, title, description })) },
+        links,
+      );
+    }),
+  );
+
+  server.registerTool(
     "onboard",
     { ...(await toolReg("onboard")), annotations: { readOnlyHint: true, openWorldHint: false } },
     handler(async () => {
@@ -440,7 +461,7 @@ export async function registerTools(
     }),
   );
 
-  await registerFlowTools(server, service);
+  await registerFlowTools(server, service, resources);
   await registerTodoTools(server, todoService, {
     ...(options.todoWebUrl !== undefined ? { webUrl: options.todoWebUrl } : {}),
   });
@@ -461,7 +482,11 @@ export async function registerTools(
  * text (instructions) for the agent to follow — they do not read or write on
  * their own. `onboard` is another flow, registered above with the operational tools.
  */
-async function registerFlowTools(server: McpServer, service: ContainerService): Promise<void> {
+async function registerFlowTools(
+  server: McpServer,
+  service: ContainerService,
+  resources: OkhResourceRegistry,
+): Promise<void> {
   server.registerTool(
     "ask",
     { ...(await toolReg("ask")), annotations: { readOnlyHint: true } },
@@ -483,22 +508,20 @@ async function registerFlowTools(server: McpServer, service: ContainerService): 
   server.registerTool(
     "run",
     { ...(await toolReg("run")), annotations: { readOnlyHint: true } },
-    handler(async (args: { container?: string; module?: string; skill: string; input?: string }) => {
-      const hasContainer = args.container !== undefined && !isBlank(args.container);
-      const hasModule = args.module !== undefined && !isBlank(args.module);
-      if (hasContainer !== hasModule) {
-        return fail("run needs both container and module (module skill), or neither (shared skill).");
-      }
-      if (!hasContainer) {
-        const skill = await service.resolveSharedSkill(args.skill);
-        return ok(await buildRun(skill, args.input));
-      }
-      const skill = await service.resolveSkill(args.container!, args.module!, args.skill);
-      const targets = await service.resolveTargets(args.container!, args.module!);
+    handler(async (args: { container: string; module: string; skill: string; input?: string }) => {
+      if (isBlank(args.container)) return fail("container cannot be empty.");
+      if (isBlank(args.module)) return fail("module cannot be empty.");
+      if (isBlank(args.skill)) return fail("skill cannot be empty.");
+      const skill = await service.resolveSkill(args.container, args.module, args.skill);
+      const targets = await service.resolveTargets(args.container, args.module);
       const target = targets[0];
       const mod = target?.modules.find((m) => m.path === args.module);
       if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
-      return ok(await buildRun(skill, args.input, target, mod));
+      return ok(
+        await buildRun(skill, target, mod, args.input),
+        undefined,
+        await resources.skillLinks(skill, target, mod),
+      );
     }),
   );
 

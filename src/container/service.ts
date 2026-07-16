@@ -37,7 +37,6 @@ import {
   validateModuleSkills,
   type Skill,
 } from "../modules/skills.js";
-import { resolveSharedSkill as resolveShared, sharedSkills } from "../modules/shared.js";
 import { vendoredSkills } from "../modules/vendored.js";
 import { loadPreferences } from "../preferences.js";
 import { BackendRegistry, createBackendRegistry } from "../sync/backendRegistry.js";
@@ -205,13 +204,11 @@ export interface HubContainer {
 }
 
 /** The full hub map returned by no-arg `inspect`: every container, module, and runnable
- * skill, factored by provenance. Global skills are listed once; module type skills once
- * per in-use type; only local skills are carried per module. */
+ * skill, factored by provenance. Module type skills are listed once per in-use type;
+ * only local skills are carried per module. */
 export interface HubMap {
   kind: "hub";
   wakePhrase: string;
-  /** Server-bundled skills, run module-less via `run { skill }`. */
-  globalSkills: SkillRef[];
   /** Skills provided by a module's type, keyed by type. Only in-use types with skills appear. */
   moduleTypeSkills: Record<string, SkillRef[]>;
   containers: HubContainer[];
@@ -456,7 +453,7 @@ export class ContainerService {
   }
 
   /** Build the full hub map: containers → modules, with skills factored by provenance
-   * (global once, module type once per in-use type, local per module). */
+   * (module type once per in-use type, local per module). */
   private async buildHubMap(reg: { containers: ContainerEntry[] }): Promise<HubMap> {
     const wakePhrase = (await loadPreferences(this.paths)).wakePhrase;
     const containers: HubContainer[] = [];
@@ -486,8 +483,7 @@ export class ContainerService {
       }
     }
 
-    const globalSkills = (await sharedSkills()).map((s) => ({ name: s.name, description: s.description }));
-    return { kind: "hub", wakePhrase, globalSkills, moduleTypeSkills, containers };
+    return { kind: "hub", wakePhrase, moduleTypeSkills, containers };
   }
 
   /** Build one hub-map module entry: carries only its in-repo `local` skills (module type
@@ -554,11 +550,6 @@ export class ContainerService {
       );
     }
     return matches[0]!;
-  }
-
-  /** Resolve a module-less shared skill by name (runnable via run with no container/module). */
-  resolveSharedSkill(name: string): Promise<Skill> {
-    return resolveShared(name);
   }
 
   async resolveTargets(container?: string, module?: string): Promise<ResolvedContainer[]> {

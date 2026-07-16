@@ -63,9 +63,13 @@ describe("module skills", () => {
     try {
       const dir = join(mod, "grill");
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, "SKILL.md"), "---\nname: grill\ndescription: d\n---\n\nBody.\n");
+      await writeFile(
+        join(dir, "SKILL.md"),
+        "---\nname: grill\ndescription: d\nresources:\n  - okh://instructions/grilling.md\n---\n\nBody.\n",
+      );
       const s = await readSkill(dir, "vendored");
       expect(s?.dir).toBe(dir);
+      expect(s?.resourceUris).toEqual(["okh://instructions/grilling.md"]);
     } finally {
       await rm(mod, { recursive: true, force: true });
     }

@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ResourceLink } from "@modelcontextprotocol/sdk/types.js";
 import { isOkhError } from "../errors.js";
 import type { RenderContext } from "../prompts/templates.js";
 import { describeShape, loadToolMeta } from "./toolMeta.js";
@@ -9,8 +9,15 @@ export async function toolReg<N extends ToolName>(name: N, ctx?: RenderContext) 
   return { title: m.title, description: m.description, inputSchema: describeShape(toolShapes[name], m.args) };
 }
 
-export function ok(text: string, structured?: Record<string, unknown>): CallToolResult {
-  return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}) };
+export function ok(
+  text: string,
+  structured?: Record<string, unknown>,
+  resourceLinks: ResourceLink[] = [],
+): CallToolResult {
+  return {
+    content: [{ type: "text", text }, ...resourceLinks],
+    ...(structured ? { structuredContent: structured } : {}),
+  };
 }
 
 export function fail(message: string, hint?: string): CallToolResult {

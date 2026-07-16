@@ -16,8 +16,6 @@
             expect:
               - name: run
                 arguments: { container: wiki-hub, module: wiki, skill: write }
-              - name: run
-                arguments: { skill: okf-writer }
               - name: inspect
                 arguments: { container: wiki-hub, module: wiki }
               - name: sync

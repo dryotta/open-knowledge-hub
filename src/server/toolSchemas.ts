@@ -34,10 +34,16 @@ export const toolShapes = {
     module: z.string().optional(),
   },
   onboard: {},
+  help: { question: z.string().optional() },
   ask: { container, module: moduleArg, question: z.string().optional() },
   capabilities: {},
   context: { container, task: z.string().optional() },
-  run: { container, module: moduleArg, skill: z.string(), input: z.string().optional() },
+  run: {
+    container: z.string(),
+    module: z.string(),
+    skill: z.string(),
+    input: z.string().optional(),
+  },
   dream: { container, module: moduleArg },
   todos: {
     operation: z.enum(["list", "create", "update"]).optional(),

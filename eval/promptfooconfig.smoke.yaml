@@ -11,6 +11,6 @@ scenarios:
   - file://scenarios/remember/todo.yaml
   - file://scenarios/context/login-task.yaml
   - file://scenarios/ask/answerable.yaml
-  - file://scenarios/run/shared-grilling.yaml
+  - file://scenarios/help/grilling.yaml
   - file://scenarios/inspect/custom-module.yaml
   - file://scenarios/onboard/cold-start-phrase.yaml
