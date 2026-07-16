@@ -76,6 +76,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/do not select a debugging skill[\s\S]{0,100}unless the task includes a failure to debug/i);
     expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
     expect(text).toMatch(/do not invent concrete libraries, algorithms/i);
+    expect(text).toMatch(/rather than\s+inventing a checklist of password, MFA, storage, endpoint, or testing requirements/i);
     expect(text).toMatch(/complete listed\s+item path/i);
     expect(text).toMatch(/under a `## Gaps` heading/i);
   });

@@ -92,6 +92,13 @@ describe("deterministic custom, context, and ingest scenarios", () => {
       "engineering/testing/debugging/SKILL\\.md",
       "tools/csv2json/README\\.md",
     ]));
+    const transcript = sc.tests[0].assert.find(
+      (a: { value?: string }) => String(a.value).endsWith("transcript.ts"),
+    );
+    const gapPattern = transcript.config.mustNotContain[0] as string;
+    expect(new RegExp(gapPattern, "i").test(
+      "Gaps: password hashing, rate limiting, API endpoint specifications, and testing strategy",
+    )).toBe(true);
     expect(sc.tests[0].assert.some((a: { value?: string }) => String(a.value).endsWith("judge.ts"))).toBe(false);
   });
 

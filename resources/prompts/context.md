@@ -41,7 +41,10 @@ Do NOT dump whole modules into context.
    rejected path as selected.
 5. Surface gaps: what the task needs that no module provides. Name only information
    required by the stated task; do not invent concrete libraries, algorithms, or
-   generic best practices and present them as requirements.
+   generic best practices and present them as requirements. Describe missing coverage
+   at the narrowest evidence-backed level instead of brainstorming likely subtopics.
+   For example, say that implementation requirements are not documented rather than
+   inventing a checklist of password, MFA, storage, endpoint, or testing requirements.
    Put this separate from the selected working set under a `## Gaps` heading.
 
 Output a concise brief the agent can act on — not a transcript of file contents.

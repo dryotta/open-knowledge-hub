@@ -21,3 +21,9 @@
             forbidden:
               - "engineering/testing/debugging/SKILL\\.md"
               - "tools/csv2json/README\\.md"
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustNotContain:
+              - "\\b(?:security best practices|password hashing|rate limiting|MFA|2FA|session storage|secure session management|API(?:/|\\s+)?endpoint specifications?|(?:login|logout|token refresh) endpoints?|testing strateg(?:y|ies)|code examples?)\\b"

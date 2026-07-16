@@ -45,7 +45,8 @@
                   refresh tokens rotate on use; (3) if the response draws on memory evidence,
                   kb-hub memory reports refresh failures correlated with client clock drift greater
                   than 60 seconds, and identifies the February regression as the same root-cause
-                  family as the January auth spike. Coverage gaps and clearly labeled synthesis or
-                  inference drawn from the listed facts are allowed. Unsupported specific algorithms,
-                  timeout values, or implementation details not present in any fixture remain
-                  disallowed even when labeled as inference/synthesis.
+                  family as the January auth spike. A compact coverage-gap label and clearly labeled
+                  synthesis or inference drawn from the listed facts are allowed. The user's constraint
+                  forbids enumerating absent-topic gaps. Unsupported specific algorithms, timeout
+                  values, or implementation details not present in any fixture remain disallowed even
+                  when labeled as inference/synthesis.
