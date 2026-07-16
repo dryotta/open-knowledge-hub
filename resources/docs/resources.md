@@ -31,8 +31,8 @@ filesystem paths as resource identifiers.
 ```text
 okh://containers
 okh://containers/{container}
-okh://containers/{container}/modules/{module}
-okh://containers/{container}/modules/{module}/files/{path}
+okh://containers/{container}/{module}
+okh://containers/{container}/{module}/files/{path}
 okh://docs/{path}
 okh://instructions/{path}
 ```

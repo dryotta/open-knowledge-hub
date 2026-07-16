@@ -14,7 +14,7 @@ MCP clients can browse:
 
 - `okh://containers` - containers
 - `okh://containers/{container}` - one container's modules
-- `okh://containers/{container}/modules/{module}` - overview and file links
+- `okh://containers/{container}/{module}` - overview and file links
 - `okh://docs/index.md` - canonical product documentation
 - `okh://instructions/index.md` - reusable built-in guidance
 

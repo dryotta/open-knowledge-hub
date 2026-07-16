@@ -83,8 +83,8 @@ describe("MCP resources", () => {
     expect(templates.resourceTemplates.map((template) => template.uriTemplate)).toEqual(
       expect.arrayContaining([
         "okh://containers/{container}",
-        "okh://containers/{container}/modules/{module}",
-        "okh://containers/{container}/modules/{module}/files/{path}",
+        "okh://containers/{container}/{module}",
+        "okh://containers/{container}/{module}/files/{path}",
       ]),
     );
   });
@@ -100,6 +100,9 @@ describe("MCP resources", () => {
     expect("text" in containers.contents[0] ? containers.contents[0].text : "")
       .toContain("# Containers");
     await expect(client.readResource({ uri: "okh://hub" })).rejects.toThrow(/not found/);
+    await expect(
+      client.readResource({ uri: "okh://containers/hub/modules/kb" }),
+    ).rejects.toThrow(/not found/);
 
     const moduleIndex = await client.readResource({ uri: moduleUri("hub", "kb") });
     const indexText = "text" in moduleIndex.contents[0] ? moduleIndex.contents[0].text : "";

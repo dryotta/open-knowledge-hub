@@ -38,8 +38,8 @@ Direct resources:
 Templates:
 
 - `okh://containers/{container}`
-- `okh://containers/{container}/modules/{module}`
-- `okh://containers/{container}/modules/{module}/files/{path}`
+- `okh://containers/{container}/{module}`
+- `okh://containers/{container}/{module}/files/{path}`
 
 Container and module instances are enumerated by `resources/list`. File leaves are
 discovered progressively from a module resource and read through the file template.

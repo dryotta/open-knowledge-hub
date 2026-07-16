@@ -5,9 +5,9 @@ export const DOCS_URI_PREFIX = "okh://docs";
 export const INSTRUCTIONS_URI_PREFIX = "okh://instructions";
 
 export const CONTAINER_URI_TEMPLATE = `${CONTAINERS_URI}/{container}`;
-export const MODULE_URI_TEMPLATE = `${CONTAINERS_URI}/{container}/modules/{module}`;
+export const MODULE_URI_TEMPLATE = `${CONTAINERS_URI}/{container}/{module}`;
 export const MODULE_FILE_URI_TEMPLATE =
-  `${CONTAINERS_URI}/{container}/modules/{module}/files/{path}`;
+  `${CONTAINERS_URI}/{container}/{module}/files/{path}`;
 
 export function encodeUriSegment(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/gu, (character) =>
@@ -19,7 +19,7 @@ export function containerUri(container: string): string {
 }
 
 export function moduleUri(container: string, module: string): string {
-  return `${containerUri(container)}/modules/${encodeUriSegment(module)}`;
+  return `${containerUri(container)}/${encodeUriSegment(module)}`;
 }
 
 export function moduleFileUri(container: string, module: string, path: string): string {
