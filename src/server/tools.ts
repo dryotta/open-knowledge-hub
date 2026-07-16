@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   AddContainerPlan,
   ContainerService,
+  HubMap,
   InspectResult,
   SyncResult,
 } from "../container/service.js";
@@ -27,24 +28,62 @@ import {
   formatCapabilityReport,
 } from "./capabilityProbes.js";
 import { formatSyncDescriptor } from "../util/syncFormat.js";
+import { loadPromptFile } from "../prompts/templates.js";
+
+/** Render the no-arg hub map: global skills, module-type skills (labeled unambiguously as
+ * types), then containers → modules. Module-type skills are listed once per in-use type; only
+ * local skills appear on a module line. The routing/usage footer is appended by the handler. */
+function formatHub(r: HubMap): string {
+  const lines: string[] = [`Hub — wake phrase "${r.wakePhrase}"`, ""];
+
+  lines.push("Global skills (run with no container/module):");
+  lines.push(
+    ...(r.globalSkills.length
+      ? r.globalSkills.map((s) => `  ${s.name}${s.description ? ` — ${s.description}` : ""}`)
+      : ["  (none)"]),
+  );
+  lines.push("");
+
+  const types = Object.keys(r.moduleTypeSkills);
+  lines.push("Module type skills (any module of that type can run these):");
+  if (types.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const type of types) {
+      lines.push("", `  Module type "${type}":`);
+      lines.push(
+        ...r.moduleTypeSkills[type]!.map(
+          (s) => `    ${s.name}${s.description ? ` — ${s.description}` : ""}`,
+        ),
+      );
+    }
+  }
+  lines.push("");
+
+  lines.push("Containers:");
+  if (r.containers.length === 0) {
+    lines.push("  (none registered — use add_container { source } to register one)");
+  } else {
+    for (const c of r.containers) {
+      const invalid = c.manifestValid ? "" : " (invalid manifest)";
+      lines.push(`  ${c.name}  [${c.backend}] sync=${formatSyncDescriptor(c.sync)}${invalid}`);
+      if (c.modules.length === 0) {
+        lines.push("    (no modules)");
+        continue;
+      }
+      for (const m of c.modules) {
+        const local = m.local?.length ? `   +local: ${m.local.map((s) => s.name).join(", ")}` : "";
+        const overrides = m.overrides?.length ? ` (overrides: ${m.overrides.join(", ")})` : "";
+        lines.push(`    · ${m.path}  (module type: ${m.type})  ${m.items} items${local}${overrides}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
 
 function formatInspect(r: InspectResult): string {
-  if (r.kind === "containers") {
-    if (r.containers.length === 0) return "No containers registered. Use add_container { source } to register one.";
-    return r.containers
-      .map((c) => {
-        const syncLabel = `Sync: ${formatSyncDescriptor(c.sync)}`;
-        const actionsLabel = c.syncActions?.length ? ` Actions: ${c.syncActions.join(", ")}` : "";
-        const head =
-          `- ${c.name} [${c.backend}] ${syncLabel}${actionsLabel} modules=${c.moduleCount}` +
-          `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`;
-        const mods = c.modules.length
-          ? c.modules.map((m) => `    · ${m.type} · ${m.name} (${m.path})`).join("\n")
-          : "    (no modules)";
-        return `${head}\n${mods}`;
-      })
-      .join("\n");
-  }
+  if (r.kind === "hub") return formatHub(r);
   if (r.kind === "container") {
     const s = r.status;
     const lines = [
@@ -184,7 +223,11 @@ export async function registerTools(
       if (args.container !== undefined && isBlank(args.container)) return fail("container cannot be empty.");
       if (args.module !== undefined && isBlank(args.module)) return fail("module cannot be empty.");
       const result = await service.inspect(args.container, args.module);
-      return ok(formatInspect(result), { result });
+      const text =
+        result.kind === "hub"
+          ? `${formatInspect(result)}\n\n${await loadPromptFile("partials/inspect-usage.md")}`
+          : formatInspect(result);
+      return ok(text, { result });
     }),
   );
 

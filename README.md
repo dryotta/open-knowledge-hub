@@ -44,15 +44,25 @@ description: Project notes   # optional
 The container's `name` and `sync` mode (`auto` | `shared`) are set in the **registry
 entry** at `add_container`-time, not in a per-container file.
 
-### Type skills
-Built-in types ship vendored skills: `knowledge` → `learn`, `initialize`; `llmwiki`
-→ `initialize`, `write`, `lint`; `memory` → `remember`, `reflect`, `todo`; `skills`
-→ `initialize` (under `resources/module-types/<type>/skills/`). A module's
-effective skill set = vendored (for its type) ∪ module-local skills (discovered from
-`.okh/skills/` and common roots like `.claude/skills/`). Shared, module-less skills
-(`grilling`, `okf-writer`, `ingest`) live under `resources/shared/skills/` and run via
+### Skills: global, module type, local
+Skills come from three provenances, surfaced together by no-arg `inspect` (the hub map):
+
+- **Global skills** — server-bundled, run module-less via `run { skill }` (`grilling`,
+  `okf-writer`, `ingest`, under `resources/shared/skills/`).
+- **Module type skills** — provided by a module's type (under
+  `resources/module-types/<type>/skills/`): `knowledge` → `learn`, `initialize`;
+  `llmwiki` → `initialize`, `write`, `lint`; `memory` → `remember`, `reflect`, `todo`;
+  `skills` → `initialize`. Listed once per in-use type in the hub map.
+- **Local skills** — in-repo, discovered from `.okh/skills/` and common roots like
+  `.claude/skills/` (and the module root for `skills`-type modules).
+
+A module's **effective skill set** = its module type skills (minus any local
+overrides) ∪ its local skills; a local skill overrides a same-named module type
+skill. Skills use the standard `SKILL.md` format. See
+[docs/concepts-and-routing.md](docs/concepts-and-routing.md) for how requests route
+to skills.
 <!-- ingest can keep a copy of each ingested source in the module (opt-in per module; ./sources/<YYYY-MM>/). -->
-`run { skill }` with no container/module. Skills use the standard `SKILL.md` format.
+
 
 ### Skills module layout
 

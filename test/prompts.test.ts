@@ -4,6 +4,7 @@ import { ContainerService, type ResolvedContainer, type ResolvedModule } from ".
 import { Git } from "../src/git/git.js";
 import { Gh } from "../src/git/gh.js";
 import { buildAddModule, buildAsk, buildContext, buildInstructions, buildOnboard, buildRun } from "../src/prompts/index.js";
+import { loadPromptFile } from "../src/prompts/templates.js";
 import type { Skill } from "../src/modules/skills.js";
 import { makePaths, makeTempDir, testRun } from "./helpers.js";
 
@@ -69,19 +70,28 @@ describe("prompt builders", () => {
     // Confirmation is only for setup (folders/containers/modules), not ordinary sync
     expect(text).not.toMatch(/never.*sync.*without.*explicit confirmation/i);
   });
-  it("buildInstructions routes deterministic todo work through todos while preserving remember and todo skill distinctions", async () => {
+  it("buildInstructions is slim: wake phrase + call inspect first + onboard, no routing gates", async () => {
     const text = await buildInstructions({ wakePhrase: "sam" });
-    expect(text).toContain("Routing gates");
+    expect(text).toContain("sam");
+    expect(text).toMatch(/inspect/);
+    expect(text).toMatch(/onboard/i);
+    // Routing discipline now lives in the inspect hub-map footer, not the init instructions.
+    expect(text).not.toContain("Routing gates");
+    expect(text).not.toContain('skill: "learn"');
+    expect(text).not.toContain('skill: "remember"');
+    expect(text).not.toContain('skill: "todo"');
+    expect(text).not.toContain("substitute a memory module");
+    // Keep it short.
+    expect(text.split("\n").filter((l) => l.trim()).length).toBeLessThanOrEqual(8);
+  });
+  it("inspect hub-map footer carries the routing gates moved out of instructions", async () => {
+    const text = await loadPromptFile("partials/inspect-usage.md");
     expect(text).toContain('skill: "learn"');
-    expect(text).toContain("Do not");
-    expect(text).toContain("substitute a memory module");
-    expect(text).toMatch(/never call `todos` first/i);
     expect(text).toContain('skill: "remember"');
     expect(text).toContain('skill: "todo"');
-    expect(text).toContain("Every deterministic todo operation still goes through `todos`");
-    expect(text).toContain("Call `todos` directly only to read/list/filter todos");
-    expect(text).not.toContain("update_todo");
-    expect(text).not.toContain("without bypassing or restarting it");
+    expect(text).toContain("substitute a memory module");
+    expect(text).toMatch(/never call `todos` first/i);
+    expect(text).toMatch(/effective skills/i);
   });
   it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;

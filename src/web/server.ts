@@ -8,6 +8,7 @@ import { isOkhError } from "../errors.js";
 import type { TodoService } from "../todos/service.js";
 import type { TodoMutationInput, TodoQuery } from "../todos/types.js";
 import type {
+  WebContainerSummary,
   WebContainersResponse,
   WebDirectoryResponse,
   WebErrorResponse,
@@ -379,10 +380,20 @@ async function handleApiRequest(
   }
   if (request.method === "GET" && url.pathname === "/api/containers") {
     const result = await service.inspect();
-    if (result.kind !== "containers") {
+    if (result.kind !== "hub") {
       throw new Error("Container inspection returned an unexpected result.");
     }
-    sendJson(response, 200, { containers: result.containers } satisfies WebContainersResponse);
+    const containers: WebContainerSummary[] = result.containers.map((c) => ({
+      name: c.name,
+      backend: c.backend,
+      ...(c.sync ? { sync: c.sync } : {}),
+      ...(c.syncActions ? { syncActions: c.syncActions } : {}),
+      moduleCount: c.modules.length,
+      modules: c.modules.map((m) => ({ path: m.path, type: m.type, name: m.name })),
+      manifestValid: c.manifestValid,
+      localPath: c.localPath,
+    }));
+    sendJson(response, 200, { containers } satisfies WebContainersResponse);
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/files") {
