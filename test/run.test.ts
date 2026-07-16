@@ -25,7 +25,7 @@ function expectTerms(text: string, terms: Array<string | RegExp>): void {
 describe("effective skills + resolveSkill", () => {
   it("merges vendored memory skills with module-local skills", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "mem"), { type: "memory", name: "Mem", description: "" });
+    await saveModuleManifest(join(root, "mem"), { type: "memory", description: "" });
     await mkdir(join(root, "mem", ".okh", "skills", "purge"), { recursive: true });
     await writeFile(join(root, "mem", ".okh", "skills", "purge", "SKILL.md"), "---\nname: purge\ndescription: drop old notes\n---\n\nPurge.\n");
     const skills = await svc.effectiveSkills("h", "mem");
@@ -34,7 +34,7 @@ describe("effective skills + resolveSkill", () => {
 
   it("resolveSkill returns remember guidance for facts and todo-bearing input; unknown skill throws with a list", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "mem"), { type: "memory", name: "Mem", description: "" });
+    await saveModuleManifest(join(root, "mem"), { type: "memory", description: "" });
     const s = await svc.resolveSkill("h", "mem", "remember");
     expectTerms(s.body, [
       /append/i,
@@ -64,7 +64,7 @@ describe("effective skills + resolveSkill", () => {
 
   it("resolveSkill returns deterministic todo mutation guidance", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "mem"), { type: "memory", name: "Mem", description: "" });
+    await saveModuleManifest(join(root, "mem"), { type: "memory", description: "" });
     const s = await svc.resolveSkill("h", "mem", "todo");
     expectTerms(s.body, [
       /deterministic/i,
@@ -95,21 +95,21 @@ describe("effective skills + resolveSkill", () => {
 
   it("knowledge type exposes learn + initialize", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "kb"), { type: "knowledge", name: "KB", description: "" });
+    await saveModuleManifest(join(root, "kb"), { type: "knowledge", description: "" });
     const names = (await svc.effectiveSkills("h", "kb")).map((s) => s.name).sort();
     expect(names).toEqual(["initialize", "learn"]);
   });
 
   it("llmwiki type exposes initialize + lint + write", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", description: "" });
     const names = (await svc.effectiveSkills("h", "wiki")).map((s) => s.name).sort();
     expect(names).toEqual(["initialize", "lint", "write"]);
   });
 
   it("custom module exposes only its module-local skills", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "recipes"), { type: "recipes", name: "Food", description: "" });
+    await saveModuleManifest(join(root, "recipes"), { type: "recipes", description: "" });
     await mkdir(join(root, "recipes", ".claude", "skills", "cook"), { recursive: true });
     await writeFile(join(root, "recipes", ".claude", "skills", "cook", "SKILL.md"), "---\nname: cook\ndescription: cook it\n---\n\nCook.\n");
     const skills = await svc.effectiveSkills("h", "recipes");
@@ -118,7 +118,7 @@ describe("effective skills + resolveSkill", () => {
 
   it("skills type exposes tool-skills authored at the module root, and they are runnable", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "cli"), { type: "skills", name: "CLI Tools", description: "" });
+    await saveModuleManifest(join(root, "cli"), { type: "skills", description: "" });
     // A tool-skill = a SKILL.md skill that launches a CLI, authored at the module root.
     const skillDir = join(root, "cli", "platform", "azure", "ado");
     await mkdir(join(skillDir, "lib"), { recursive: true });
@@ -140,8 +140,8 @@ describe("effective skills + resolveSkill", () => {
 
   it("allows the same skill name in separate skills modules", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "engineering"), { type: "skills", name: "Engineering", description: "" });
-    await saveModuleManifest(join(root, "data"), { type: "skills", name: "Data", description: "" });
+    await saveModuleManifest(join(root, "engineering"), { type: "skills", description: "" });
+    await saveModuleManifest(join(root, "data"), { type: "skills", description: "" });
     await mkdir(join(root, "engineering", "delivery", "deploy"), { recursive: true });
     await mkdir(join(root, "data", "pipelines", "deploy"), { recursive: true });
     await writeFile(join(root, "engineering", "delivery", "deploy", "SKILL.md"), "---\nname: deploy\n---\n\nDeploy the service.\n");
@@ -153,7 +153,7 @@ describe("effective skills + resolveSkill", () => {
 
   it("rejects ambiguous duplicate names within one skills module", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "skills"), { type: "skills", name: "Skills", description: "" });
+    await saveModuleManifest(join(root, "skills"), { type: "skills", description: "" });
     await mkdir(join(root, "skills", "engineering", "deploy"), { recursive: true });
     await mkdir(join(root, "skills", "data", "deploy"), { recursive: true });
     await writeFile(join(root, "skills", "engineering", "deploy", "SKILL.md"), "---\nname: deploy\n---\n\nService.\n");
@@ -184,7 +184,7 @@ describe("shared skills", () => {
 describe("llmwiki skill body contracts", () => {
   it("initialize skill body requires invoking shared grilling and states next-steps is not completion", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", description: "" });
     const s = await svc.resolveSkill("h", "wiki", "initialize");
     expect(s.body).toMatch(/must invoke.*grilling/i);
     expect(s.body).toMatch(/next\s+steps.*not completion/is);
@@ -192,7 +192,7 @@ describe("llmwiki skill body contracts", () => {
 
   it("write skill body requires shared okf-writer invocation omitting container/module, declared type, and final inspect", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", description: "" });
     const s = await svc.resolveSkill("h", "wiki", "write");
     // shared okf-writer invocation omits container/module because it's shared
     expect(s.body).toMatch(/omit.*container.*module|omitting.*container.*module/i);
@@ -204,7 +204,7 @@ describe("llmwiki skill body contracts", () => {
 
   it("write skill requires repeated inspect until all health arrays are empty before completion", async () => {
     const { root, svc } = await setup();
-    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", name: "Wiki", description: "" });
+    await saveModuleManifest(join(root, "wiki"), { type: "llmwiki", description: "" });
     const s = await svc.resolveSkill("h", "wiki", "write");
     // Must require fixing all four health categories
     expect(s.body).toMatch(/orphan/i);

@@ -34,7 +34,7 @@ describe("end-to-end", () => {
     const addContainer = await service.addContainer({ source: origin, name: "hub", create: true });
     if (addContainer.kind !== "applied") throw new Error("expected applied");
     const entry = addContainer.entry;
-    const addModule = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    const addModule = await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
     if (addModule.kind !== "applied") throw new Error("expected applied");
     const { moduleRoot } = addModule;
     await writeFile(join(moduleRoot, "auth.md"), "---\ntitle: Auth\ndescription: Login\ntype: Flow\n---\nbody", "utf8");
@@ -64,7 +64,7 @@ describe("end-to-end", () => {
 
     await service.addContainer({ source: dir, name: "notes", create: true });
     for (const [path, type] of [["kb", "knowledge"], ["skills", "skills"], ["mem", "memory"]] as const) {
-      await service.addModule({ container: "notes", path, type, name: path, create: true });
+      await service.addModule({ container: "notes", path, type, description: `${path} module`, create: true });
     }
 
     const targets = await service.resolveTargets("notes");

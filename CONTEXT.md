@@ -26,14 +26,19 @@ mode (`auto` | `pr`), optional `origin` (git), and `localPath`. Container `name`
 and `sync` are set at `add_container`-time, not in a per-container file.
 
 ### Module manifest (`<module>/.okh/module.yaml`)
-Each module folder carries a manifest with `type`, `name`, `description` (optional),
-and `config` (optional). The hub auto-discovers modules by scanning the container
-for these manifests — a folder is a module iff it has `.okh/module.yaml`.
-Built-in types ship vendored skills (`knowledge` → `learn`, `initialize`; `memory` →
-`remember`, `reflect`, `todo`; `skills` → `initialize`). Module-local skills are
-discovered recursively from `.okh/skills/` and common external roots like
-`.claude/skills/`. Shared, module-less skills (`grilling`, `okf-writer`) live under
-`resources/shared/skills/` and run via `run { skill }` with no container/module.
+Each module folder carries a manifest with `type`, `description` (required at
+creation), and `config` (optional). The module's **folder name is its identity** —
+there is no `name` field (a legacy `name:` is stripped on read). Modules are
+**top-level folders only**: the hub discovers modules by scanning the container's
+direct children — a folder is a module iff it has `.okh/module.yaml`, and a manifest
+nested deeper is flagged as misplaced rather than loaded. An empty description is
+tolerated on read (the module still loads) but flagged by `validate`/`sync`; run the
+`sleep` tool to regenerate it. Built-in types ship vendored skills (`knowledge` →
+`learn`, `initialize`; `memory` → `remember`, `reflect`, `todo`; `skills` →
+`initialize`). Module-local skills are discovered recursively from `.okh/skills/` and
+common external roots like `.claude/skills/`. Shared, module-less skills (`grilling`,
+`okf-writer`, `dream`) live under `resources/shared/skills/` and run via
+`run { skill }` with no container/module (or, for `dream`, via the `sleep` tool).
 `.okh/` is reserved for OKH state.
 
 ### Module
@@ -55,9 +60,11 @@ and conformance.
 
 ### Cognitive flows
 `ask` (query), `context` (assemble a working set), `onboard` (guided setup), `run`
-(invoke a named skill on a module). `learn`, `remember`, `reflect`, and `todo` are
-**skills**, not standalone tools — invoke them via
-`run { container, module, skill, input? }`; `todo` handles natural-language memory
+(invoke a named skill on a module), `sleep` (run the `dream` consolidation pass over a
+container/module to refresh each module's `description`). `learn`, `remember`,
+`reflect`, `todo`, and `dream` are **skills**, not standalone tools — `learn`/
+`remember`/`reflect`/`todo` are invoked via `run { container, module, skill, input? }`,
+and `dream` is surfaced by the `sleep` flow; `todo` handles natural-language memory
 todo management. `todos` is the direct operational tool for deterministic
 list/create/update work. Agent-driven todo mutations preview by default, require
 confirmation, then repeat with `apply: true`; MCP App checkbox clicks may apply
@@ -74,7 +81,7 @@ prompt-tools (identical content).
 - Operational tools (act on state): `inspect`, `add_container`, `add_module`, `sync`,
   `config`, `todos`.
 - Flows (return discipline/instructions, never act): `ask`, `context`, `onboard`,
-  `run`. Each is exposed as a prompt-tool and as an MCP prompt with identical
+  `run`, `sleep`. Each is exposed as a prompt-tool and as an MCP prompt with identical
   content.
 - App resource: `ui://open-knowledge-hub/todos` renders the unified todo list and
   filters in app-capable hosts; other hosts receive a text fallback. App and tool

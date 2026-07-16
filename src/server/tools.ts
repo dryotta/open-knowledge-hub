@@ -15,7 +15,7 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun } from "../prompts/index.js";
+import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun, buildSleep } from "../prompts/index.js";
 import { BUILTIN_MODULE_TYPES } from "../modules/types.js";
 import { vendoredSkills } from "../modules/vendored.js";
 import { TodoService } from "../todos/service.js";
@@ -39,7 +39,7 @@ function formatInspect(r: InspectResult): string {
           `- ${c.name} [${c.backend}] ${syncLabel}${actionsLabel} modules=${c.moduleCount}` +
           `${c.manifestValid ? "" : " (invalid manifest)"} — ${c.localPath}`;
         const mods = c.modules.length
-          ? c.modules.map((m) => `    · ${m.type} · ${m.name} (${m.path})`).join("\n")
+          ? c.modules.map((m) => `    · ${m.type} · ${m.path}`).join("\n")
           : "    (no modules)";
         return `${head}\n${mods}`;
       })
@@ -54,7 +54,7 @@ function formatInspect(r: InspectResult): string {
       `Manifest valid: ${s.manifestValid}${s.manifestError ? ` (${s.manifestError})` : ""}`,
       "Modules:",
       ...(s.modules.length
-        ? s.modules.map((m) => `  - ${m.type} · ${m.name}${m.description ? ` — ${m.description}` : ""}: ${m.path} (${m.items} items)`)
+        ? s.modules.map((m) => `  - ${m.type}: ${m.path}${isBlank(m.description ?? "") ? " — (no description; run sleep to consolidate one)" : ` — ${m.description!.trim()}`} (${m.items} items)`)
         : ["  (none)"]),
     ];
     if (s.syncActions?.length) {
@@ -67,7 +67,7 @@ function formatInspect(r: InspectResult): string {
     }
     return lines.join("\n");
   }
-  const head = `Module ${r.module.path} [${r.module.type}] ${r.module.name}${r.module.description ? ` — ${r.module.description}` : ""} — ${r.items.length} items`;
+  const head = `Module ${r.module.path} [${r.module.type}]${isBlank(r.module.description ?? "") ? " — (no description; run sleep to consolidate one)" : ` — ${r.module.description!.trim()}`} — ${r.items.length} items`;
   const items = r.items.length
     ? r.items.map((i) => `  - ${i.title}${i.description ? ` — ${i.description}` : ""} (${i.path})`)
     : ["  (empty)"];
@@ -210,7 +210,7 @@ export async function registerTools(
   server.registerTool(
     "add_module",
     { ...(await toolReg("add_module")), annotations: { openWorldHint: true } },
-    handler(async (args: { container?: string; path?: string; type?: string; name?: string; description?: string; config?: Record<string, unknown>; create?: boolean }) => {
+    handler(async (args: { container?: string; path?: string; type?: string; description?: string; config?: Record<string, unknown>; create?: boolean }) => {
       if (!args.create) {
         const targets = await service.resolveTargets();
         return ok(await buildAddModule(targets, BUILTIN_MODULE_TYPES));
@@ -218,18 +218,17 @@ export async function registerTools(
       if (isBlank(args.container ?? "")) return fail("container cannot be empty. (required when create:true)");
       if (isBlank(args.path ?? "")) return fail("path cannot be empty. (required when create:true)");
       if (isBlank(args.type ?? "")) return fail("type cannot be empty. (required when create:true)");
-      if (isBlank(args.name ?? "")) return fail("name cannot be empty. (required when create:true)");
+      if (isBlank(args.description ?? "")) return fail("description cannot be empty. (required when create:true — it drives inspect routing; run sleep later to refine it)");
       const outcome = await service.addModule({
         container: args.container!,
         path: args.path!,
         type: args.type!,
-        name: args.name!,
-        ...(args.description !== undefined ? { description: args.description } : {}),
+        description: args.description!,
         ...(args.config ? { config: args.config } : {}),
         create: true,
       });
       if (outcome.kind !== "applied") return fail("add_module create:true did not apply.");
-      const added = `Added ${outcome.entry.type} module "${outcome.entry.name}" at "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
+      const added = `Added ${outcome.entry.type} module "${outcome.entry.path}" to "${args.container}" at ${outcome.moduleRoot}.`;
       const hasInit = (await vendoredSkills(outcome.entry.type)).some((s) => s.name === "initialize");
       const next = hasInit
         ? ` Next, initialize it: run { container: "${args.container}", module: "${outcome.entry.path}", skill: "initialize" }.`
@@ -251,7 +250,23 @@ export async function registerTools(
   server.registerTool(
     "config",
     { ...(await toolReg("config", { vars: { configKeys: configKeys.join(", ") } })), annotations: { readOnlyHint: false, openWorldHint: false } },
-    handler(async (args: { set?: Record<string, unknown> }) => {
+    handler(async (args: { set?: Record<string, unknown>; container?: string; module?: string; description?: string }) => {
+      const wantsSetDescription =
+        args.container !== undefined || args.module !== undefined || args.description !== undefined;
+      if (wantsSetDescription) {
+        if (args.set !== undefined) {
+          return fail("Provide either { set } (preferences) or { container, module, description } (module description), not both.");
+        }
+        if (isBlank(args.container ?? "")) return fail("container cannot be empty. (required to set a module description)");
+        if (isBlank(args.module ?? "")) return fail("module cannot be empty. (required to set a module description)");
+        if (isBlank(args.description ?? "")) return fail("description cannot be empty.");
+        await service.setModuleDescription(args.container!, args.module!, args.description!);
+        return ok(`Updated description for module "${args.module}" in container "${args.container}".`, {
+          container: args.container,
+          module: args.module,
+          description: args.description!.trim(),
+        });
+      }
       if (args.set === undefined) {
         const prefs = await loadPreferences(paths);
         return ok(formatConfig(prefs, paths), { preferences: prefs, keys: configKeys });
@@ -343,6 +358,19 @@ async function registerFlowTools(server: McpServer, service: ContainerService): 
       const mod = target?.modules.find((m) => m.path === args.module);
       if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
       return ok(await buildRun(skill, args.input, target, mod));
+    }),
+  );
+
+  server.registerTool(
+    "sleep",
+    { ...(await toolReg("sleep")), annotations: { readOnlyHint: true } },
+    handler(async (args: { container?: string; module?: string }) => {
+      if (args.module !== undefined && !isBlank(args.module) && isBlank(args.container ?? "")) {
+        return fail("sleep needs a container when a module is given (module names are not unique across containers).");
+      }
+      const skill = await service.resolveSharedSkill("dream");
+      const targets = await service.resolveTargets(args.container, args.module);
+      return ok(await buildSleep(skill, targets));
     }),
   );
 }

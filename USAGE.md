@@ -11,10 +11,11 @@ Your agent decides which tools to call from their descriptions and the hub's
 announced **wake phrase**. Address the hub with the wake phrase — by default
 `hub` — for example: `hub, ask …` or `hub, run …`.
 
-- The *cognitive flows* (`ask`, `context`, `run`) return instructions your agent
-  then follows — they don't act on their own. Naming the hub matters most for
-  these; without it, a request often won't reach OKH. `learn`, `remember`, and
-  `reflect` are module skills, invoked via `run { container, module, skill }`.
+- The *cognitive flows* (`ask`, `context`, `run`, `sleep`) return instructions your
+  agent then follows — they don't act on their own. Naming the hub matters most for
+  these; without it, a request often won't reach OKH. `learn`, `remember`, `reflect`,
+  and `dream` are module skills — `learn`/`remember`/`reflect` are invoked via
+  `run { container, module, skill }`, and `dream` runs through the `sleep` flow.
 - The *operational tools* (`inspect`, `add_container`, `add_module`, `sync`, `config`) act directly and
   usually route reliably even without the prefix.
 - Most explicit option: clients with a prompt UI expose OKH's flows as pickable
@@ -34,8 +35,19 @@ container directly:
 it first replies with a **plan** ("will create folder …, will initialize a manifest …").
 Review it and confirm; your agent then re-runs it with `create:true` to apply.
 `add_module` instead returns a short **workflow** — your agent understands the need,
-proposes the module, confirms with you, then applies with `create:true` and runs the
-type's `initialize` skill to populate it.
+proposes the module (with a `description` that says what it holds), confirms with you,
+then applies with `create:true` and runs the type's `initialize` skill to populate it.
+The module's **folder name is its identity** — there's no separate name — and modules
+live as top-level folders in the container.
+
+## Keeping module descriptions fresh
+
+`inspect` routes work to modules using each module's `description`, so it should stay
+accurate as content grows. Say **`hub, sleep`** (or `hub, sleep on my-notes`) to run the
+`dream` consolidation pass: your agent reads each module's `index.md`, drafts a
+routing-quality description, and persists it. You can also set one directly —
+`hub, set kb's description to "auth flows and token lifecycle"` — which your agent
+applies via `config { container, module, description }`.
 
 ## Organizing many skills
 

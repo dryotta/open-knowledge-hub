@@ -22,10 +22,10 @@ afterEach(async () => {
 });
 
 /** Create a module folder with a per-module manifest inside a container root. */
-async function seedModule(containerRoot: string, path: string, type: string, name: string, description = ""): Promise<void> {
+async function seedModule(containerRoot: string, path: string, type: string, description = ""): Promise<void> {
   const moduleRoot = join(containerRoot, path);
   await mkdir(moduleRoot, { recursive: true });
-  await saveModuleManifest(moduleRoot, { type, name, description, config: {} });
+  await saveModuleManifest(moduleRoot, { type, description, config: {} });
 }
 
 describe("status", () => {
@@ -35,12 +35,12 @@ describe("status", () => {
     await service.addContainer({ source: origin, name: "hub", create: true });
     const list = await service.list();
     const root = list[0]!.localPath;
-    await seedModule(root, "kb", "knowledge", "KB", "team kb");
+    await seedModule(root, "kb", "knowledge", "team kb");
     const st = await service.status("hub");
     expect(st.backend).toBe("git");
     expect(st.manifestValid).toBe(true);
     expect(st.git?.branch).toBe("main");
-    expect(st.modules).toEqual([{ path: "kb", type: "knowledge", name: "KB", description: "team kb", items: 0 }]);
+    expect(st.modules).toEqual([{ path: "kb", type: "knowledge", description: "team kb", items: 0 }]);
   });
 
   it("omits git status for a local container", async () => {
@@ -88,7 +88,7 @@ describe("validate", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "skills", type: "skills", name: "Skills", create: true });
+    await service.addModule({ container: "hub", path: "skills", type: "skills", description: "team skills", create: true });
     await mkdir(join(dir, "skills", "engineering", "debug"), { recursive: true });
     await mkdir(join(dir, "skills", "data", "debug"), { recursive: true });
     await mkdir(join(dir, "skills", "ops", "broken"), { recursive: true });
@@ -107,7 +107,7 @@ describe("validate", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "skills", type: "skills", name: "Skills", create: true });
+    await service.addModule({ container: "hub", path: "skills", type: "skills", description: "team skills", create: true });
     await mkdir(join(dir, "skills", "good"), { recursive: true });
     await mkdir(join(dir, "skills", "broken"), { recursive: true });
     await writeFile(join(dir, "skills", "good", "SKILL.md"), "---\nname: good\n---\n\nWorks.\n");
@@ -121,13 +121,24 @@ describe("validate", () => {
     expect((await service.resolveSkill("hub", "skills", "good")).body).toContain("Works");
   });
 
+  it("flags a module whose description is empty", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await seedModule(dir, "kb", "knowledge", ""); // empty description
+    await writeFile(join(dir, "kb", "index.md"), "# KB\n", "utf8"); // satisfy the index.md check
+    const res = await service.validate("hub");
+    expect(res.ok).toBe(false);
+    expect(res.issues.join("\n")).toMatch(/missing description/i);
+  });
+
   it("passes for a well-formed container", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
     // addModule scaffolds index.md; also need per-module manifest for discovery
-    await saveModuleManifest(join(dir, "kb"), { type: "knowledge", name: "KB", description: "" });
+    await saveModuleManifest(join(dir, "kb"), { type: "knowledge", description: "team kb" });
     expect((await service.validate("hub")).ok).toBe(true);
   });
 });
@@ -146,11 +157,11 @@ describe("inspect", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await seedModule(dir, "kb", "knowledge", "KB", "team kb");
+    await seedModule(dir, "kb", "knowledge", "team kb");
     const res = await service.inspect();
     expect(res.kind).toBe("containers");
     if (res.kind === "containers") {
-      expect(res.containers[0]!.modules).toEqual([{ path: "kb", type: "knowledge", name: "KB" }]);
+      expect(res.containers[0]!.modules).toEqual([{ path: "kb", type: "knowledge" }]);
     }
   });
 
@@ -158,14 +169,13 @@ describe("inspect", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await seedModule(dir, "kb", "knowledge", "KB", "team kb");
+    await seedModule(dir, "kb", "knowledge", "team kb");
     const c = await service.inspect("hub");
     expect(c.kind).toBe("container");
     const m = await service.inspect("hub", "kb");
     expect(m.kind).toBe("module");
     if (m.kind === "module") {
       expect(m.module.type).toBe("knowledge");
-      expect(m.module.name).toBe("KB");
       expect(m.module.description).toBe("team kb");
     }
   });
@@ -181,7 +191,7 @@ describe("inspect", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
     await writeFile(join(dir, "kb", "index.md"), "# KB\n\n## Goals\n\nKnow the auth system.\n", "utf8");
     const m = await service.inspect("hub", "kb");
     expect(m.kind).toBe("module");
@@ -192,7 +202,7 @@ describe("inspect", () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await service.addModule({ container: "hub", path: "skills", type: "skills", name: "Skills", create: true });
+    await service.addModule({ container: "hub", path: "skills", type: "skills", description: "team skills", create: true });
     await writeFile(join(dir, "skills", "index.md"), "# Team skills\n\nGrouped by capability area.\n", "utf8");
     await mkdir(join(dir, "skills", "engineering", "testing", "debug"), { recursive: true });
     await writeFile(

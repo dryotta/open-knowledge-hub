@@ -10,26 +10,41 @@ async function writeManifest(root: string, rel: string, body: string): Promise<v
 }
 
 describe("discoverModules", () => {
-  it("finds nested module manifests and returns POSIX paths sorted", async () => {
+  it("finds only top-level module manifests and returns POSIX paths sorted", async () => {
     const root = await mkdtemp(join(tmpdir(), "okh-disc-"));
     try {
-      await writeManifest(root, "kb", "type: knowledge\nname: KB\ndescription: d\n");
-      await writeManifest(root, join("nested", "mem"), "type: memory\nname: M\ndescription: d\n");
+      await writeManifest(root, "kb", "type: knowledge\ndescription: d\n");
+      await writeManifest(root, "mem", "type: memory\ndescription: d\n");
       await mkdir(join(root, ".git"), { recursive: true });
-      await writeManifest(root, ".git", "type: knowledge\nname: X\ndescription: d\n"); // must be ignored
+      await writeManifest(root, ".git", "type: knowledge\ndescription: d\n"); // must be ignored
       const mods = await discoverModules(root);
-      expect(mods.map((m) => m.path)).toEqual(["kb", "nested/mem"]);
-      expect(mods[0]!.manifest.type).toBe("knowledge");
+      expect(mods.map((m) => m.path)).toEqual(["kb", "mem"]);
+      expect(mods[0]!.manifest?.type).toBe("knowledge");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("does not descend into a discovered module", async () => {
+  it("flags a nested manifest as misplaced instead of treating it as a module", async () => {
     const root = await mkdtemp(join(tmpdir(), "okh-disc-"));
     try {
-      await writeManifest(root, "outer", "type: custom\nname: O\ndescription: d\n");
-      await writeManifest(root, join("outer", "inner"), "type: memory\nname: I\ndescription: d\n");
+      await writeManifest(root, "kb", "type: knowledge\ndescription: d\n");
+      await writeManifest(root, join("nested", "mem"), "type: memory\ndescription: d\n");
+      const mods = await discoverModules(root);
+      expect(mods.map((m) => m.path)).toEqual(["kb", "nested/mem"]);
+      const misplaced = mods.find((m) => m.path === "nested/mem");
+      expect(misplaced!.manifest).toBeUndefined();
+      expect(misplaced!.error).toMatch(/top-level/i);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not descend into a discovered top-level module", async () => {
+    const root = await mkdtemp(join(tmpdir(), "okh-disc-"));
+    try {
+      await writeManifest(root, "outer", "type: custom\ndescription: d\n");
+      await writeManifest(root, join("outer", "inner"), "type: memory\ndescription: d\n");
       const mods = await discoverModules(root);
       expect(mods.map((m) => m.path)).toEqual(["outer"]);
     } finally {
@@ -40,10 +55,10 @@ describe("discoverModules", () => {
   it("records an invalid manifest instead of throwing", async () => {
     const root = await mkdtemp(join(tmpdir(), "okh-disc-"));
     try {
-      await writeManifest(root, "bad", "type: knowledge\n"); // missing name
+      await writeManifest(root, "bad", "description: no type here\n"); // missing required type
       const mods = await discoverModules(root);
       expect(mods).toHaveLength(1);
-      expect(mods[0]!.error).toMatch(/name/i);
+      expect(mods[0]!.error).toMatch(/INVALID_MANIFEST|type/i);
       expect(mods[0]!.manifest).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });

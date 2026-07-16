@@ -110,8 +110,8 @@ export const browseFeature: WebFeature = {
                       data-module="${escapeHtml(module.path)}"
                       aria-current="${active}"
                     >
-                      <strong>${escapeHtml(module.name)}</strong>
-                      <span class="module-meta">${escapeHtml(module.type)} / ${escapeHtml(module.path)}</span>
+                      <strong>${escapeHtml(module.path)}</strong>
+                      <span class="module-meta">${escapeHtml(module.type)}</span>
                     </button>
                   </li>
                 `;

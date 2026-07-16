@@ -53,7 +53,7 @@ describe("addModule preview/confirm", () => {
     const { service, paths } = await setup();
     const dir = await makeTempDir(); cleanups.push(dir);
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB" });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb" });
     expect(out.kind).toBe("plan");
     await expect(stat(join(dir, "kb"))).rejects.toBeTruthy(); // folder NOT created
   });
@@ -64,7 +64,7 @@ describe("addModule preview/confirm", () => {
     await service.addContainer({ source: dir, name: "hub", create: true });
     await mkdir(join(dir, "myskills"));
 
-    const out = await service.addModule({ container: "hub", path: "myskills", type: "skills", name: "My Skills" });
+    const out = await service.addModule({ container: "hub", path: "myskills", type: "skills", description: "my skills" });
 
     expect(out.kind).toBe("plan");
     expect(await moduleManifestExists(join(dir, "myskills"))).toBe(false);
@@ -74,7 +74,7 @@ describe("addModule preview/confirm", () => {
     const { service } = await setup();
     const dir = await makeTempDir(); cleanups.push(dir);
     await service.addContainer({ source: dir, name: "hub", create: true });
-    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", name: "KB", create: true });
+    const out = await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true });
     expect(out.kind).toBe("applied");
     if (out.kind === "applied") {
       expect((await stat(join(out.moduleRoot, "index.md"))).isFile()).toBe(true);

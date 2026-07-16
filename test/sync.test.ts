@@ -207,7 +207,7 @@ describe("sync (local backend)", () => {
     const { saveModuleManifest } = await import("../src/modules/manifest.js");
     const { mkdir: mkdirFs } = await import("node:fs/promises");
     await mkdirFs(join(dir, "kb"), { recursive: true });
-    await saveModuleManifest(join(dir, "kb"), { type: "knowledge", name: "KB", description: "" });
+    await saveModuleManifest(join(dir, "kb"), { type: "knowledge", description: "" });
     const [bad] = await service.sync("notes");
     expect(bad!.validation.ok).toBe(false);
   });

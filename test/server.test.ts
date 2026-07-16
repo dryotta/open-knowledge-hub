@@ -71,7 +71,7 @@ function normalizedWhitespace(text: string | undefined): string {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 11 tools and no prompts", async () => {
+  it("exposes exactly the 12 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([
@@ -84,6 +84,7 @@ describe("MCP server surface", () => {
       "inspect",
       "onboard",
       "run",
+      "sleep",
       "sync",
       "todos",
     ]);
@@ -121,7 +122,7 @@ describe("MCP server surface", () => {
     await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
     const res = await client.callTool({
       name: "add_module",
-      arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true },
+      arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true },
     });
     expect(textOf(res)).toMatch(/skill: "initialize"/);
   });
@@ -133,7 +134,7 @@ describe("MCP server surface", () => {
     await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
     const res = await client.callTool({
       name: "add_module",
-      arguments: { container: "hub", path: "sk", type: "skills", name: "SK", create: true },
+      arguments: { container: "hub", path: "sk", type: "skills", description: "team skills", create: true },
     });
     expect(textOf(res)).toContain('skill: "initialize"');
   });
@@ -145,7 +146,7 @@ describe("MCP server surface", () => {
     await client.callTool({ name: "add_container", arguments: { source, name: "hub", create: true } });
     const res = await client.callTool({
       name: "add_module",
-      arguments: { container: "hub", path: "recipes", type: "recipes", name: "Recipes", create: true },
+      arguments: { container: "hub", path: "recipes", type: "recipes", description: "recipes", create: true },
     });
     expect(textOf(res)).not.toContain('skill: "initialize"');
   });
@@ -183,6 +184,34 @@ describe("MCP server surface", () => {
 
     const empty = await client.callTool({ name: "config", arguments: { set: {} } });
     expect(isErrorResult(empty)).toBe(true);
+  });
+
+  it("config sets a module description and rejects mixing it with set", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "old", create: true } });
+
+    const setDesc = await client.callTool({
+      name: "config",
+      arguments: { container: "hub", module: "kb", description: "auth flows and token lifecycle" },
+    });
+    expect(isErrorResult(setDesc)).toBe(false);
+    const inspected = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
+    expect(textOf(inspected)).toContain("auth flows and token lifecycle");
+
+    const mixed = await client.callTool({
+      name: "config",
+      arguments: { container: "hub", module: "kb", description: "x", set: { wakePhrase: "brain" } },
+    });
+    expect(isErrorResult(mixed)).toBe(true);
+
+    const blank = await client.callTool({
+      name: "config",
+      arguments: { container: "hub", module: "kb", description: "   " },
+    });
+    expect(isErrorResult(blank)).toBe(true);
   });
 
   it("announces the configured wake phrase in server instructions", async () => {
@@ -291,7 +320,7 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", description: "team memory", create: true } });
     await writeFile(join(dir, "mem", "warnings.md"), "- [ ] Broken dates #todo 📅 someday 📅 2026-07-12\n", "utf8");
     const target = join(dir, "mem", "2026-07-10.md");
 
@@ -454,7 +483,7 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", description: "team memory", create: true } });
 
     const createError = await client.callTool({
       name: "todos",
@@ -504,7 +533,7 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", description: "team memory", create: true } });
 
     const created = await client.callTool({
       name: "todos",
@@ -537,14 +566,14 @@ describe("MCP server surface", () => {
     cleanups.push(dir);
 
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
     const res = await client.callTool({ name: "inspect", arguments: {} });
     expect(textOf(res)).toContain("hub");
-    expect(textOf(res)).toMatch(/knowledge · KB \(kb\)/);
+    expect(textOf(res)).toMatch(/knowledge · kb/);
 
     const mod = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(mod)).toContain("[knowledge]");
-    expect(textOf(mod)).toContain("KB");
+    expect(textOf(mod)).toContain("team kb");
   });
 
   it("module inspect shows the scope contract / overview", async () => {
@@ -552,7 +581,7 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
     const res = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(res)).toContain("Scope / overview:");
     expect(textOf(res)).toMatch(/okf_version|Knowledge module/);
@@ -595,7 +624,7 @@ describe("MCP server surface", () => {
 
     const emptyPath = await client.callTool({
       name: "add_module",
-      arguments: { container: "hub", path: "", type: "knowledge", name: "KB", create: true },
+      arguments: { container: "hub", path: "", type: "knowledge", description: "team kb", create: true },
     });
     expect(isErrorResult(emptyPath)).toBe(true);
     expect(textOf(emptyPath)).toContain("path cannot be empty");
@@ -613,7 +642,7 @@ describe("MCP server surface", () => {
     const dir = await makeTempDir();
     cleanups.push(dir);
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", name: "KB", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
     const res = await client.callTool({ name: "ask", arguments: { container: "hub", question: "What is X?" } });
     const text = textOf(res);
     expect(text).toContain("What is X?");
@@ -634,7 +663,7 @@ describe("MCP server surface", () => {
     cleanups.push(dir);
 
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
-    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", name: "Mem", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "mem", type: "memory", description: "team memory", create: true } });
 
     const res = await client.callTool({
       name: "run",
@@ -645,6 +674,28 @@ describe("MCP server surface", () => {
     expect(text).toContain("User prefers dark mode");
     expect(text).toContain("mem");
     expect(text).toMatch(/append|timestamp/i);
+  });
+
+  it("sleep tool returns the dream discipline pointing at resolved modules", async () => {
+    const { client } = await connect();
+    const dir = await makeTempDir();
+    cleanups.push(dir);
+
+    await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
+
+    const res = await client.callTool({ name: "sleep", arguments: { container: "hub" } });
+    const text = textOf(res);
+    expect(text).toContain('<discipline name="dream">');
+    expect(text).toContain("kb");
+    expect(text).toMatch(/index\.md/);
+  });
+
+  it("sleep tool rejects a module without a container", async () => {
+    const { client } = await connect();
+    const res = await client.callTool({ name: "sleep", arguments: { module: "kb" } });
+    expect(isErrorResult(res)).toBe(true);
+    expect(textOf(res)).toContain("needs a container");
   });
 
   it("add_container rejects flat sync:'pr' at MCP schema level", async () => {

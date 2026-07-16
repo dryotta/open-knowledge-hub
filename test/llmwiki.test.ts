@@ -22,7 +22,7 @@ describe("inspect surfaces llmwiki health", () => {
   it("returns a health block with orphans for an llmwiki module", async () => {
     const { root, svc } = await setup();
     const mod = join(root, "wiki");
-    await saveModuleManifest(mod, { type: "llmwiki", name: "Wiki", description: "" });
+    await saveModuleManifest(mod, { type: "llmwiki", description: "team wiki" });
     await writeFile(join(mod, "index.md"), "# Wiki\n", "utf8");
     await mkdir(join(mod, "concepts"), { recursive: true });
     await writeFile(join(mod, "concepts", "orphan.md"), "---\ntype: concept\ntitle: Orphan\n---\nalone\n", "utf8");
