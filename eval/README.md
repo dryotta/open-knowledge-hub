@@ -22,7 +22,7 @@ Design notes: `docs/superpowers/specs/2026-07-02-okh-e2e-copilot-cli-design.md` 
 One eval run for a scenario is:
 
 ```
-promptfoo (eval/promptfooconfig.yaml — one {{prompt}} pass-through + scenarios: [file://scenarios/**/*.yaml])
+promptfoo (full or smoke config — one {{prompt}} pass-through + ordered scenario files)
   └─ shared provider (scenarios/shared/provider.ts → provider/copilotProvider.ts)
        ├─ provisionEnvironment(env)  ← environments.ts
        │    builds an isolated temp Root:
@@ -49,14 +49,15 @@ Key files:
 
 | File | Role |
 |------|------|
-| `promptfooconfig.yaml` | the single default config: `{{prompt}}` pass-through + shared provider + `scenarios:` glob |
+| `promptfooconfig.yaml` | full release tier with every scenario ordered slow-first |
+| `promptfooconfig.smoke.yaml` | representative local tier used by `npm run eval:smoke` |
 | `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout |
 | `scenarios/<verb>/<case>.yaml` | one scenario (a one-element list): `config.vars` (prompt+env) + `tests[0].assert` |
 | `environments.ts` | defines the 6 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, drives the (multi-turn) conversation, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
-| `run-scenarios.ts` | runs `promptfoo eval`/`validate` once on `promptfooconfig.yaml` (single process, concurrent scenarios) |
+| `run-scenarios.ts` | selects the tier, configures concurrency/judge votes, runs promptfoo, and reports run/cleanup timing |
 | `manual.ts` | one-shot manual harness (`npm run manual`) with isolated homes and automatic cleanup |
 | `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`, `custom-hub`, `health-hub`, `wiki-hub`) |
 
@@ -80,8 +81,10 @@ Key files:
 
 ## How test cases work
 
-`eval/promptfooconfig.yaml` is the single default config. It declares one pass-through
-prompt, the shared provider once, and a glob of every scenario file:
+`eval/promptfooconfig.yaml` is the full release tier. It declares one pass-through
+prompt, the shared provider once, and every scenario file in measured slow-first order.
+`promptfooconfig.smoke.yaml` uses the same provider and scenarios but selects eight
+representative cases for local iteration.
 
 ```yaml
 prompts:
@@ -89,13 +92,14 @@ prompts:
 providers:
   - file://scenarios/shared/provider.ts
 scenarios:
-  - file://scenarios/**/*.yaml
+  - file://scenarios/onboard/cold-start-conversation.yaml
+  # ...all remaining scenarios, slowest first
 ```
 
 Each `scenarios/<verb>/<case>.yaml` is a **one-element scenario list**: its `config[0].vars`
 supplies the case's `prompt` (rendered into `{{prompt}}`) and `env`, and its `tests[0].assert`
 holds the case's assertions. One prompt template × N scenarios means no prompt×test
-cross-product — promptfoo runs the scenarios concurrently (default 4 workers) in a single run,
+cross-product — promptfoo runs the scenarios concurrently (default 2 workers) in a single run,
 so all cases land in **one** eval record you can browse in `npm run eval:view`.
 
 ```yaml
@@ -273,6 +277,8 @@ Up to two judge votes run concurrently per scenario by default.
 judging. Invalid values fall back to `min(k, 2)`. The tested agent is pinned to
 `claude-sonnet-4.5`, while the judge defaults to the faster `gpt-5.6-luna`. Override the
 judge globally with `OKH_JUDGE_MODEL`, or per assertion with `graderModel`.
+Adaptive judging launches only the votes still needed to fix every criterion, so the
+concurrency value is a ceiling rather than a guarantee that all `k` votes start together.
 
 A criterion carrying a `check` (`tool`, `container`, `manifest`, `wake-phrase`,
 `transcript-contains`, `transcript-absent`) is evaluated **deterministically** — the
@@ -288,27 +294,51 @@ insufficient votes) fails.
 ```powershell
 npm run build            # rebuild dist/index.js first (the harness runs the built server)
 $env:GH_TOKEN = "..."    # Linux/CI only; skip on a logged-in macOS/Windows machine
-npm run eval:validate    # structural promptfoo validation
-npm run eval             # full live run (premium usage) — all scenarios, concurrently
+npm run eval:validate    # validate both full and smoke configs
+npm run eval:smoke       # 8 representative scenarios, one judge vote (local iteration)
+npm run eval             # full release tier, adaptive three-vote judging
 npm run eval -- --filter-pattern "Ask - answerable"   # one scenario
 npm run eval -- --filter-pattern "Learn -" --repeat 3 --max-concurrency 2
 npm run eval:view        # open the report + Prompts/Datasets/Results UI
 ```
 
-> **One config, concurrent scenarios.** `npm run eval` / `eval:validate` run a **single**
-> `promptfoo` process on `eval/promptfooconfig.yaml` (via `run-scenarios.ts`), which globs
-> every `scenarios/**/*.yaml` scenario and runs at most two concurrently by default.
-> Pass `--max-concurrency N` to override the cap.
+> **Tiered, concurrent scenarios.** `npm run eval` runs the full slow-first config;
+> `npm run eval:smoke` runs the representative local config. Each tier uses one promptfoo
+> process and runs at most two scenarios concurrently by default. Pass
+> `--max-concurrency N` for one run or set `OKH_EVAL_CONCURRENCY` (1–8) for a CI/matrix
+> configuration.
 > All cases share one eval record — pick a row in `npm run eval:view`. Both invoke promptfoo
 > through `node --import tsx` so the TypeScript provider keeps NodeNext `.js` import specifiers;
-> validation prints `Configuration is valid.` Additional CLI arguments are forwarded to promptfoo.
+> validation checks both configs. Additional CLI arguments are forwarded to promptfoo.
 > Update checks are disabled during runs to avoid startup network noise.
 
 **Cost:** each scenario uses **N agent turns**, plus `k` judge calls only when semantic
 grading remains necessary (single-turn scenarios have `N=1`; multi-turn scenarios run one
-agent turn per scripted reply; `k` defaults to 3). Deterministic-only scenarios skip the
-judge. Set `OKH_JUDGE_K=1` for cheap local iteration. Parallel voting reduces wall time,
-not premium usage. Response caching is disabled for the agent (`--no-cache`).
+agent turn per scripted reply; `k` defaults to 3). Judges launch two votes first and stop
+once every criterion's configured-majority result is fixed; a third vote runs only for a
+split or otherwise unresolved outcome. Deterministic-only scenarios skip the judge.
+`npm run eval:smoke` sets `k=1`; set `OKH_JUDGE_K=1` explicitly for other cheap local
+runs. A `borderline` annotation is best-effort because an unlaunched vote cannot reveal
+later dissent after a majority is already fixed. Response caching is disabled for the
+agent (`--no-cache`).
+
+**Timing telemetry:** automated runs emit one-line provisioning, agent, tool, judge,
+retry-cleanup, run-cleanup, and total timings. Provider and judge details are also attached
+to result metadata when JSON output is requested. Set `OKH_EVAL_TIMINGS=0` to suppress
+the per-scenario lines. Tool timing uses JSONL event arrival time; buffered start/complete
+events can understate tool time and correspondingly overstate agent time.
+
+**Concurrency reliability comparison:** keep the release default at 2, then evaluate a
+candidate setting with repeated identical runs:
+
+```powershell
+$env:OKH_EVAL_CONCURRENCY = "3"
+npm run eval -- --repeat 3 --output concurrency-3.json --no-table
+Remove-Item Env:OKH_EVAL_CONCURRENCY
+```
+
+Compare pass/error counts, retry telemetry, duration, and leaked roots against the same
+repeat at concurrency 2 before changing the default.
 
 **Model matrix:** change the default `model` in `scenarios/shared/provider.ts` (one place),
 then compare runs in `npm run eval:view`. **Comparing builds:** run the suite on two OKH

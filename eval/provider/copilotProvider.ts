@@ -3,6 +3,7 @@ import { spawnCopilotTurn, runConversation, type CopilotTurnRunner, type Turn, t
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { rm } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
@@ -27,6 +28,38 @@ interface CallContext {
 
 interface CallApiOptions {
   abortSignal?: AbortSignal;
+}
+
+interface AttemptTimings {
+  attempt: number;
+  provisionMs: number;
+  agentMs: number;
+  toolMs: number;
+  retryCleanupMs: number;
+  totalMs: number;
+}
+
+interface ProviderTimings {
+  provisionMs: number;
+  agentMs: number;
+  toolMs: number;
+  retryCleanupMs: number;
+  totalMs: number;
+  attempts: AttemptTimings[];
+}
+
+function rounded(ms: number): number {
+  return Math.round(ms);
+}
+
+function formatTiming(timings: ProviderTimings): string {
+  return [
+    `provision=${timings.provisionMs}ms`,
+    `agent=${timings.agentMs}ms`,
+    `tools=${timings.toolMs}ms`,
+    `retryCleanup=${timings.retryCleanupMs}ms`,
+    `provider=${timings.totalMs}ms`,
+  ].join(" ");
 }
 
 function resolveMaxAttempts(value: number | undefined): number {
@@ -130,6 +163,7 @@ export default class CopilotProvider {
   }
 
   async callApi(prompt: string, context: CallContext = {}, options: CallApiOptions = {}) {
+    const providerStarted = performance.now();
     const vars = context.vars ?? {};
     const env = vars.env;
     if (!isEnvName(env)) {
@@ -154,10 +188,15 @@ export default class CopilotProvider {
     const retryErrors: string[] = [];
     let totalCost = 0;
     let costIncomplete = false;
+    const attemptTimings: AttemptTimings[] = [];
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const attemptStarted = performance.now();
+      const provisionStarted = performance.now();
       const prov = await provisioner(env, { repoRoot: REPO_ROOT, label: evalEnvironmentLabel(env) });
+      const provisionMs = performance.now() - provisionStarted;
       let result: Awaited<ReturnType<typeof runConversation>>;
+      const agentStarted = performance.now();
       try {
         result = await runConversation(
           {
@@ -183,6 +222,9 @@ export default class CopilotProvider {
         );
         throw runError;
       }
+      const agentPhaseMs = performance.now() - agentStarted;
+      const toolMs = Math.min(agentPhaseMs, result.timings.toolMs);
+      const agentMs = Math.max(0, agentPhaseMs - toolMs);
 
       totalCost += result.cost;
       let error: string | undefined;
@@ -205,18 +247,49 @@ export default class CopilotProvider {
       ) {
         retryErrors.push(error!);
         costIncomplete = true;
+        const cleanupStarted = performance.now();
         await removeFailedEnvironment(
           prov.root,
           new Error(error),
           "Copilot retry and failed-attempt cleanup both failed",
         );
+        const retryCleanupMs = performance.now() - cleanupStarted;
+        attemptTimings.push({
+          attempt,
+          provisionMs: rounded(provisionMs),
+          agentMs: rounded(agentMs),
+          toolMs: rounded(toolMs),
+          retryCleanupMs: rounded(retryCleanupMs),
+          totalMs: rounded(performance.now() - attemptStarted),
+        });
         continue;
       }
 
+      attemptTimings.push({
+        attempt,
+        provisionMs: rounded(provisionMs),
+        agentMs: rounded(agentMs),
+        toolMs: rounded(toolMs),
+        retryCleanupMs: 0,
+        totalMs: rounded(performance.now() - attemptStarted),
+      });
+      const timings: ProviderTimings = {
+        provisionMs: attemptTimings.reduce((sum, timing) => sum + timing.provisionMs, 0),
+        agentMs: attemptTimings.reduce((sum, timing) => sum + timing.agentMs, 0),
+        toolMs: attemptTimings.reduce((sum, timing) => sum + timing.toolMs, 0),
+        retryCleanupMs: attemptTimings.reduce((sum, timing) => sum + timing.retryCleanupMs, 0),
+        totalMs: rounded(performance.now() - providerStarted),
+        attempts: attemptTimings,
+      };
+      const scenario = context.test?.description ?? "unnamed scenario";
+      if (process.env.OKH_EVAL_TIMINGS !== undefined && process.env.OKH_EVAL_TIMINGS !== "0") {
+        console.log(`[eval timing] ${scenario}: ${formatTiming(timings)}`);
+      }
       return {
         output: result.transcript,
         ...(error ? { error } : {}),
         metadata: {
+          scenario,
           root: prov.root,
           workspace: prov.workspace,
           okhHome: prov.okhHome,
@@ -231,6 +304,7 @@ export default class CopilotProvider {
           costIncomplete,
           attempts: attempt,
           retryErrors,
+          timings,
           exitCode: result.code,
           processFailure: result.processFailure,
           processFailureKind: result.processFailureKind,

@@ -14,6 +14,7 @@ import {
   spawnCopilotTurn,
   terminateProcessTree,
   terminateProcessTreeAndWait,
+  ToolTimingTracker,
   type CopilotTurnRunner,
   type CopilotTurnResult,
   type ToolEvent,
@@ -339,6 +340,33 @@ describe("parseCopilotEvents", () => {
   });
 });
 
+describe("ToolTimingTracker", () => {
+  it("measures the union of overlapping tool execution intervals", () => {
+    let now = 0;
+    const tracker = new ToolTimingTracker(() => now);
+    tracker.push(`${line({ type: "tool.execution_start", data: { toolCallId: "a" } })}\n`);
+    now = 20;
+    tracker.push(`${line({ type: "tool.execution_start", data: { toolCallId: "b" } })}\n`);
+    now = 50;
+    tracker.push(`${line({ type: "tool.execution_complete", data: { toolCallId: "a" } })}\n`);
+    now = 80;
+    tracker.push(`${line({ type: "tool.execution_complete", data: { toolCallId: "b" } })}\n`);
+
+    expect(tracker.finish(100)).toBe(80);
+  });
+
+  it("counts an incomplete tool until the turn finishes", () => {
+    let now = 10;
+    const tracker = new ToolTimingTracker(() => now);
+    const event = line({ type: "tool.execution_start", data: { toolCallId: "a" } });
+    tracker.push(event.slice(0, 10));
+    now = 15;
+    tracker.push(`${event.slice(10)}\n`);
+
+    expect(tracker.finish(40)).toBe(25);
+  });
+});
+
 /** Fake turn-runner: scripts each turn's agent reply + toolEvents by prompt substring. */
 function fakeRunner(
   script: Array<{ match: string; agent: string; toolEvents?: ToolEvent[]; cost?: number; code?: number }>,
@@ -429,6 +457,7 @@ describe("runConversation", () => {
           code: 0,
           raw: "",
           render: "",
+          timings: { totalMs: 10, agentMs: 7, toolMs: 3 },
         };
       }
       return {
@@ -441,6 +470,7 @@ describe("runConversation", () => {
         code: 0,
         raw: "",
         render: "",
+        timings: { totalMs: 20, agentMs: 12, toolMs: 8 },
       };
     };
     const res = await runConversation(
@@ -451,6 +481,7 @@ describe("runConversation", () => {
     expect(res.toolEvents).toHaveLength(2);
     expect(res.toolEvents[0]).toMatchObject({ tool: "run", turn: 1 });
     expect(res.toolEvents[1]).toMatchObject({ tool: "config", turn: 2 });
+    expect(res.timings).toEqual({ totalMs: 30, agentMs: 19, toolMs: 11 });
   });
 
   it("preserves structured tool event order across resumed turns", async () => {

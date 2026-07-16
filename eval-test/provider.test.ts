@@ -62,6 +62,14 @@ describe("CopilotProvider", () => {
     expect(res.metadata.toolCalls).toContain("ask");
     expect(res.metadata.toolEvents).toBeInstanceOf(Array);
     expect(res.metadata.toolEvents.length).toBeGreaterThan(0);
+    expect(res.metadata.timings).toMatchObject({
+      provisionMs: expect.any(Number),
+      agentMs: expect.any(Number),
+      toolMs: 0,
+      retryCleanupMs: 0,
+      totalMs: expect.any(Number),
+      attempts: [expect.objectContaining({ attempt: 1, retryCleanupMs: 0 })],
+    });
     expect(await exists(join(res.metadata.containerPath, "kb", ".okh", "module.yaml"))).toBe(true);
   });
 
@@ -134,6 +142,15 @@ describe("CopilotProvider", () => {
       cost: 5,
       costIncomplete: true,
       retryErrors: ["Copilot turn failed: [spawn error] unavailable"],
+    });
+    expect(res.metadata.timings.attempts).toHaveLength(2);
+    expect(res.metadata.timings.attempts[0]).toMatchObject({
+      attempt: 1,
+      retryCleanupMs: expect.any(Number),
+    });
+    expect(res.metadata.timings.attempts[1]).toMatchObject({
+      attempt: 2,
+      retryCleanupMs: 0,
     });
     expect(await exists(roots[0]!)).toBe(false);
     expect(await exists(roots[1]!)).toBe(true);

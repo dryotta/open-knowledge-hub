@@ -6,6 +6,8 @@ import {
   buildPromptfooEnv,
   launchPromptfoo,
   parseEvalMode,
+  parseHarnessArgs,
+  resolveScenarioConcurrency,
   resolvedExitCode,
 } from "../eval/run-scenarios.js";
 
@@ -33,10 +35,16 @@ describe("run-scenarios", () => {
     ]);
   });
 
-  it("caps scenario concurrency at two by default", () => {
-    const args = buildPromptfooArgs("eval");
+  it("uses scenario concurrency two by default and accepts a validated environment override", () => {
+    const args = buildPromptfooArgs("eval", [], { env: {} });
     const index = args.indexOf("--max-concurrency");
     expect(args.slice(index, index + 2)).toEqual(["--max-concurrency", "2"]);
+
+    const overridden = buildPromptfooArgs("eval", [], { env: { OKH_EVAL_CONCURRENCY: "3" } });
+    const overriddenIndex = overridden.indexOf("--max-concurrency");
+    expect(overridden.slice(overriddenIndex, overriddenIndex + 2)).toEqual(["--max-concurrency", "3"]);
+    expect(resolveScenarioConcurrency({ OKH_EVAL_CONCURRENCY: "3" })).toBe(3);
+    expect(() => resolveScenarioConcurrency({ OKH_EVAL_CONCURRENCY: "0" })).toThrow(/integer from 1 to 8/i);
   });
 
   it("does not add eval-only cache flags to validation", () => {
@@ -46,13 +54,40 @@ describe("run-scenarios", () => {
     expect(args.at(-1)).toBe("--no-progress-bar");
   });
 
-  it("sets a scoped run id and disables update checks by default", () => {
+  it("sets scoped tier, run, and local judge configuration", () => {
     expect(buildPromptfooEnv("run-123", { PATH: "p" })).toEqual({
       PATH: "p",
       OKH_EVAL_RUN_ID: "run-123",
+      OKH_EVAL_TIER: "full",
+      OKH_EVAL_TIMINGS: "1",
       PROMPTFOO_DISABLE_UPDATE: "true",
     });
+    expect(buildPromptfooEnv("run-123", {}, { tier: "smoke", judgeK: 1 })).toMatchObject({
+      OKH_EVAL_RUN_ID: "run-123",
+      OKH_EVAL_TIER: "smoke",
+      OKH_JUDGE_K: "1",
+    });
     expect(buildPromptfooEnv("run-123", { PROMPTFOO_DISABLE_UPDATE: "false" }).PROMPTFOO_DISABLE_UPDATE).toBe("false");
+  });
+
+  it("consumes harness tier and judge options without forwarding them to promptfoo", () => {
+    const parsed = parseHarnessArgs([
+      "--tier=smoke",
+      "--judge-k",
+      "1",
+      "--filter-pattern",
+      "Ask -",
+    ]);
+    expect(parsed).toEqual({
+      tier: "smoke",
+      tierExplicit: true,
+      judgeK: 1,
+      promptfooArgs: ["--filter-pattern", "Ask -"],
+    });
+    const args = buildPromptfooArgs("eval", parsed.promptfooArgs, { tier: parsed.tier, env: {} });
+    expect(args.find((arg) => arg.endsWith("promptfooconfig.smoke.yaml"))).toBeDefined();
+    expect(args).not.toContain("--tier=smoke");
+    expect(args).not.toContain("--judge-k");
   });
 
   it("rejects missing or unknown modes", () => {
@@ -60,6 +95,8 @@ describe("run-scenarios", () => {
     expect(parseEvalMode("validate")).toBe("validate");
     expect(() => parseEvalMode(undefined)).toThrow(/expected eval mode/i);
     expect(() => parseEvalMode("watch")).toThrow(/expected eval mode/i);
+    expect(() => parseHarnessArgs(["--tier", "quick"])).toThrow(/expected eval tier/i);
+    expect(() => parseHarnessArgs(["--judge-k", "0"])).toThrow(/integer from 1 to 11/i);
   });
 
   it("reports interruption even when the child exits zero", () => {

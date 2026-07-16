@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { runJudgeCriteria, type Criterion } from "../judge.js";
+import { runJudgeCriteria, type Criterion, type JudgeTelemetry } from "../judge.js";
 import { evaluateCheck, type Check } from "./checks.js";
 import { readTree, diffTrees } from "./_compare.js";
 
@@ -64,7 +64,16 @@ interface Ctx {
     artifacts?: ArtifactsConfig;
   };
   providerResponse?: {
-    metadata?: { containerPath?: string; fixtureDir?: string; okhHome?: string; toolCalls?: string[]; toolEvents?: import("../copilot.js").ToolEvent[] };
+    metadata?: {
+      scenario?: string;
+      containerPath?: string;
+      fixtureDir?: string;
+      okhHome?: string;
+      toolCalls?: string[];
+      toolEvents?: import("../copilot.js").ToolEvent[];
+      timings?: Record<string, unknown> & { judgeMs?: number };
+      judge?: JudgeTelemetry;
+    };
   };
 }
 
@@ -93,15 +102,31 @@ export default async function judge(
   process.once("SIGINT", abort);
   process.once("SIGTERM", abort);
   let results: Awaited<ReturnType<typeof runJudgeCriteria>>;
+  let judgeTelemetry: JudgeTelemetry | undefined;
   try {
     results = await deps.runJudgeCriteria(criteria as Criterion[], graded, {
       ...(context.config?.k ? { k: context.config.k } : {}),
       ...(context.config?.graderModel ? { model: context.config.graderModel } : {}),
       abortSignal: abortController.signal,
+      onTelemetry: (telemetry) => {
+        judgeTelemetry = telemetry;
+      },
     });
   } finally {
     process.off("SIGINT", abort);
     process.off("SIGTERM", abort);
+  }
+  if (judgeTelemetry) {
+    meta.timings ??= {};
+    meta.timings.judgeMs = (meta.timings.judgeMs ?? 0) + judgeTelemetry.durationMs;
+    meta.judge = judgeTelemetry;
+    if (process.env.OKH_EVAL_TIMINGS !== undefined && process.env.OKH_EVAL_TIMINGS !== "0") {
+      console.log(
+        `[eval timing] ${meta.scenario ?? "unnamed scenario"}: judge=${judgeTelemetry.durationMs}ms `
+        + `launched=${judgeTelemetry.launchedRuns}/${judgeTelemetry.configuredRuns} `
+        + `skipped=${judgeTelemetry.skippedRuns} invalid=${judgeTelemetry.invalidRuns}`,
+      );
+    }
   }
   const byId = new Map(results.map((r) => [r.id, r]));
   const checkCtx = { okhHome: meta.okhHome, toolCalls: meta.toolCalls ?? [], toolEvents: meta.toolEvents ?? [], transcript: output };
@@ -137,7 +162,8 @@ export default async function judge(
     const invalid = r.invalidVotes > 0
       ? ` invalid=${r.invalidVotes}${r.invalidReasons.length > 0 ? ` (${r.invalidReasons.join("; ")})` : ""}`
       : "";
-    parts.push(`${c.id}: ${effective} ${r.passVotes}/${r.validVotes}${border}${invalid}${required ? "" : " [advisory]"}`);
+    const skipped = r.skippedVotes > 0 ? ` skipped=${r.skippedVotes}/${r.configuredVotes}` : "";
+    parts.push(`${c.id}: ${effective} ${r.passVotes}/${r.validVotes}${border}${invalid}${skipped}${required ? "" : " [advisory]"}`);
   }
   return { pass, score: pass ? 1 : 0, reason: parts.join(" · ") };
 }

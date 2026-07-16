@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { spawnCopilot, type CopilotRunner } from "./copilot.js";
 import { validateRunId } from "./environments.js";
 
@@ -18,11 +19,31 @@ export interface CriterionResult {
   failVotes: number;
   validVotes: number;
   invalidVotes: number;
+  configuredVotes: number;
+  skippedVotes: number;
   invalidReasons: string[];
   evidence: string[];
 }
 
-const MAX_JUDGE_K = 11;
+export interface JudgeTelemetry {
+  configuredRuns: number;
+  launchedRuns: number;
+  completedRuns: number;
+  skippedRuns: number;
+  invalidRuns: number;
+  durationMs: number;
+}
+
+export interface JudgeOptions {
+  k?: number;
+  model?: string;
+  timeoutMs?: number;
+  runner?: CopilotRunner;
+  abortSignal?: AbortSignal;
+  onTelemetry?: (telemetry: JudgeTelemetry) => void;
+}
+
+export const MAX_JUDGE_K = 11;
 const DEFAULT_JUDGE_MODEL = "gpt-5.6-luna";
 
 class JudgeProcessError extends Error {}
@@ -220,72 +241,117 @@ function parseJudgeRun(raw: string, criteria: Criterion[]): ParsedJudgeRun {
 export async function runJudgeCriteria(
   criteria: Criterion[],
   transcript: string,
-  opts: { k?: number; model?: string; timeoutMs?: number; runner?: CopilotRunner; abortSignal?: AbortSignal } = {},
+  opts: JudgeOptions = {},
 ): Promise<CriterionResult[]> {
   if (new Set(criteria.map((criterion) => criterion.id)).size !== criteria.length) {
     throw new Error("Judge criteria ids must be unique");
   }
   const k = resolveK(opts.k);
   const concurrency = resolveConcurrency(k);
+  const need = Math.floor(k / 2) + 1;
   const prompt = gradeCriteriaPrompt(criteria, transcript);
-  const votes: Array<Map<string, "PASS" | "FAIL">> = [];
+  const counts = new Map(criteria.map((criterion) => [
+    criterion.id,
+    { passVotes: 0, failVotes: 0 },
+  ]));
   const evidence = new Map<string, string[]>();
   const invalidReasons: string[] = [];
-  const raws = new Array<string | undefined>(k);
-  let next = 0;
-  let aborted = false;
-  let fatal = false;
-  const fatalErrors: unknown[] = [];
-  await Promise.all(
-    Array.from({ length: concurrency }, async () => {
-      while (!aborted && !fatal && next < k) {
-        const index = next++;
+  let launchedRuns = 0;
+  let completedRuns = 0;
+  let invalidRuns = 0;
+  const startedAt = performance.now();
+
+  const allOutcomesFixed = (): boolean => {
+    const remaining = k - completedRuns;
+    return [...counts.values()].every(({ passVotes, failVotes }) => (
+      passVotes >= need
+      || failVotes >= need
+      || (passVotes + remaining < need && failVotes + remaining < need)
+    ));
+  };
+
+  const nextBatchSize = (): number => {
+    const unresolved = [...counts.values()].filter(({ passVotes, failVotes }) => {
+      const remaining = k - completedRuns;
+      return !(
+        passVotes >= need
+        || failVotes >= need
+        || (passVotes + remaining < need && failVotes + remaining < need)
+      );
+    });
+    const minimumUsefulVotes = unresolved.length === 0
+      ? 0
+      : Math.max(1, Math.min(...unresolved.map(
+        ({ passVotes, failVotes }) => need - Math.max(passVotes, failVotes),
+      )));
+    return Math.min(concurrency, k - launchedRuns, minimumUsefulVotes);
+  };
+
+  try {
+    while (launchedRuns < k && !allOutcomesFixed()) {
+      const batchSize = nextBatchSize();
+      const batch = Array.from({ length: batchSize }, (_, offset) => launchedRuns + offset);
+      launchedRuns += batch.length;
+      const outcomes = await Promise.all(batch.map(async (index) => {
         try {
-          raws[index] = await judgeOnce(prompt, opts);
+          return { index, raw: await judgeOnce(prompt, opts) } as const;
         } catch (error) {
-          if (opts.abortSignal?.aborted) aborted = true;
-          else if (error instanceof JudgeProcessError) {
-            invalidReasons.push(error.message);
-          } else {
-            fatal = true;
-            fatalErrors.push(error);
-          }
+          return { index, error } as const;
+        }
+      }));
+      completedRuns += outcomes.length;
+
+      if (opts.abortSignal?.aborted) {
+        throw opts.abortSignal.reason ?? new Error("Judge grading aborted");
+      }
+      const fatalErrors = outcomes
+        .filter((outcome): outcome is { index: number; error: unknown } => "error" in outcome)
+        .map((outcome) => outcome.error)
+        .filter((error) => !(error instanceof JudgeProcessError));
+      if (fatalErrors.length === 1) throw fatalErrors[0];
+      if (fatalErrors.length > 1) {
+        throw new AggregateError(fatalErrors, "Multiple judge runs failed unexpectedly");
+      }
+
+      for (const outcome of outcomes) {
+        if ("error" in outcome) {
+          invalidRuns++;
+          invalidReasons.push((outcome.error as JudgeProcessError).message);
+          continue;
+        }
+        const parsed = parseJudgeRun(outcome.raw, criteria);
+        if (!parsed.ok) {
+          invalidRuns++;
+          invalidReasons.push(parsed.reason);
+          continue;
+        }
+        for (const [id, verdict] of parsed.votes) {
+          const count = counts.get(id)!;
+          if (verdict === "PASS") count.passVotes++;
+          else count.failVotes++;
+        }
+        for (const [id, reason] of parsed.evidence) {
+          const reasons = evidence.get(id) ?? [];
+          reasons.push(reason);
+          evidence.set(id, reasons);
         }
       }
-    }),
-  );
-  if (opts.abortSignal?.aborted) {
-    throw opts.abortSignal.reason ?? new Error("Judge grading aborted");
-  }
-  if (fatalErrors.length === 1) throw fatalErrors[0];
-  if (fatalErrors.length > 1) {
-    throw new AggregateError(fatalErrors, "Multiple judge runs failed unexpectedly");
-  }
-  for (const raw of raws) {
-    if (raw === undefined) continue;
-    const parsed = parseJudgeRun(raw, criteria);
-    if (!parsed.ok) {
-      invalidReasons.push(parsed.reason);
-      continue;
     }
-    votes.push(parsed.votes);
-    for (const [id, reason] of parsed.evidence) {
-      const reasons = evidence.get(id) ?? [];
-      reasons.push(reason);
-      evidence.set(id, reasons);
-    }
+  } finally {
+    opts.onTelemetry?.({
+      configuredRuns: k,
+      launchedRuns,
+      completedRuns,
+      skippedRuns: k - launchedRuns,
+      invalidRuns,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
   }
-  const need = Math.floor(k / 2) + 1;
+
   return criteria.map((c) => {
-    let passVotes = 0;
-    let failVotes = 0;
-    for (const vote of votes) {
-      const verdict = vote.get(c.id);
-      if (verdict === "PASS") passVotes++;
-      else if (verdict === "FAIL") failVotes++;
-    }
+    const { passVotes, failVotes } = counts.get(c.id)!;
     const validVotes = passVotes + failVotes;
-    const invalidVotes = k - validVotes;
+    const invalidVotes = completedRuns - validVotes;
     let verdict: CriterionResult["verdict"];
     if (passVotes >= need) verdict = "PASS";
     else if (failVotes >= need) verdict = "FAIL";
@@ -297,6 +363,8 @@ export async function runJudgeCriteria(
       failVotes,
       validVotes,
       invalidVotes,
+      configuredVotes: k,
+      skippedVotes: k - completedRuns,
       invalidReasons,
       evidence: evidence.get(c.id) ?? [],
     };

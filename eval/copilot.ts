@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 const TERMINATION_GRACE_MS = 5_000;
 
@@ -403,9 +404,69 @@ export interface CopilotTurnOptions {
 export interface CopilotTurnResult extends ParsedTurn {
   /** Raw JSONL for debugging. */
   raw: string;
+  timings?: TurnTimings;
   /** Explicit spawn/timeout/abort diagnostic when the process did not exit normally. */
   processFailure?: string;
   processFailureKind?: ProcessFailureKind;
+}
+
+export interface TurnTimings {
+  totalMs: number;
+  agentMs: number;
+  toolMs: number;
+}
+
+export class ToolTimingTracker {
+  private buffer = "";
+  private readonly active = new Set<string>();
+  private activeSince: number | undefined;
+  private elapsedMs = 0;
+
+  constructor(private readonly now: () => number = () => performance.now()) {}
+
+  push(chunk: string): void {
+    this.buffer += chunk;
+    let newline = this.buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = this.buffer.slice(0, newline);
+      this.buffer = this.buffer.slice(newline + 1);
+      this.observe(line, this.now());
+      newline = this.buffer.indexOf("\n");
+    }
+  }
+
+  finish(atMs = this.now()): number {
+    if (this.buffer) {
+      this.observe(this.buffer, atMs);
+      this.buffer = "";
+    }
+    if (this.activeSince !== undefined) {
+      this.elapsedMs += Math.max(0, atMs - this.activeSince);
+      this.activeSince = undefined;
+      this.active.clear();
+    }
+    return this.elapsedMs;
+  }
+
+  private observe(raw: string, atMs: number): void {
+    const line = raw.trim();
+    if (!line.startsWith("{")) return;
+    let event: CopilotEvent;
+    try {
+      event = JSON.parse(line) as CopilotEvent;
+    } catch {
+      return;
+    }
+    const callId = event.data?.toolCallId;
+    if (!callId) return;
+    if (event.type === "tool.execution_start" && !this.active.has(callId)) {
+      if (this.active.size === 0) this.activeSince = atMs;
+      this.active.add(callId);
+    } else if (event.type === "tool.execution_complete" && this.active.delete(callId) && this.active.size === 0) {
+      this.elapsedMs += Math.max(0, atMs - (this.activeSince ?? atMs));
+      this.activeSince = undefined;
+    }
+  }
 }
 
 /** Injectable so tests never spawn the real `copilot`. */
@@ -433,12 +494,14 @@ export function buildCopilotTurnArgs(opts: Pick<CopilotTurnOptions, "prompt" | "
 /** Default turn runner: spawns `copilot -p ... --output-format json`, parsing one turn. */
 export const spawnCopilotTurn: CopilotTurnRunner = (opts) =>
   new Promise((resolve) => {
+    const startedAt = performance.now();
     if (opts.abortSignal?.aborted) {
       const parsed = parseCopilotEvents("", opts.turn ?? 1);
       resolve({
         ...parsed,
         raw: "[aborted before Copilot turn started]",
         code: null,
+        timings: { totalMs: 0, agentMs: 0, toolMs: 0 },
         processFailure: "[Copilot turn aborted before process started]",
         processFailureKind: "abort",
       });
@@ -455,18 +518,27 @@ export const spawnCopilotTurn: CopilotTurnRunner = (opts) =>
     let out = "";
     let settled = false;
     let processFailureKind: ProcessFailureKind | undefined;
-    child.stdout.on("data", (d) => (out += d.toString()));
+    const toolTiming = new ToolTimingTracker();
+    child.stdout.on("data", (d) => {
+      const chunk = d.toString();
+      out += chunk;
+      toolTiming.push(chunk);
+    });
     child.stderr.on("data", (d) => (out += d.toString()));
     let detachTermination = (): void => {};
     const finish = (code: number | null, diagnostic?: string): void => {
       if (settled) return;
       settled = true;
       detachTermination();
+      const finishedAt = performance.now();
+      const totalMs = Math.max(0, finishedAt - startedAt);
+      const toolMs = Math.min(totalMs, toolTiming.finish(finishedAt));
       const parsed = parseCopilotEvents(out, opts.turn ?? 1);
       resolve({
         ...parsed,
         raw: diagnostic ? `${out}\n${diagnostic}` : out,
         code: resolvedProcessExitCode(parsed.code, code, diagnostic),
+        timings: { totalMs, agentMs: totalMs - toolMs, toolMs },
         ...(diagnostic ? { processFailure: diagnostic } : {}),
         ...(processFailureKind ? { processFailureKind } : {}),
       });
@@ -552,6 +624,7 @@ export interface ConversationResult {
   cost: number;
   /** Last turn's exit code. */
   code: number | null;
+  timings: TurnTimings;
   /** If set, the conversation ended in a state-machine failure. */
   failure?: string;
   /** Explicit spawn/timeout/abort diagnostic from the last failed process. */
@@ -621,6 +694,7 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
   let processFailure: string | undefined;
   let processFailureKind: ProcessFailureKind | undefined;
   let finalMessage = "";
+  const timings: TurnTimings = { totalMs: 0, agentMs: 0, toolMs: 0 };
 
   const runTurn = async (user: string, resume: boolean): Promise<CopilotTurnResult> => {
     if (ctx.abortSignal?.aborted) {
@@ -639,6 +713,11 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       turn: turns.length + 1,
     });
     turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools, toolEvents: r.toolEvents });
+    if (r.timings) {
+      timings.totalMs += r.timings.totalMs;
+      timings.agentMs += r.timings.agentMs;
+      timings.toolMs += r.timings.toolMs;
+    }
     finalMessage = r.lastMessage;
     for (const ev of r.toolEvents) {
       allToolEvents.push(ev);
@@ -663,6 +742,7 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       finalMessage,
       cost,
       code,
+      timings,
       ...(failure ? { failure } : {}),
       ...(processFailure ? { processFailure } : {}),
       ...(processFailureKind ? { processFailureKind } : {}),

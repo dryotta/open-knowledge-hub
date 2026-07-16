@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { rm, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
-import { extractJson, extractJsonArray, runJudgeCriteria } from "../eval/judge.js";
+import { extractJson, extractJsonArray, runJudgeCriteria, type JudgeTelemetry } from "../eval/judge.js";
 import { buildArtifactsSection } from "../eval/assertions/judge.js";
 import type { CopilotRunner } from "../eval/copilot.js";
 
@@ -216,7 +216,7 @@ describe("runJudgeCriteria", () => {
     }
   });
 
-  it("clamps OKH_JUDGE_CONCURRENCY to k", async () => {
+  it("does not launch unnecessary votes when judge concurrency exceeds k", async () => {
     const prev = process.env.OKH_JUDGE_CONCURRENCY;
     process.env.OKH_JUDGE_CONCURRENCY = "10";
     let release!: () => void;
@@ -236,7 +236,7 @@ describe("runJudgeCriteria", () => {
       release();
       await pending;
 
-      expect(maxActive).toBe(3);
+      expect(maxActive).toBe(2);
     } finally {
       if (prev === undefined) delete process.env.OKH_JUDGE_CONCURRENCY;
       else process.env.OKH_JUDGE_CONCURRENCY = prev;
@@ -276,6 +276,86 @@ describe("runJudgeCriteria", () => {
     expect(a.verdict).toBe("PASS"); // 2 PASS / 1 FAIL
     expect(a.passVotes).toBe(2);
     expect(b.verdict).toBe("FAIL"); // 1 PASS / 2 FAIL
+  });
+
+  it("stops after a configured majority PASS is fixed", async () => {
+    let calls = 0;
+    let telemetry: JudgeTelemetry | undefined;
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+      k: 3,
+      runner: async () => {
+        calls++;
+        return { transcript: PASS_A, code: 0 };
+      },
+      onTelemetry: (value) => {
+        telemetry = value;
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(result[0]).toMatchObject({
+      verdict: "PASS",
+      passVotes: 2,
+      configuredVotes: 3,
+      skippedVotes: 1,
+      invalidVotes: 0,
+    });
+    expect(telemetry).toMatchObject({
+      configuredRuns: 3,
+      launchedRuns: 2,
+      completedRuns: 2,
+      skippedRuns: 1,
+      invalidRuns: 0,
+      durationMs: expect.any(Number),
+    });
+  });
+
+  it("stops after a configured majority FAIL is fixed", async () => {
+    let calls = 0;
+    const fail = '[{"id":"a","verdict":"FAIL","evidence":"test evidence"}]';
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+      k: 3,
+      runner: async () => {
+        calls++;
+        return { transcript: fail, code: 0 };
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(result[0]).toMatchObject({ verdict: "FAIL", failVotes: 2, skippedVotes: 1 });
+  });
+
+  it("stops when remaining runs cannot produce a configured majority", async () => {
+    let calls = 0;
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+      k: 3,
+      runner: async () => {
+        calls++;
+        return { transcript: "not json", code: 0 };
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(result[0]).toMatchObject({
+      verdict: "UNRELIABLE",
+      validVotes: 0,
+      invalidVotes: 2,
+      skippedVotes: 1,
+    });
+  });
+
+  it("launches only the additional vote needed to fix a larger majority", async () => {
+    let calls = 0;
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+      k: 5,
+      runner: async () => {
+        calls++;
+        return { transcript: PASS_A, code: 0 };
+      },
+    });
+
+    expect(calls).toBe(3);
+    expect(result[0]).toMatchObject({ verdict: "PASS", passVotes: 3, skippedVotes: 2 });
   });
 
   it("passes with two valid PASS votes when one of three judge processes fails", async () => {
@@ -414,8 +494,9 @@ describe("runJudgeCriteria", () => {
       calls++;
       return { transcript: PASS_A, code: 0 };
     };
-    await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 0, runner });
-    expect(calls).toBe(3);
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 0, runner });
+    expect(calls).toBe(2);
+    expect(result[0]).toMatchObject({ configuredVotes: 3, skippedVotes: 1 });
   });
 });
 

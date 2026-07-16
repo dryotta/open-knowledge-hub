@@ -132,13 +132,40 @@ describe("deterministic custom, context, and ingest scenarios", () => {
   });
 });
 
-describe("promptfooconfig.yaml (single default)", () => {
-  it("has the {{prompt}} pass-through, the shared provider, and the scenarios glob", async () => {
+describe("promptfoo tier configs", () => {
+  const scenarioPath = (ref: string) => ref.replace("file://scenarios/", "");
+
+  it("orders every full-tier scenario slow-first without omissions", async () => {
     const cfg = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
     expect(cfg.prompts).toEqual(["{{prompt}}"]);
     expect(cfg.providers).toEqual(["file://scenarios/shared/provider.ts"]);
     expect(await exists(join(SCENARIOS, "shared", "provider.ts"))).toBe(true);
-    expect(cfg.scenarios).toEqual(["file://scenarios/**/*.yaml"]);
+    const configured = (cfg.scenarios as string[]).map(scenarioPath);
+    expect([...configured].sort()).toEqual(await scenarioFiles());
+    expect(configured.slice(0, 4)).toEqual([
+      "onboard/cold-start-conversation.yaml",
+      "initialize/llmwiki.yaml",
+      "ask/llmwiki-compounding.yaml",
+      "ingest/into-existing-module.yaml",
+    ]);
+  });
+
+  it("defines a representative smoke tier as a strict full-tier subset", async () => {
+    const full = parseYaml(await readFile(join(EVAL, "promptfooconfig.yaml"), "utf8"));
+    const smoke = parseYaml(await readFile(join(EVAL, "promptfooconfig.smoke.yaml"), "utf8"));
+    expect(smoke.prompts).toEqual(full.prompts);
+    expect(smoke.providers).toEqual(full.providers);
+    const fullRefs = new Set(full.scenarios as string[]);
+    const smokeRefs = smoke.scenarios as string[];
+    expect(smokeRefs).toHaveLength(8);
+    expect(smokeRefs.length).toBeLessThan(fullRefs.size);
+    expect(smokeRefs.every((ref) => fullRefs.has(ref))).toBe(true);
+    expect(smokeRefs).toEqual(expect.arrayContaining([
+      "file://scenarios/ingest/into-existing-module.yaml",
+      "file://scenarios/write/into-wiki.yaml",
+      "file://scenarios/ask/answerable.yaml",
+      "file://scenarios/run/shared-grilling.yaml",
+    ]));
   });
 });
 
