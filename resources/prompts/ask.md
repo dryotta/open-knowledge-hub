@@ -1,10 +1,10 @@
-# OKH: ask
+# Question
+{{var:question}}
 
-**Question:** {{var:question}}
-
-**Scan these targets:**
+# Targets to scan
 {{var:targets}}
 
+# Instructions
 Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
 relevant module(s), starting from each module's overview (knowledge/llmwiki: index.md;
 skills: the root index and nested paths; memory: recent files). Return a distilled,

@@ -1,8 +1,7 @@
-# OKH: context
+# Task
+{{var:task}}
 
-**Task:** {{var:task}}
-
-**Available targets:**
+# Available targets
 {{var:targets}}
 
 <discipline name="context">

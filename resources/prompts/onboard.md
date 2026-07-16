@@ -1,8 +1,7 @@
-# OKH: onboard
+# Wake phrase
+`{{config:wakePhrase}}`
 
-**Wake phrase:** `{{config:wakePhrase}}`
-
-**Current containers:**
+# Current containers
 {{var:targets}}
 
 <discipline name="onboard">

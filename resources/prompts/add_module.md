@@ -1,9 +1,8 @@
-# OKH: add_module
-
-**Registered containers:**
+# Registered containers
 {{var:targets}}
 
-**Built-in module types:** {{var:moduleTypes}}
+# Built-in module types
+{{var:moduleTypes}}
 
 <discipline name="add_module">
 

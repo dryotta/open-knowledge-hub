@@ -31,56 +31,105 @@ import {
 import { formatSyncDescriptor } from "../util/syncFormat.js";
 import { loadPromptFile } from "../prompts/templates.js";
 
-/** Render the no-arg hub map: global skills, module type skills (labeled unambiguously as
- * types), then containers → modules. Module-type skills are listed once per in-use type; only
- * local skills appear on a module line. The routing/usage footer is appended by the handler. */
+/** Render the no-arg hub map as `#`-delimited sections: `# Hub` (wake phrase), `# Running skills`
+ * (the two `run` invocation shapes + flow note), `# Global skills`, `# Built-in skills` (grouped by
+ * module type), and `# Module skills` (containers → modules with each module's full runnable set —
+ * built-in skills by name, descriptions living once in the Built-in skills section, contrasted with
+ * local skills as name — description). The `# Guardrails` footer is appended by the handler. */
 function formatHub(r: HubMap): string {
-  const lines: string[] = [`Hub — wake phrase "${r.wakePhrase}"`, ""];
+  const globalExample = r.globalSkills[0]?.name;
+  let moduleExample: { container: string; module: string; skill: string } | undefined;
+  for (const c of r.containers) {
+    const m = c.modules[0];
+    if (!m) continue;
+    const skill = (r.moduleTypeSkills[m.type] ?? [])[0]?.name ?? m.local?.[0]?.name;
+    if (skill) {
+      moduleExample = { container: c.name, module: m.path, skill };
+      break;
+    }
+  }
 
-  lines.push("Global skills (run with no container/module):");
+  const lines: string[] = [
+    "# Hub",
+    `Wake phrase: "${r.wakePhrase}"`,
+    "",
+    "# Running skills",
+    "Run any skill listed below with the `run` tool. Examples:",
+    `- a global skill: run { skill: ${JSON.stringify(globalExample ?? "<skill>")} }`,
+    moduleExample
+      ? `- a built-in or local skill: run { container: ${JSON.stringify(moduleExample.container)}, module: ${JSON.stringify(moduleExample.module)}, skill: ${JSON.stringify(moduleExample.skill)} }`
+      : "- a built-in or local skill: run { container: \"<container>\", module: \"<module>\", skill: \"<skill>\" }",
+    "`run` returns the skill's instructions for you to carry out — it does not do the work itself.",
+    "",
+  ];
+
+  lines.push("# Global skills");
+  lines.push("Run with no container/module.");
   lines.push(
     ...(r.globalSkills.length
-      ? r.globalSkills.map((s) => `  ${s.name}${s.description ? ` — ${s.description}` : ""}`)
-      : ["  (none)"]),
+      ? r.globalSkills.map((s) => `- ${s.name}${s.description ? ` — ${s.description}` : ""}`)
+      : ["- (none)"]),
   );
   lines.push("");
 
   const types = Object.keys(r.moduleTypeSkills);
-  lines.push("Module type skills (any module of that type can run these):");
+  lines.push("# Built-in skills");
+  lines.push("Grouped by module type; any module of that type can run these.");
   if (types.length === 0) {
-    lines.push("  (none)");
+    lines.push("- (none)");
   } else {
     for (const type of types) {
-      lines.push("", `  Module type "${type}":`);
+      lines.push(`- ${type}:`);
       lines.push(
         ...r.moduleTypeSkills[type]!.map(
-          (s) => `    ${s.name}${s.description ? ` — ${s.description}` : ""}`,
+          (s) => `  - ${s.name}${s.description ? ` — ${s.description}` : ""}`,
         ),
       );
     }
   }
   lines.push("");
 
-  lines.push("Containers:");
+  lines.push("# Module skills");
+  lines.push("Each module's runnable skills, grouped by container.");
   if (r.containers.length === 0) {
-    lines.push("  (none registered — use add_container { source } to register one)");
+    lines.push("- (no containers registered — use add_container { source } to register one)");
   } else {
     for (const c of r.containers) {
       const invalid = c.manifestValid
         ? ""
         : ` (invalid manifest${c.manifestError ? `: ${c.manifestError}` : ""})`;
-      lines.push(`  ${c.name}  [${c.backend}] sync=${formatSyncDescriptor(c.sync)}${invalid}`);
+      lines.push(`- ${c.name}  [${c.backend}] sync=${formatSyncDescriptor(c.sync)}${invalid}`);
       if (c.modules.length === 0) {
-        lines.push("    (no modules)");
+        lines.push("  - (no modules)");
         continue;
       }
       for (const m of c.modules) {
-        const local = m.local?.length ? `   +local: ${m.local.map((s) => s.name).join(", ")}` : "";
-        const overrides = m.overrides?.length ? ` (overrides: ${m.overrides.join(", ")})` : "";
         const desc = isBlank(m.description ?? "")
           ? " — (no description; run dream to consolidate one)"
           : ` — ${m.description!.trim()}`;
-        lines.push(`    · ${m.path}  (module type: ${m.type})  ${m.items} items${desc}${local}${overrides}`);
+        lines.push(`  - ${m.path}  (module type: ${m.type})  ${m.items} items${desc}`);
+        // Full runnable set for the module. A local skill that overrides a same-named built-in
+        // replaces it, so drop the overridden built-in name and annotate the local one.
+        const overrides = new Set(m.overrides ?? []);
+        const builtinNames = (r.moduleTypeSkills[m.type] ?? [])
+          .map((s) => s.name)
+          .filter((name) => !overrides.has(name));
+        const local = m.local ?? [];
+        if (builtinNames.length) {
+          lines.push(`    - built-in skills: ${builtinNames.join(", ")}`);
+        }
+        if (local.length) {
+          lines.push("    - local skills:");
+          lines.push(
+            ...local.map((s) => {
+              const overridden = overrides.has(s.name) ? " (overrides built-in)" : "";
+              return `      - ${s.name}${s.description ? ` — ${s.description}` : ""}${overridden}`;
+            }),
+          );
+        }
+        if (!builtinNames.length && !local.length) {
+          lines.push("    - (no runnable skills)");
+        }
       }
     }
   }

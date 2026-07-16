@@ -123,14 +123,15 @@ describe("prompt builders", () => {
     // Keep it short.
     expect(text.split("\n").filter((l) => l.trim()).length).toBeLessThanOrEqual(8);
   });
-  it("inspect hub-map footer carries the routing gates moved out of instructions", async () => {
+  it("inspect hub-map footer is a Guardrails section carrying the sync/publish policy", async () => {
     const text = await loadPromptFile("partials/inspect-usage.md");
-    expect(text).toContain('skill: "learn"');
-    expect(text).toContain('skill: "remember"');
-    expect(text).toContain('skill: "todo"');
-    expect(text).toContain("substitute a memory module");
-    expect(text).toMatch(/never call `todos` first/i);
-    expect(text).toMatch(/effective skills/i);
+    expect(text).toContain("Guardrails");
+    expect(text).toMatch(/then `sync`/);
+    expect(text).toContain("publish-pr");
+    // Routing gates and the Surfaces list were removed from the footer.
+    expect(text).not.toContain("Routing gates");
+    expect(text).not.toContain("Surfaces");
+    expect(text).not.toMatch(/effective skills/i);
   });
   it("buildRun embeds skill name, body, module path, and write policy", async () => {
     const target: ResolvedContainer = targets[0]!;

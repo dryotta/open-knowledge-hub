@@ -23,7 +23,7 @@ function renderTargets(targets: ResolvedContainer[]): string {
 /** Render a skill's resource paths block (empty when there are none). */
 function renderResources(paths: string[]): string {
   if (paths.length === 0) return "";
-  return `**Skill resources (open as needed):**\n${paths.map((p) => `- \`${p}\``).join("\n")}`;
+  return `# Skill resources\nOpen as needed:\n${paths.map((p) => `- \`${p}\``).join("\n")}\n\n`;
 }
 
 export function buildInstructions(config: Record<string, unknown>): Promise<string> {
@@ -57,8 +57,9 @@ export async function buildRun(
 ): Promise<string> {
   const targetBlock =
     target && module
-      ? `**Module:** ${module.type} · \`${module.path}\` → \`${module.absPath}\`\n` +
-        `**Container:** ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n`
+      ? `# Target\n` +
+        `- Module: ${module.type} · \`${module.path}\` → \`${module.absPath}\`\n` +
+        `- Container: ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n\n`
       : "";
   return renderTemplate("run", {
     vars: {
