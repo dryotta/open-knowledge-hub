@@ -272,4 +272,20 @@ describe("type registry", () => {
     const overview = await loader.overview("/does/not/exist");
     expect(typeof overview).toBe("string");
   });
+
+  it("recursively lists nested custom-module files without duplicating skill resources", async () => {
+    const root = await tmp();
+    await write(root, "README.md", "# Tools\n");
+    await write(root, "csv2json/README.md", "# CSV to JSON\n");
+    await write(root, ".claude/skills/cook/SKILL.md", "skill body\n");
+    await write(root, ".github/workflows/ci.yml", "workflow\n");
+    await write(root, ".venv/lib/tool.py", "venv\n");
+    await write(root, "venv/lib/tool.py", "venv\n");
+    await write(root, "node_modules/pkg/package.json", "{}\n");
+    await write(root, "__pycache__/tool.pyc", "cache\n");
+    await write(root, "vendor/pkg/generated.js", "generated\n");
+
+    const items = await getLoader("tools").enumerate(root);
+    expect(items.map((item) => item.path)).toEqual(["csv2json/README.md"]);
+  });
 });

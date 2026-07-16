@@ -3,14 +3,26 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
-          from its knowledge module: What is the company's paid vacation policy?
+          hub, in container "kb-hub", answer strictly from its knowledge module:
+          What is the company's paid vacation policy? If it is absent, say so
+          without filling the gap.
   tests:
     - description: Ask - missing info - declines, no fabrication
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [ask] }
+          config:
+            expect:
+              - ask
+              - { name: task, server: "", arguments: { mode: sync } }
+            forbid:
+              - { name: task, server: "", arguments: { mode: background } }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustContain:
+              - "(?:not (?:documented|found|available|present)(?: in)?|does not (?:contain|include|cover)|no (?:information|details?) (?:about|on)|is absent)"
         - type: javascript
           value: file://assertions/judge.ts
           config:

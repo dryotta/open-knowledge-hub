@@ -3,8 +3,8 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. Assemble the context needed to
-          implement a secure login feature in container "kb-hub".
+          hub, assemble the context needed to implement a secure login feature in
+          container "kb-hub".
   tests:
     - description: Context - login task - compact set, cites paths
       assert:
@@ -12,10 +12,12 @@
           value: file://assertions/tools-called.ts
           config: { expect: [context] }
         - type: javascript
-          value: file://assertions/judge.ts
+          value: file://assertions/working-set-selection.ts
           config:
-            criteria:
-              - id: includes-auth
-                text: The response assembles a compact working set that includes the Auth knowledge concept and cites module paths.
-              - id: omits-irrelevant
-                text: It omits clearly irrelevant items and notes any gaps (does not dump everything).
+            required:
+              - "kb/auth\\.md"
+              - "mem/2026-01-01\\.md"
+              - "mem/2026-02-15\\.md"
+            forbidden:
+              - "engineering/testing/debugging/SKILL\\.md"
+              - "tools/csv2json/README\\.md"

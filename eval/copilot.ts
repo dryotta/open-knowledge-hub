@@ -1,5 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+
+const TERMINATION_GRACE_MS = 5_000;
 
 export interface CopilotRunOptions {
   prompt: string;
@@ -9,15 +11,143 @@ export interface CopilotRunOptions {
   timeoutMs?: number;
   /** Extra env merged over process.env (e.g. tokens). */
   extraEnv?: NodeJS.ProcessEnv;
+  abortSignal?: AbortSignal;
 }
 
 export interface CopilotResult {
   transcript: string;
   code: number | null;
+  /** Explicit spawn/timeout/abort diagnostic when the process did not exit normally. */
+  processFailure?: string;
+  processFailureKind?: ProcessFailureKind;
 }
 
 /** Injectable so tests never spawn the real `copilot`. */
 export type CopilotRunner = (opts: CopilotRunOptions) => Promise<CopilotResult>;
+
+/** Force-stop a child and its descendants. */
+export async function terminateProcessTree(child: ChildProcess): Promise<void> {
+  const pid = child.pid;
+  if (!pid) return;
+
+  if (process.platform === "win32") {
+    await new Promise<void>((resolve) => {
+      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      killer.once("close", (code) => {
+        if (code !== 0 && child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+        resolve();
+      });
+      killer.once("error", () => {
+        child.kill("SIGKILL");
+        resolve();
+      });
+    });
+    return;
+  }
+
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
+}
+
+export type TerminationReason = "timeout" | "abort";
+export type ProcessFailureKind = TerminationReason | "spawn" | "signal";
+
+export function resolvedProcessExitCode(
+  parsedCode: number | null | undefined,
+  childCode: number | null,
+  processFailure?: string,
+): number | null {
+  if (processFailure) return null;
+  if (childCode !== null && childCode !== 0) return childCode;
+  return parsedCode ?? childCode;
+}
+
+function streamsClosed(child: ChildProcess): boolean {
+  return [child.stdin, child.stdout, child.stderr].every(
+    (stream) => stream === null || stream.destroyed || ("closed" in stream && stream.closed),
+  );
+}
+
+/** Kill a process tree and wait for stdio closure, but never beyond the grace period. */
+export async function terminateProcessTreeAndWait(
+  child: ChildProcess,
+  graceMs = TERMINATION_GRACE_MS,
+): Promise<void> {
+  if ((child.exitCode !== null || child.signalCode !== null) && streamsClosed(child)) return;
+
+  let closed = false;
+  let resolveClose!: () => void;
+  const closePromise = new Promise<void>((resolve) => {
+    resolveClose = resolve;
+  });
+  const onClose = (): void => {
+    closed = true;
+    resolveClose();
+  };
+  child.once("close", onClose);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      Promise.all([terminateProcessTree(child), closePromise]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, graceMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    child.off("close", onClose);
+    if (!closed) {
+      child.stdin?.destroy();
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      void terminateProcessTree(child);
+    }
+  }
+}
+
+export function attachTermination(
+  child: ChildProcess,
+  timeoutMs: number | undefined,
+  abortSignal: AbortSignal | undefined,
+  onStopped?: (reason: TerminationReason) => void,
+  onStopping?: (reason: TerminationReason) => void,
+): () => void {
+  let stopping = false;
+  const stop = (reason: TerminationReason): void => {
+    if (stopping) return;
+    stopping = true;
+    onStopping?.(reason);
+    void terminateProcessTreeAndWait(child).finally(() => onStopped?.(reason));
+  };
+  const timer = timeoutMs ? setTimeout(() => stop("timeout"), timeoutMs) : undefined;
+  const onAbort = (): void => stop("abort");
+  abortSignal?.addEventListener("abort", onAbort, { once: true });
+  if (abortSignal?.aborted) stop("abort");
+
+  return () => {
+    if (timer) clearTimeout(timer);
+    abortSignal?.removeEventListener("abort", onAbort);
+  };
+}
+
+function terminationDiagnostic(
+  subject: "judge" | "Copilot turn",
+  reason: TerminationReason,
+  timeoutMs: number | undefined,
+): string {
+  if (reason === "timeout") {
+    return `[${subject} timed out after ${timeoutMs ?? "unknown"}ms]`;
+  }
+  return `[${subject} aborted]`;
+}
 
 /**
  * Default single-shot runner: spawns `copilot -p ... --allow-all [--model M]`,
@@ -42,24 +172,66 @@ export function buildJudgeCopilotArgs(prompt: string, model?: string): string[] 
 
 export const spawnCopilot: CopilotRunner = (opts) =>
   new Promise((resolve) => {
+    if (opts.abortSignal?.aborted) {
+      resolve({
+        transcript: "[aborted before judge process started]",
+        code: null,
+        processFailure: "[judge aborted before process started]",
+        processFailureKind: "abort",
+      });
+      return;
+    }
     const args = buildJudgeCopilotArgs(opts.prompt, opts.model);
     const child = spawn("copilot", args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.extraEnv, COPILOT_HOME: opts.copilotHome },
       shell: false,
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
     let out = "";
+    let settled = false;
+    let processFailureKind: ProcessFailureKind | undefined;
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
-    const timer = opts.timeoutMs ? setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs) : undefined;
-    child.on("close", (code) => {
-      if (timer) clearTimeout(timer);
-      resolve({ transcript: out, code });
+    let detachTermination = (): void => {};
+    const finish = (code: number | null, diagnostic?: string): void => {
+      if (settled) return;
+      settled = true;
+      detachTermination();
+      resolve({
+        transcript: diagnostic ? `${out}\n${diagnostic}` : out,
+        code: resolvedProcessExitCode(undefined, code, diagnostic),
+        ...(diagnostic ? { processFailure: diagnostic } : {}),
+        ...(processFailureKind ? { processFailureKind } : {}),
+      });
+    };
+    detachTermination = attachTermination(
+      child,
+      opts.timeoutMs,
+      opts.abortSignal,
+      (reason) => finish(null, terminationDiagnostic("judge", reason, opts.timeoutMs)),
+      (reason) => {
+        processFailureKind = reason;
+      },
+    );
+    child.on("close", (code, signal) => {
+      const reason = processFailureKind === "timeout" || processFailureKind === "abort"
+        ? processFailureKind
+        : undefined;
+      if (!reason && signal) {
+        processFailureKind = "signal";
+        finish(null, `[judge exited from signal ${signal}]`);
+        return;
+      }
+      finish(
+        reason ? null : code,
+        reason ? terminationDiagnostic("judge", reason, opts.timeoutMs) : undefined,
+      );
     });
     child.on("error", (err) => {
-      if (timer) clearTimeout(timer);
-      resolve({ transcript: `${out}\n[spawn error] ${(err as Error).message}`, code: null });
+      processFailureKind = "spawn";
+      finish(null, `[spawn error] ${(err as Error).message}`);
     });
   });
 
@@ -223,6 +395,7 @@ export interface CopilotTurnOptions {
   timeoutMs?: number;
   /** Extra env merged over process.env (e.g. tokens). */
   extraEnv?: NodeJS.ProcessEnv;
+  abortSignal?: AbortSignal;
   /** 1-based turn index within the conversation; set by runConversation. */
   turn?: number;
 }
@@ -230,37 +403,100 @@ export interface CopilotTurnOptions {
 export interface CopilotTurnResult extends ParsedTurn {
   /** Raw JSONL for debugging. */
   raw: string;
+  /** Explicit spawn/timeout/abort diagnostic when the process did not exit normally. */
+  processFailure?: string;
+  processFailureKind?: ProcessFailureKind;
 }
 
 /** Injectable so tests never spawn the real `copilot`. */
 export type CopilotTurnRunner = (opts: CopilotTurnOptions) => Promise<CopilotTurnResult>;
 
+export function buildCopilotTurnArgs(opts: Pick<CopilotTurnOptions, "prompt" | "sessionId" | "resume" | "model">): string[] {
+  const args = [
+    "-p",
+    opts.prompt,
+    "--allow-all",
+    "--output-format",
+    "json",
+    "--no-color",
+    "--no-custom-instructions",
+    "--disable-builtin-mcps",
+    "--no-remote-export",
+    "--no-auto-update",
+  ];
+  if (opts.resume) args.push(`--resume=${opts.sessionId}`);
+  else args.push("--session-id", opts.sessionId);
+  if (opts.model) args.push("--model", opts.model);
+  return args;
+}
+
 /** Default turn runner: spawns `copilot -p ... --output-format json`, parsing one turn. */
 export const spawnCopilotTurn: CopilotTurnRunner = (opts) =>
   new Promise((resolve) => {
-    const args = ["-p", opts.prompt, "--allow-all", "--output-format", "json", "--no-color"];
-    if (opts.resume) args.push(`--resume=${opts.sessionId}`);
-    else args.push("--session-id", opts.sessionId);
-    if (opts.model) args.push("--model", opts.model);
+    if (opts.abortSignal?.aborted) {
+      const parsed = parseCopilotEvents("", opts.turn ?? 1);
+      resolve({
+        ...parsed,
+        raw: "[aborted before Copilot turn started]",
+        code: null,
+        processFailure: "[Copilot turn aborted before process started]",
+        processFailureKind: "abort",
+      });
+      return;
+    }
+    const args = buildCopilotTurnArgs(opts);
     const child = spawn("copilot", args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.extraEnv, COPILOT_HOME: opts.copilotHome },
       shell: false,
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
     let out = "";
+    let settled = false;
+    let processFailureKind: ProcessFailureKind | undefined;
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
-    const timer = opts.timeoutMs ? setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs) : undefined;
-    child.on("close", (code) => {
-      if (timer) clearTimeout(timer);
+    let detachTermination = (): void => {};
+    const finish = (code: number | null, diagnostic?: string): void => {
+      if (settled) return;
+      settled = true;
+      detachTermination();
       const parsed = parseCopilotEvents(out, opts.turn ?? 1);
-      resolve({ ...parsed, raw: out, code: parsed.code ?? code });
+      resolve({
+        ...parsed,
+        raw: diagnostic ? `${out}\n${diagnostic}` : out,
+        code: resolvedProcessExitCode(parsed.code, code, diagnostic),
+        ...(diagnostic ? { processFailure: diagnostic } : {}),
+        ...(processFailureKind ? { processFailureKind } : {}),
+      });
+    };
+    detachTermination = attachTermination(
+      child,
+      opts.timeoutMs,
+      opts.abortSignal,
+      (reason) => finish(null, terminationDiagnostic("Copilot turn", reason, opts.timeoutMs)),
+      (reason) => {
+        processFailureKind = reason;
+      },
+    );
+    child.on("close", (code, signal) => {
+      const reason = processFailureKind === "timeout" || processFailureKind === "abort"
+        ? processFailureKind
+        : undefined;
+      if (!reason && signal) {
+        processFailureKind = "signal";
+        finish(null, `[Copilot turn exited from signal ${signal}]`);
+        return;
+      }
+      finish(
+        reason ? null : code,
+        reason ? terminationDiagnostic("Copilot turn", reason, opts.timeoutMs) : undefined,
+      );
     });
     child.on("error", (err) => {
-      if (timer) clearTimeout(timer);
-      const parsed = parseCopilotEvents(out, opts.turn ?? 1);
-      resolve({ ...parsed, raw: `${out}\n[spawn error] ${(err as Error).message}`, code: null });
+      processFailureKind = "spawn";
+      finish(null, `[spawn error] ${(err as Error).message}`);
     });
   });
 
@@ -280,6 +516,8 @@ export interface ConversationTerminal {
   after: string;
   /** OKH tools that must have been successfully called before completion. */
   requiredTools?: string[];
+  /** Successful OKH tool that must end the terminal turn. */
+  finalTool?: string;
 }
 
 export interface ConversationScript {
@@ -308,12 +546,17 @@ export interface ConversationResult {
   /** Ordered tool events across all turns with untruncated arguments. */
   toolEvents: ToolEvent[];
   turns: ConversationTurn[];
+  /** Last spoken assistant message, excluding tool traces/results. */
+  finalMessage: string;
   /** Last turn's cumulative premiumRequests (== whole-conversation cost). */
   cost: number;
   /** Last turn's exit code. */
   code: number | null;
   /** If set, the conversation ended in a state-machine failure. */
   failure?: string;
+  /** Explicit spawn/timeout/abort diagnostic from the last failed process. */
+  processFailure?: string;
+  processFailureKind?: ProcessFailureKind;
 }
 
 export interface RunConversationCtx {
@@ -323,6 +566,7 @@ export interface RunConversationCtx {
   cwd: string;
   timeoutMs?: number;
   extraEnv?: NodeJS.ProcessEnv;
+  abortSignal?: AbortSignal;
 }
 
 function safeMatch(pattern: string, text: string): boolean {
@@ -374,8 +618,14 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
   let code: number | null = null;
   let state = "start";
   let failure: string | undefined;
+  let processFailure: string | undefined;
+  let processFailureKind: ProcessFailureKind | undefined;
+  let finalMessage = "";
 
   const runTurn = async (user: string, resume: boolean): Promise<CopilotTurnResult> => {
+    if (ctx.abortSignal?.aborted) {
+      throw new Error("Copilot conversation aborted");
+    }
     const r = await ctx.runner({
       prompt: user,
       sessionId,
@@ -385,15 +635,19 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       cwd: ctx.cwd,
       timeoutMs: ctx.timeoutMs,
       extraEnv: ctx.extraEnv,
+      abortSignal: ctx.abortSignal,
       turn: turns.length + 1,
     });
     turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools, toolEvents: r.toolEvents });
+    finalMessage = r.lastMessage;
     for (const ev of r.toolEvents) {
       allToolEvents.push(ev);
       if (ev.completed && ev.success && ev.server === OKH_SERVER) toolSet.add(ev.tool);
     }
     if (r.cost) cost = r.cost;
     code = r.code;
+    processFailure ??= r.processFailure;
+    processFailureKind ??= r.processFailureKind;
     return r;
   };
 
@@ -401,7 +655,18 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
     const transcript = turns
       .map((t, i) => `=== USER (turn ${i + 1}) ===\n${t.user}\n\n=== AGENT (turn ${i + 1}) ===\n${t.agent}`)
       .join("\n\n");
-    return { transcript, toolCalls: [...toolSet].sort(), turns, toolEvents: allToolEvents, cost, code, ...(failure ? { failure } : {}) };
+    return {
+      transcript,
+      toolCalls: [...toolSet].sort(),
+      turns,
+      toolEvents: allToolEvents,
+      finalMessage,
+      cost,
+      code,
+      ...(failure ? { failure } : {}),
+      ...(processFailure ? { processFailure } : {}),
+      ...(processFailureKind ? { processFailureKind } : {}),
+    };
   };
 
   // Check terminal readiness
@@ -415,16 +680,39 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
         return true; // stop the loop (failure is set)
       }
     }
+    if (script.terminal.finalTool) {
+      const lastOkh = allToolEvents
+        .filter((event) => event.server === OKH_SERVER && event.turn === turns.length)
+        .at(-1);
+      if (
+        !lastOkh
+        || lastOkh.tool !== script.terminal.finalTool
+        || !lastOkh.completed
+        || !lastOkh.success
+      ) {
+        failure = `terminal turn must end with successful ${script.terminal.finalTool}`;
+        return true;
+      }
+    }
     return true; // terminal reached successfully
   };
 
   let last = await runTurn(script.initial, false);
 
-  // Single-turn scripts with no responses: complete after turn 1
-  if (responses.length === 0) return buildResult();
+  // Single-turn scripts still enforce an explicitly declared terminal contract.
+  if (responses.length === 0) {
+    if (script.terminal) {
+      if (script.terminal.after !== "start") {
+        failure = `single-turn conversation cannot reach terminal state "${script.terminal.after}"`;
+      } else {
+        checkTerminal();
+      }
+    }
+    return buildResult();
+  }
 
   while (turns.length < maxTurns) {
-    if (last.code !== 0) break;
+    if (last.processFailure || last.code !== 0) break;
 
     // Check terminal after each agent turn
     if (checkTerminal()) break;
@@ -442,15 +730,11 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
     last = await runTurn(responses[idx]!.send, true);
   }
 
-  // After loop: check if we stopped due to maxTurns without reaching terminal
-  if (!failure && last.code === 0 && script.terminal && state !== script.terminal.after) {
-    failure = `max turns (${maxTurns}) exhausted without reaching terminal state "${script.terminal.after}"`;
-  }
-  // Check terminal tool requirements at the end if we reached terminal state
-  if (!failure && last.code === 0 && script.terminal && state === script.terminal.after && script.terminal.requiredTools) {
-    const missing = script.terminal.requiredTools.filter((t) => !toolSet.has(t));
-    if (missing.length > 0) {
-      failure = `terminal state "${state}" reached but required tools missing: ${missing.join(", ")}`;
+  if (!failure && last.code === 0 && script.terminal) {
+    if (state !== script.terminal.after) {
+      failure = `max turns (${maxTurns}) exhausted without reaching terminal state "${script.terminal.after}"`;
+    } else {
+      checkTerminal();
     }
   }
 

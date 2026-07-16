@@ -18,6 +18,8 @@ function fakeJudge(results: Array<Partial<CriterionResult> & { id: string; verdi
     passVotes: r.passVotes ?? (r.verdict === "PASS" ? 3 : 0),
     failVotes: r.failVotes ?? (r.verdict === "FAIL" ? 3 : 0),
     validVotes: r.validVotes ?? 3,
+    invalidVotes: r.invalidVotes ?? 0,
+    invalidReasons: r.invalidReasons ?? [],
     evidence: [],
   }));
   return { runJudgeCriteria: async () => full };
@@ -205,12 +207,22 @@ describe("judge assertion", () => {
           opts: { k?: number; model?: string } = {},
         ): Promise<CriterionResult[]> => {
           recordedOpts = opts;
-          return [{ id: "x", verdict: "PASS", passVotes: 3, failVotes: 0, validVotes: 3, evidence: [] }];
+          return [{
+            id: "x",
+            verdict: "PASS",
+            passVotes: 3,
+            failVotes: 0,
+            validVotes: 3,
+            invalidVotes: 0,
+            invalidReasons: [],
+            evidence: [],
+          }];
         },
       },
     );
     expect(r.pass).toBe(true);
-    expect(recordedOpts).toEqual({ k: 5, model: "m" });
+    expect(recordedOpts).toMatchObject({ k: 5, model: "m" });
+    expect((recordedOpts as { abortSignal?: AbortSignal }).abortSignal).toBeInstanceOf(AbortSignal);
   });
 
   it("fails fast when no criteria are provided", async () => {

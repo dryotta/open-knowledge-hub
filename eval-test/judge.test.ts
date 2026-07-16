@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { rm, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
 import { extractJson, extractJsonArray, runJudgeCriteria } from "../eval/judge.js";
 import { buildArtifactsSection } from "../eval/assertions/judge.js";
@@ -34,17 +34,68 @@ describe("extractJsonArray", () => {
   });
 });
 
+function withTestEvidence(output: string): string {
+  const parsed = extractJsonArray(output);
+  if (!parsed) return output;
+  return JSON.stringify(parsed.map((item) => (
+    item && typeof item === "object" && !Array.isArray(item)
+      ? { evidence: "test evidence", ...(item as Record<string, unknown>) }
+      : item
+  )));
+}
+
 function seqRunner(outputs: string[]): CopilotRunner {
   let i = 0;
-  return async () => ({ transcript: outputs[Math.min(i++, outputs.length - 1)]!, code: 0 });
+  return async () => ({
+    transcript: withTestEvidence(outputs[Math.min(i++, outputs.length - 1)]!),
+    code: 0,
+  });
 }
 
 const CRITERIA = [
   { id: "a", text: "criterion a" },
   { id: "b", text: "criterion b" },
 ];
+const PASS_A = '[{"id":"a","verdict":"PASS","evidence":"test evidence"}]';
 
 describe("runJudgeCriteria", () => {
+  it("rejects duplicate criterion ids before launching judges", async () => {
+    let calls = 0;
+    await expect(
+      runJudgeCriteria(
+        [{ id: "a", text: "first" }, { id: "a", text: "second" }],
+        "t",
+        { runner: async () => { calls++; return { transcript: PASS_A, code: 0 }; } },
+      ),
+    ).rejects.toThrow(/unique/i);
+    expect(calls).toBe(0);
+  });
+
+  it("forwards cancellation and scopes judge roots to the eval run", async () => {
+    const previousRunId = process.env.OKH_EVAL_RUN_ID;
+    process.env.OKH_EVAL_RUN_ID = "run-123";
+    const controller = new AbortController();
+    let signal: AbortSignal | undefined;
+    let rootName = "";
+    try {
+      const runner: CopilotRunner = async (opts) => {
+        signal = opts.abortSignal;
+        rootName = basename(dirname(opts.cwd));
+        return { transcript: PASS_A, code: 0 };
+      };
+      await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+        k: 1,
+        runner,
+        abortSignal: controller.signal,
+      });
+      expect(signal).toBe(controller.signal);
+      expect(rootName).toMatch(/^okh-eval-run-123-judge-/);
+    } finally {
+      if (previousRunId === undefined) delete process.env.OKH_EVAL_RUN_ID;
+      else process.env.OKH_EVAL_RUN_ID = previousRunId;
+    }
+  });
+
   it("uses GPT-5.6 Luna as the default judge model", async () => {
     const prev = process.env.OKH_JUDGE_MODEL;
     delete process.env.OKH_JUDGE_MODEL;
@@ -52,7 +103,7 @@ describe("runJudgeCriteria", () => {
       let model: string | undefined;
       const runner: CopilotRunner = async (opts) => {
         model = opts.model;
-        return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+        return { transcript: PASS_A, code: 0 };
       };
 
       await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner });
@@ -71,7 +122,7 @@ describe("runJudgeCriteria", () => {
       const models: Array<string | undefined> = [];
       const runner: CopilotRunner = async (opts) => {
         models.push(opts.model);
-        return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+        return { transcript: PASS_A, code: 0 };
       };
 
       await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner });
@@ -96,7 +147,7 @@ describe("runJudgeCriteria", () => {
       maxActive = Math.max(maxActive, active);
       await gate;
       active--;
-      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      return { transcript: PASS_A, code: 0 };
     };
     try {
       const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
@@ -123,7 +174,7 @@ describe("runJudgeCriteria", () => {
       maxActive = Math.max(maxActive, active);
       await gate;
       active--;
-      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      return { transcript: PASS_A, code: 0 };
     };
     try {
       const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
@@ -150,7 +201,7 @@ describe("runJudgeCriteria", () => {
       maxActive = Math.max(maxActive, active);
       await gate;
       active--;
-      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      return { transcript: PASS_A, code: 0 };
     };
     try {
       const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
@@ -177,7 +228,7 @@ describe("runJudgeCriteria", () => {
       maxActive = Math.max(maxActive, active);
       await gate;
       active--;
-      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      return { transcript: PASS_A, code: 0 };
     };
     try {
       const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner });
@@ -192,7 +243,7 @@ describe("runJudgeCriteria", () => {
     }
   });
 
-  it("waits for concurrent judge calls to settle before propagating a failure", async () => {
+  it("waits for concurrent judge calls and excludes a failed process from voting", async () => {
     let calls = 0;
     let slowSettled = false;
     let release!: () => void;
@@ -202,14 +253,15 @@ describe("runJudgeCriteria", () => {
       if (calls === 1) return { transcript: "", code: 1 };
       await gate;
       slowSettled = true;
-      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      return { transcript: PASS_A, code: 0 };
     };
 
     const pending = runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 2, runner });
     setTimeout(release, 20);
 
-    await expect(pending).rejects.toThrow(/judge.*exit code 1/i);
+    const result = await pending;
     expect(slowSettled).toBe(true);
+    expect(result[0]).toMatchObject({ verdict: "UNRELIABLE", validVotes: 1, passVotes: 1 });
   });
 
   it("majority-votes each criterion across k runs", async () => {
@@ -226,11 +278,73 @@ describe("runJudgeCriteria", () => {
     expect(b.verdict).toBe("FAIL"); // 1 PASS / 2 FAIL
   });
 
-  it("rejects when judge process exits non-zero", async () => {
+  it("passes with two valid PASS votes when one of three judge processes fails", async () => {
+    const runs = [
+      { transcript: PASS_A, code: 0 },
+      { transcript: "", code: 1 },
+      { transcript: PASS_A, code: 0 },
+    ];
+    let index = 0;
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+      k: 3,
+      runner: async () => runs[index++]!,
+    });
+    expect(result[0]).toMatchObject({
+      verdict: "PASS",
+      passVotes: 2,
+      validVotes: 2,
+      invalidVotes: 1,
+    });
+  });
+
+  it("requires a strict majority of configured runs", async () => {
+    const runs = [
+      '[{"id":"a","verdict":"PASS"}]',
+      '[{"id":"a","verdict":"PASS"}]',
+      '[{"id":"a","verdict":"FAIL"}]',
+      "garbage",
+      "garbage",
+    ];
+    const result = await runJudgeCriteria(
+      [{ id: "a", text: "a" }],
+      "t",
+      { k: 5, runner: seqRunner(runs) },
+    );
+    expect(result[0]).toMatchObject({
+      verdict: "UNRELIABLE",
+      passVotes: 2,
+      failVotes: 1,
+      invalidVotes: 2,
+    });
+  });
+
+  it("marks a criterion UNRELIABLE when every judge process exits non-zero", async () => {
     const runner: CopilotRunner = async () => ({ transcript: "", code: 1 });
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner });
+    expect(result[0]).toMatchObject({
+      verdict: "UNRELIABLE",
+      validVotes: 0,
+      invalidVotes: 1,
+      passVotes: 0,
+      failVotes: 0,
+      invalidReasons: [expect.stringMatching(/exit code 1/i)],
+    });
+  });
+
+  it("propagates cancellation instead of converting it to an unreliable vote", async () => {
+    const controller = new AbortController();
+    const reason = new Error("stop grading");
+    const runner: CopilotRunner = async () => {
+      controller.abort(reason);
+      return { transcript: "", code: null };
+    };
     await expect(
-      runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 1, runner }),
-    ).rejects.toThrow(/judge.*exit code 1/i);
+      runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+        k: 3,
+        runner,
+        abortSignal: controller.signal,
+      }),
+    ).rejects.toThrow("stop grading");
   });
 
   it("excludes unparseable runs from the vote", async () => {
@@ -244,10 +358,34 @@ describe("runJudgeCriteria", () => {
     expect(res[0]!.validVotes).toBe(2);
   });
 
+  it.each([
+    ["missing evidence", '[{"id":"a","verdict":"PASS"}]'],
+    ["duplicate id", '[{"id":"a","verdict":"PASS","evidence":"x"},{"id":"a","verdict":"PASS","evidence":"y"}]'],
+    ["extra id", '[{"id":"a","verdict":"PASS","evidence":"x"},{"id":"b","verdict":"PASS","evidence":"y"}]'],
+  ])("rejects a judge response with %s", async (_label, transcript) => {
+    const result = await runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+      k: 1,
+      runner: async () => ({ transcript, code: 0 }),
+    });
+    expect(result[0]).toMatchObject({ verdict: "UNRELIABLE", validVotes: 0, invalidVotes: 1 });
+    expect(result[0]!.invalidReasons).toHaveLength(1);
+  });
+
+  it("propagates unexpected runner failures", async () => {
+    await expect(
+      runJudgeCriteria([{ id: "a", text: "a" }], "t", {
+        k: 1,
+        runner: async () => {
+          throw new Error("runner bug");
+        },
+      }),
+    ).rejects.toThrow("runner bug");
+  });
+
   it("marks a criterion UNRELIABLE when too few valid votes", async () => {
     const runs = ["garbage", "garbage", '[{"id":"a","verdict":"PASS"}]'];
     const res = await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 3, runner: seqRunner(runs) });
-    expect(res[0]!.verdict).toBe("UNRELIABLE"); // 1 valid < ceil(3/2)=2
+    expect(res[0]!.verdict).toBe("UNRELIABLE"); // 1 PASS < strict majority of 2
   });
 
   it("marks a tie UNRELIABLE", async () => {
@@ -261,7 +399,7 @@ describe("runJudgeCriteria", () => {
     process.env.OKH_JUDGE_K = "1";
     try {
       let calls = 0;
-      const runner: CopilotRunner = async () => { calls++; return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 }; };
+      const runner: CopilotRunner = async () => { calls++; return { transcript: PASS_A, code: 0 }; };
       await runJudgeCriteria([{ id: "a", text: "a" }], "t", { runner });
       expect(calls).toBe(1);
     } finally {
@@ -274,7 +412,7 @@ describe("runJudgeCriteria", () => {
     let calls = 0;
     const runner: CopilotRunner = async () => {
       calls++;
-      return { transcript: '[{"id":"a","verdict":"PASS"}]', code: 0 };
+      return { transcript: PASS_A, code: 0 };
     };
     await runJudgeCriteria([{ id: "a", text: "a" }], "t", { k: 0, runner });
     expect(calls).toBe(3);

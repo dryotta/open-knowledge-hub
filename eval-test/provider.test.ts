@@ -3,6 +3,7 @@ import { rm, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import CopilotProvider, { normalizeTurns, parseTerminal } from "../eval/provider/copilotProvider.js";
 import type { CopilotTurnRunner, CopilotTurnResult, ToolEvent } from "../eval/copilot.js";
+import { makeTempDir } from "../test/helpers.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -53,22 +54,107 @@ describe("CopilotProvider", () => {
       vars: { env: "local-and-git" },
       test: { description: "ask-grounded" },
     });
-    cleanups.push(res.metadata.workspace);
+    cleanups.push(res.metadata.root);
 
     expect(res.output).toContain("done");
+    expect(res.metadata.workspace).toBe(join(res.metadata.root, "workspace"));
+    expect(res.metadata.finalMessage).toBe("auth uses tokens, done");
     expect(res.metadata.toolCalls).toContain("ask");
     expect(res.metadata.toolEvents).toBeInstanceOf(Array);
     expect(res.metadata.toolEvents.length).toBeGreaterThan(0);
     expect(await exists(join(res.metadata.containerPath, "kb", ".okh", "module.yaml"))).toBe(true);
   });
 
-  it("rejects when a conversation turn exits non-zero", async () => {
+  it("returns an error with metadata when a conversation turn exits non-zero", async () => {
     const fake: CopilotTurnRunner = async () =>
       turn({ code: 1, messages: ["error"], lastMessage: "error" });
     const provider = new CopilotProvider({ config: { runner: fake } });
-    await expect(
-      provider.callApi("do something", { vars: { env: "empty" } }),
-    ).rejects.toThrow(/Copilot turn.*exit code 1/);
+    const res = await provider.callApi("do something", { vars: { env: "empty" } });
+    cleanups.push(res.metadata.root);
+    expect(res.error).toMatch(/Copilot turn.*exit code 1/);
+    expect(res.output).toContain("error");
+    expect(res.metadata.exitCode).toBe(1);
+  });
+
+  it("preserves an explicit timeout diagnostic", async () => {
+    const fake: CopilotTurnRunner = async () =>
+      turn({
+        code: null,
+        processFailure: "[Copilot turn timed out after 300000ms]",
+        processFailureKind: "timeout",
+      });
+    const provider = new CopilotProvider({ config: { runner: fake } });
+    const res = await provider.callApi("do something", { vars: { env: "empty" } });
+    cleanups.push(res.metadata.root);
+    expect(res.error).toContain("timed out after 300000ms");
+    expect(res.metadata.processFailure).toBe("[Copilot turn timed out after 300000ms]");
+  });
+
+  it("retries a typed infrastructure failure in a fresh environment", async () => {
+    const roots: string[] = [];
+    let calls = 0;
+    const provider = new CopilotProvider({
+      config: {
+        maxAttempts: 2,
+        provisioner: async () => {
+          const root = await makeTempDir("provider-retry-");
+          roots.push(root);
+          return {
+            root,
+            okhHome: join(root, "okh-home"),
+            copilotHome: join(root, "copilot-home"),
+            workspace: join(root, "workspace"),
+            containerPath: join(root, "container"),
+            fixtureDir: join(root, "fixture"),
+          };
+        },
+        runner: async () => {
+          calls++;
+          if (calls === 1) {
+            return turn({
+              code: null,
+              cost: 2,
+              processFailure: "[spawn error] unavailable",
+              processFailureKind: "spawn",
+            });
+          }
+          return turn({ messages: ["done"], lastMessage: "done", cost: 3 });
+        },
+      },
+    });
+
+    const res = await provider.callApi("start", { vars: { env: "empty" } });
+    cleanups.push(res.metadata.root);
+    expect(calls).toBe(2);
+    expect(res.error).toBeUndefined();
+    expect(res.output).toContain("done");
+    expect(res.metadata).toMatchObject({
+      root: roots[1],
+      attempts: 2,
+      cost: 5,
+      costIncomplete: true,
+      retryErrors: ["Copilot turn failed: [spawn error] unavailable"],
+    });
+    expect(await exists(roots[0]!)).toBe(false);
+    expect(await exists(roots[1]!)).toBe(true);
+  });
+
+  it("does not retry an ordinary non-zero exit", async () => {
+    let calls = 0;
+    const provider = new CopilotProvider({
+      config: {
+        maxAttempts: 2,
+        runner: async () => {
+          calls++;
+          return turn({ code: 1 });
+        },
+      },
+    });
+    const res = await provider.callApi("start", { vars: { env: "empty" } });
+    cleanups.push(res.metadata.root);
+    expect(calls).toBe(1);
+    expect(res.error).toMatch(/exit code 1/);
+    expect(res.metadata.attempts).toBe(1);
   });
 
   it("drives guarded follow-up turns and aggregates tool calls across turns", async () => {
@@ -103,7 +189,7 @@ describe("CopilotProvider", () => {
       },
       test: { description: "onboard-multi-turn" },
     });
-    cleanups.push(res.metadata.workspace);
+    cleanups.push(res.metadata.root);
 
     expect(seen[0]).toBe("Use the hub and set me up.");
     expect(seen[1]).toBe("call it brain");
@@ -121,27 +207,72 @@ describe("CopilotProvider", () => {
       vars: { env: "empty" },
       test: { description: "onboard-explains" },
     });
-    cleanups.push(res.metadata.workspace);
+    cleanups.push(res.metadata.root);
     const reg = JSON.parse(await readFile(join(res.metadata.okhHome, "registry.json"), "utf8"));
     expect(reg.containers).toHaveLength(0);
   });
 
-  it("throws when result.failure is set (state-machine failure propagation)", async () => {
+  it("forwards promptfoo cancellation to the Copilot runner", async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const provider = new CopilotProvider({
+      config: {
+        runner: async (opts) => {
+          seenSignal = opts.abortSignal;
+          return turn({ messages: ["ok"], lastMessage: "ok" });
+        },
+      },
+    });
+    const res = await provider.callApi(
+      "prompt",
+      { vars: { env: "empty" } },
+      { abortSignal: controller.signal },
+    );
+    cleanups.push(res.metadata.root);
+    expect(seenSignal).toBe(controller.signal);
+  });
+
+  it("returns state-machine failures with diagnostic metadata", async () => {
     // Provide turns that will reach an unmatched state so runConversation returns failure
     const fake: CopilotTurnRunner = async (_opts) =>
       turn({ messages: ["tangent about weather"], lastMessage: "tangent about weather" });
     const provider = new CopilotProvider({ config: { runner: fake } });
-    await expect(
-      provider.callApi("start", {
-        vars: {
-          env: "empty",
-          turns: [
-            { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
-          ],
-          terminal: { after: "purpose" },
+    const res = await provider.callApi("start", {
+      vars: {
+        env: "empty",
+        turns: [
+          { id: "purpose", after: "start", when: "purpose", send: "purpose reply" },
+        ],
+        terminal: { after: "purpose" },
+      },
+    });
+    cleanups.push(res.metadata.root);
+    expect(res.error).toMatch(/unmatched/i);
+    expect(res.metadata.turns).toHaveLength(1);
+    expect(res.metadata.finalMessage).toMatch(/weather/i);
+  });
+
+  it("removes the provisioned environment when the runner throws", async () => {
+    const root = await makeTempDir("provider-cleanup-");
+    cleanups.push(root);
+    const provider = new CopilotProvider({
+      config: {
+        provisioner: async () => ({
+          root,
+          okhHome: join(root, "okh-home"),
+          copilotHome: join(root, "copilot-home"),
+          workspace: join(root, "workspace"),
+          containerPath: join(root, "container"),
+          fixtureDir: join(root, "fixture"),
+        }),
+        runner: async () => {
+          throw new Error("runner exploded");
         },
-      }),
-    ).rejects.toThrow(/unmatched/i);
+      },
+    });
+
+    await expect(provider.callApi("start", { vars: { env: "empty" } })).rejects.toThrow(/runner exploded/);
+    expect(await exists(root)).toBe(false);
   });
 });
 
@@ -182,8 +313,8 @@ describe("parseTerminal", () => {
   });
 
   it("parses terminal with requiredTools", () => {
-    const t = parseTerminal({ after: "done", requiredTools: ["run", "sync"] });
-    expect(t).toEqual({ after: "done", requiredTools: ["run", "sync"] });
+    const t = parseTerminal({ after: "done", requiredTools: ["run", "sync"], finalTool: "sync" });
+    expect(t).toEqual({ after: "done", requiredTools: ["run", "sync"], finalTool: "sync" });
   });
 
   it("throws on missing after", () => {
@@ -199,17 +330,31 @@ describe("parseTerminal", () => {
     expect(() => parseTerminal({ after: "x", requiredTools: "run" })).toThrow();
   });
 
-  it("requires terminal when turns are non-empty", () => {
+  it("throws on invalid finalTool", () => {
+    expect(() => parseTerminal({ after: "x", finalTool: "" })).toThrow();
+    expect(() => parseTerminal({ after: "x", finalTool: 123 })).toThrow();
+  });
+
+  it("requires terminal before provisioning when turns are non-empty", async () => {
     const fake: CopilotTurnRunner = async () => turn({ messages: ["ok"], lastMessage: "ok" });
-    const provider = new CopilotProvider({ config: { runner: fake } });
-    return expect(
-      provider.callApi("start", {
+    let provisioned = false;
+    const provider = new CopilotProvider({
+      config: {
+        runner: fake,
+        provisioner: async () => {
+          provisioned = true;
+          throw new Error("must not provision");
+        },
+      },
+    });
+    await expect(provider.callApi("start", {
         vars: {
           env: "empty",
           turns: [{ id: "a", after: "start", send: "hi" }],
           // no terminal
         },
-      }),
-    ).rejects.toThrow(/terminal/i);
+      }))
+      .rejects.toThrow(/terminal/i);
+    expect(provisioned).toBe(false);
   });
 });

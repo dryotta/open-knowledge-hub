@@ -4,13 +4,27 @@
         env: local-and-git
         prompt: |
           hub, across all my registered hubs, what do we know about authentication and
-          session tokens? Cite the module path for each fact.
+          session tokens? Cite the module path for each fact, distinguish correlation
+          from causation, and do not add details absent from the cited modules.
   tests:
     - description: Ask - across hubs - cites each module path
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [ask] }
+          config:
+            expect:
+              - ask
+              - { name: task, server: "", arguments: { mode: sync } }
+            forbid:
+              - { name: task, server: "", arguments: { mode: background } }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustContain:
+              - "\\bsigned session tokens?\\b"
+              - "kb-hub[/\\\\]kb"
+              - "git-hub[/\\\\]kb"
         - type: javascript
           value: file://assertions/judge.ts
           config:

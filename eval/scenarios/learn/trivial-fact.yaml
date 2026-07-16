@@ -3,20 +3,21 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. Learn this into container "kb-hub":
-          "The sky is blue on a clear day."
+          hub, use container "kb-hub"'s "kb" knowledge module "learn" skill to decide
+          whether this fact is useful enough to store: "The sky is blue on a clear day."
   tests:
     - description: Learn - trivial fact - rejects, no write
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run] }
+          config:
+            expect:
+              - name: run
+                arguments: { container: kb-hub, module: kb, skill: learn }
+            forbid: [sync]
         - type: javascript
           value: file://assertions/module-unchanged.ts
           config: { module: kb }
         - type: javascript
-          value: file://assertions/judge.ts
-          config:
-            criteria:
-              - id: rejects-trivial
-                text: The learn gate REJECTS "the sky is blue" as not serving any goal and does not write it as a concept.
+          value: file://assertions/module-unchanged.ts
+          config: { module: mem }

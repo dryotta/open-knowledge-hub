@@ -106,3 +106,6 @@ jobs:
 
       - name: Test eval harness
         run: npm run test:eval
+
+      - name: Validate eval configuration
+        run: npm run eval:validate

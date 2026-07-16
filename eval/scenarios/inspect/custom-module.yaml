@@ -3,8 +3,8 @@
     - vars:
         env: custom
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "custom-hub", inspect the
-          "recipes" module: what is it, and what skills can I run on it?
+          hub, in container "custom-hub", inspect the "recipes" module: what is it,
+          and what skills can I run on it?
   tests:
     - description: Inspect - custom module - reports identity and discovered skills
       assert:

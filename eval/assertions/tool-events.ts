@@ -34,13 +34,10 @@ export function isDeepSubset(actual: unknown, expected: unknown): boolean {
 }
 
 /**
- * Returns true if a completed, successful event matches the expectation.
- * Requires completed===true, success===true, exact tool name match, server
- * defaulting to "open-knowledge-hub", optional exact turn, optional deep
- * argument subset.
+ * Matches an attempted call by name, server, optional turn, and deep-subset
+ * arguments, regardless of completion or success.
  */
-export function matchesTool(event: ToolEvent, expected: ToolExpectation): boolean {
-  if (!event.completed || !event.success) return false;
+export function matchesToolAttempt(event: ToolEvent, expected: ToolExpectation): boolean {
   if (event.tool !== expected.name) return false;
   const server = expected.server ?? DEFAULT_SERVER;
   if (event.server !== server) return false;
@@ -49,6 +46,11 @@ export function matchesTool(event: ToolEvent, expected: ToolExpectation): boolea
     if (!isDeepSubset(event.arguments, expected.arguments)) return false;
   }
   return true;
+}
+
+/** Matches an attempted call only when it completed successfully. */
+export function matchesTool(event: ToolEvent, expected: ToolExpectation): boolean {
+  return event.completed && event.success && matchesToolAttempt(event, expected);
 }
 
 /**
@@ -66,10 +68,28 @@ export function missingTools(
   );
 
   if (!ordered) {
-    return expected.filter((_e, i) => {
-      const exp = expectations[i]!;
-      return !events.some((ev) => matchesTool(ev, exp));
-    });
+    const eventAssignments = new Array<number>(events.length).fill(-1);
+
+    const assign = (expectationIndex: number, seenEvents: boolean[]): boolean => {
+      const expectation = expectations[expectationIndex]!;
+      for (let eventIndex = 0; eventIndex < events.length; eventIndex++) {
+        if (seenEvents[eventIndex] || !matchesTool(events[eventIndex]!, expectation)) continue;
+        seenEvents[eventIndex] = true;
+        const previousExpectation = eventAssignments[eventIndex]!;
+        if (previousExpectation === -1 || assign(previousExpectation, seenEvents)) {
+          eventAssignments[eventIndex] = expectationIndex;
+          return true;
+        }
+      }
+      return false;
+    };
+
+    for (let i = 0; i < expectations.length; i++) {
+      assign(i, new Array<boolean>(events.length).fill(false));
+    }
+
+    const matched = new Set(eventAssignments.filter((index) => index !== -1));
+    return expected.filter((_expectation, index) => !matched.has(index));
   }
 
   // Ordered: find matches monotonically

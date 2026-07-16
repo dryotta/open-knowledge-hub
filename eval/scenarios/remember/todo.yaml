@@ -1,21 +1,31 @@
-# remember flow — create a todo-bearing memory entry and sync immediately.
+# remember flow — route a natural request through the memory skill and persist it.
 - config:
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "kb-hub", module "mem",
-          remember that I need to buy printer ink by 2026-07-15. It is high
-          priority and labeled shopping. Apply the todo and sync immediately — do not
-          ask for confirmation first.
+          hub, in container "kb-hub"'s memory module, remember that I need to buy
+          printer ink by 2026-07-15. It is high priority and labeled shopping.
         terminal:
           after: start
           requiredTools: [run, todos, sync]
+          finalTool: sync
   tests:
-    - description: Remember - todo - directly applies prioritized shopping task and syncs
+    - description: Remember - todo - routes, applies, and persists prioritized shopping task
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run, todos, sync] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: kb-hub, module: mem, skill: remember }
+              - name: todos
+                arguments: { operation: create, apply: true }
+              - name: sync
+                arguments: { container: kb-hub }
+        - type: javascript
+          value: file://assertions/todo-apply-sync.ts
+          config: { operation: create, container: kb-hub }
         - type: javascript
           value: file://assertions/todo-markdown.ts
           config:
@@ -26,15 +36,5 @@
             due: "2026-07-15"
             priority: high
         - type: javascript
-          value: file://assertions/judge.ts
-          config:
-            artifacts: { module: mem }
-            criteria:
-              - id: used-remember-skill
-                text: The transcript shows the agent first used the remember skill to extract the observation and entry-summary context for the new memory-backed todo.
-                check: { kind: tool, name: run }
-              - id: direct-apply-sync
-                text: The agent applied the todo creation directly with apply:true in a single todos call and immediately called sync without requesting confirmation.
-                check: { kind: todo-apply-sync, operation: create }
-              - id: created-todo
-                text: The on-disk memory contains the open printer-ink todo with shopping label, 2026-07-15 due date, and high priority.
+          value: file://assertions/todo-module-change.ts
+          config: { module: mem, operation: create, text: buy printer ink }

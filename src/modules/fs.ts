@@ -2,7 +2,11 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 /** Recursively list files under `dir` matching `pred`; POSIX-relative, sorted. Skips .git/.okh. */
-export async function walkFiles(dir: string, pred: (name: string) => boolean): Promise<string[]> {
+export async function walkFiles(
+  dir: string,
+  pred: (name: string) => boolean,
+  enterDirectory: (name: string, relativePath: string) => boolean = () => true,
+): Promise<string[]> {
   const out: string[] = [];
 
   async function recurse(rel: string): Promise<void> {
@@ -16,7 +20,7 @@ export async function walkFiles(dir: string, pred: (name: string) => boolean): P
     for (const e of entries) {
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
-        if (e.name === ".git" || e.name === ".okh") continue;
+        if (e.name === ".git" || e.name === ".okh" || !enterDirectory(e.name, childRel)) continue;
         await recurse(childRel);
       } else if (e.isFile() && pred(e.name)) {
         out.push(childRel);

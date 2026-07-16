@@ -33,7 +33,8 @@ Gather the question(s) the user wants answered and the bundle root path (the dir
 ### Stage 2 — Fork: spawn the analysis sub-agent
 
 Spawn a **fresh sub-agent** whose entire job is to answer the question(s) from the pack and return
-a token-efficient result. Give it **only**:
+a token-efficient result. Run it in the foreground and wait for its result. Do not use background
+mode or inspect the bundle in parallel. Give it **only**:
 
 - the bundle root path, and
 - the verbatim question(s).
@@ -47,8 +48,13 @@ Instruct the sub-agent to:
    URL / `path:line`) it drew each fact from. Carry through any `⚠️ UNVERIFIED` flags rather than
    laundering them into fact. Preserve evidentiary strength exactly: correlation is not causation,
    an observation is not a root cause, and absence of detail is not evidence that a behavior does
-   not exist. Do not add generic benefits, rationale, examples, or likely implementation details
-   that the source does not state.
+   not exist. A source joining two facts with "and" does not establish cause: for example,
+   "tokens are issued at login and verified on each request" states two mechanisms, not that
+   issuance causes verification. Do not add generic benefits, rationale, examples, or likely
+   implementation details that the source does not state. Do not specialize a generic source
+   term: if the source says `tokens`, do not rewrite it as `access tokens`.
+   Use each source's exact path relative to the module root. Never add an assumed directory
+   such as `concepts/` when the source path does not contain it.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
 4. **Assess scope explicitly.** For each question, say whether the pack actually covers it:
@@ -64,7 +70,8 @@ Instruct the sub-agent to:
 
 ### Stage 3 — Relay the distilled answer
 
-Return the sub-agent's answer to the user largely as-is. Structure it as:
+Return the sub-agent's answer to the user largely as-is. Do not remove, weaken,
+or rewrite the sub-agent's citations when relaying its answer. Structure it as:
 
 - **Answer** — per question, with its citations.
 - **Confidence / coverage** — fully answered, partial (with the gap named), or out of scope.

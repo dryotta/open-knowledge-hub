@@ -3,20 +3,19 @@
     - vars:
         env: empty
         prompt: |
-          Use the open-knowledge-hub MCP tools. Run the shared "grilling" skill to
-          stress-test my plan to add OAuth login — no container or module needed.
+          hub, use the shared "grilling" skill to question me one decision at a time
+          about this OAuth login plan: support GitHub OAuth, keep access and refresh
+          tokens in encrypted server-side sessions, validate state on the callback,
+          rotate the session after login, and expire idle sessions after 24 hours.
   tests:
     - description: Run - shared grilling skill - module-less run returns grilling discipline
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [run] }
-        - type: javascript
-          value: file://assertions/judge.ts
           config:
-            criteria:
-              - id: ran-grilling-skill
-                text: The agent invoked the run tool with the shared "grilling" skill and no container/module.
-                check: { kind: transcript-contains, pattern: '"skill":\s*"grilling"' }
-              - id: followed-grilling
-                text: The agent then began grilling the user one question at a time toward a shared understanding before acting.
+            expect:
+              - name: run
+                arguments: { skill: grilling }
+            forbid: [add_container, add_module, sync, config, todos]
+        - type: javascript
+          value: file://assertions/grilling-response.ts

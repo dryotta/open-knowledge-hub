@@ -1,19 +1,45 @@
-import { provisionEnvironment, isEnvName } from "../environments.js";
+import { evalEnvironmentLabel, provisionEnvironment, isEnvName } from "../environments.js";
 import { spawnCopilotTurn, runConversation, type CopilotTurnRunner, type Turn, type ConversationTerminal } from "../copilot.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { rm } from "node:fs/promises";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = resolve(EVAL_ROOT, "..");
 
 interface ProviderOptions {
   id?: string;
-  config?: { model?: string; timeoutMs?: number; maxTurns?: number; runner?: CopilotTurnRunner };
+  config?: {
+    model?: string;
+    timeoutMs?: number;
+    maxTurns?: number;
+    /** Retry a fresh environment after a transient non-zero Copilot process exit. */
+    maxAttempts?: number;
+    runner?: CopilotTurnRunner;
+    provisioner?: typeof provisionEnvironment;
+  };
 }
 
 interface CallContext {
   vars?: Record<string, unknown>;
   test?: { description?: string };
+}
+
+interface CallApiOptions {
+  abortSignal?: AbortSignal;
+}
+
+function resolveMaxAttempts(value: number | undefined): number {
+  if (value === undefined || !Number.isInteger(value) || value < 1) return 1;
+  return Math.min(value, 3);
+}
+
+async function removeFailedEnvironment(root: string, failure: unknown, message: string): Promise<void> {
+  try {
+    await rm(root, { recursive: true, force: true });
+  } catch (cleanupError) {
+    throw new AggregateError([failure, cleanupError], message);
+  }
 }
 
 /** Normalise `vars.turns` into stateful Turns. Validates id, after, send are non-empty. */
@@ -76,6 +102,12 @@ export function parseTerminal(raw: unknown): ConversationTerminal {
     }
     terminal.requiredTools = o.requiredTools as string[];
   }
+  if (o.finalTool !== undefined) {
+    if (typeof o.finalTool !== "string" || !o.finalTool) {
+      throw new Error(`terminal.finalTool must be a non-empty string: ${JSON.stringify(raw)}`);
+    }
+    terminal.finalTool = o.finalTool;
+  }
   return terminal;
 }
 
@@ -97,14 +129,12 @@ export default class CopilotProvider {
     return this.providerId;
   }
 
-  async callApi(prompt: string, context: CallContext = {}) {
+  async callApi(prompt: string, context: CallContext = {}, options: CallApiOptions = {}) {
     const vars = context.vars ?? {};
     const env = vars.env;
     if (!isEnvName(env)) {
       throw new Error(`scenario is missing a valid \`env\` var (got ${JSON.stringify(env)})`);
     }
-    const prov = await provisionEnvironment(env, { repoRoot: REPO_ROOT, label: env });
-
     const runner: CopilotTurnRunner = this.config.runner ?? spawnCopilotTurn;
     const turns = normalizeTurns(vars.turns);
 
@@ -119,45 +149,95 @@ export default class CopilotProvider {
       terminal = parseTerminal(vars.terminal);
     }
 
-    const result = await runConversation(
-      {
-        initial: prompt,
-        responses: turns,
-        ...(terminal ? { terminal } : {}),
-        ...(this.config.maxTurns ? { maxTurns: this.config.maxTurns } : {}),
-      },
-      {
-        runner,
-        model: this.config.model,
-        copilotHome: prov.copilotHome,
-        cwd: prov.workspace,
-        timeoutMs: this.config.timeoutMs ?? 300_000,
-      },
-    );
+    const provisioner = this.config.provisioner ?? provisionEnvironment;
+    const maxAttempts = resolveMaxAttempts(this.config.maxAttempts);
+    const retryErrors: string[] = [];
+    let totalCost = 0;
+    let costIncomplete = false;
 
-    if (result.code !== 0) {
-      const code = result.code === null ? "missing" : String(result.code);
-      throw new Error(`Copilot turn failed with exit code ${code}`);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const prov = await provisioner(env, { repoRoot: REPO_ROOT, label: evalEnvironmentLabel(env) });
+      let result: Awaited<ReturnType<typeof runConversation>>;
+      try {
+        result = await runConversation(
+          {
+            initial: prompt,
+            responses: turns,
+            ...(terminal ? { terminal } : {}),
+            ...(this.config.maxTurns ? { maxTurns: this.config.maxTurns } : {}),
+          },
+          {
+            runner,
+            model: this.config.model,
+            copilotHome: prov.copilotHome,
+            cwd: prov.workspace,
+            timeoutMs: this.config.timeoutMs ?? 300_000,
+            abortSignal: options.abortSignal,
+          },
+        );
+      } catch (runError) {
+        await removeFailedEnvironment(
+          prov.root,
+          runError,
+          "Copilot run and environment cleanup both failed",
+        );
+        throw runError;
+      }
+
+      totalCost += result.cost;
+      let error: string | undefined;
+      if (result.processFailure) {
+        error = `Copilot turn failed: ${result.processFailure}`;
+      } else if (result.code !== 0) {
+        const code = result.code === null ? "missing" : String(result.code);
+        error = `Copilot turn failed with exit code ${code}`;
+      } else if (result.failure) {
+        error = result.failure;
+      }
+
+      const retryableProcessFailure =
+        result.processFailureKind === "timeout" || result.processFailureKind === "spawn";
+      if (
+        retryableProcessFailure
+        && !result.failure
+        && attempt < maxAttempts
+        && !options.abortSignal?.aborted
+      ) {
+        retryErrors.push(error!);
+        costIncomplete = true;
+        await removeFailedEnvironment(
+          prov.root,
+          new Error(error),
+          "Copilot retry and failed-attempt cleanup both failed",
+        );
+        continue;
+      }
+
+      return {
+        output: result.transcript,
+        ...(error ? { error } : {}),
+        metadata: {
+          root: prov.root,
+          workspace: prov.workspace,
+          okhHome: prov.okhHome,
+          containerPath: prov.containerPath,
+          fixtureDir: prov.fixtureDir,
+          originPath: prov.originPath,
+          toolCalls: result.toolCalls,
+          toolEvents: result.toolEvents,
+          turns: result.turns,
+          finalMessage: result.finalMessage,
+          cost: totalCost,
+          costIncomplete,
+          attempts: attempt,
+          retryErrors,
+          exitCode: result.code,
+          processFailure: result.processFailure,
+          processFailureKind: result.processFailureKind,
+        },
+      };
     }
 
-    if (result.failure) {
-      throw new Error(result.failure);
-    }
-
-    return {
-      output: result.transcript,
-      metadata: {
-        workspace: prov.root,
-        okhHome: prov.okhHome,
-        containerPath: prov.containerPath,
-        fixtureDir: prov.fixtureDir,
-        originPath: prov.originPath,
-        toolCalls: result.toolCalls,
-        toolEvents: result.toolEvents,
-        turns: result.turns,
-        cost: result.cost,
-        exitCode: result.code,
-      },
-    };
+    throw new Error("Provider exhausted attempts without a result");
   }
 }

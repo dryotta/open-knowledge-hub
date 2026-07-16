@@ -3,24 +3,40 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "kb-hub", answer strictly
-          from its knowledge module: How does auth work?
+          hub, in container "kb-hub", answer strictly from its knowledge module:
+          How does auth work? Do not add examples, rationale, or implementation
+          details that the module does not state. Cite the source concept path.
   tests:
     - description: Ask - answerable question - grounded answer, cites source
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [ask] }
+          config:
+            expect:
+              - ask
+              - { name: task, server: "", arguments: { mode: sync } }
+            forbid:
+              - { name: task, server: "", arguments: { mode: background } }
         - type: javascript
           value: file://assertions/transcript.ts
-          config: { mustContain: ["token"] }
+          config:
+            source: final-message
+            mustContain:
+              - "session tokens?"
+              - "\\bsign(?:ed|ing|ature)\\b"
+              - "24[\\s-]*hours?"
+              - "(?:refresh tokens?[\\s\\S]{0,40}rotat|rotat\\w*[\\s\\S]{0,40}refresh tokens?)"
+              - "(?:^|[\\s`(])(?:kb[/\\\\])?auth\\.md(?=[\\s`),.;:]|$)"
+            mustNotContain:
+              - "\\baccess tokens?\\b"
         - type: javascript
           value: file://assertions/judge.ts
           config:
             criteria:
-              - id: grounded-token-auth
-                text: The answer reflects token-based auth from the Auth concept (e.g. session tokens, ~24h expiry, or refresh rotation).
-              - id: cites-auth
-                text: The answer cites the Auth concept or its source path.
               - id: no-fabrication
-                text: The answer invents nothing beyond the container's knowledge module.
+                text: >-
+                  The answer states only the module's facts: authentication uses signed session
+                  tokens issued at login and verified on each request; tokens expire after 24
+                  hours; refresh tokens rotate on use. A compact coverage label is allowed. The
+                  cited concept path must be the existing auth.md (optionally kb/auth.md), not an
+                  invented directory such as concepts/auth.md.

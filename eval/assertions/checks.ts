@@ -12,7 +12,7 @@ export type Check =
   | { kind: "wake-phrase"; default?: string }
   | { kind: "transcript-contains"; pattern: string }
   | { kind: "transcript-absent"; pattern: string }
-  | { kind: "todo-apply-sync"; operation: "create" | "update" };
+  | { kind: "todo-apply-sync"; operation: "create" | "update"; container?: string };
 
 export interface CheckContext {
   okhHome?: string;
@@ -30,7 +30,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function isSuccessfulTodoMutation(event: ToolEvent, operation: "create" | "update"): event is ToolEvent & {
+function isSuccessfulAppliedTodoMutation(event: ToolEvent): event is ToolEvent & {
   arguments: Record<string, unknown>;
   success: true;
   turn: number;
@@ -41,7 +41,8 @@ function isSuccessfulTodoMutation(event: ToolEvent, operation: "create" | "updat
     event.completed === true &&
     event.success === true &&
     typeof event.turn === "number" &&
-    args?.operation === operation;
+    (args?.operation === "create" || args?.operation === "update") &&
+    args?.apply === true;
 }
 
 function isSuccessfulSync(event: ToolEvent): event is ToolEvent & { success: true } {
@@ -51,22 +52,16 @@ function isSuccessfulSync(event: ToolEvent): event is ToolEvent & { success: tru
 export async function checkTodoApplySync(
   ctx: CheckContext,
   operation: "create" | "update",
+  container?: string,
 ): Promise<CheckResult> {
   const toolEvents = ctx.toolEvents ?? [];
-  const mutations = toolEvents
-    .map((event, index) => ({ event, index }))
-    .filter(({ event }) => isSuccessfulTodoMutation(event, operation))
-    .map(({ event, index }) => ({
-      index,
-      turn: event.turn as number,
-      applied: asObject(event.arguments)?.apply === true,
-    }));
+  const appliedMutations = toolEvents.flatMap((event, index) => {
+    if (!isSuccessfulAppliedTodoMutation(event)) return [];
+    const args = asObject(event.arguments);
+    if (!args) return [];
+    return [{ index, turn: event.turn, arguments: args }];
+  });
 
-  if (mutations.length === 0) {
-    return { pass: false, reason: `no successful todos ${operation} events found` };
-  }
-
-  const appliedMutations = mutations.filter((m) => m.applied);
   if (appliedMutations.length === 0) {
     return { pass: false, reason: `no applied todos ${operation} found (apply:true required)` };
   }
@@ -74,22 +69,48 @@ export async function checkTodoApplySync(
   if (appliedMutations.length > 1) {
     return {
       pass: false,
-      reason: `found ${appliedMutations.length} applied ${operation} mutations; expected exactly one`,
+      reason: `found ${appliedMutations.length} applied todo mutations; expected exactly one`,
     };
   }
 
   const apply = appliedMutations[0]!;
+  if (apply.arguments.operation !== operation) {
+    return { pass: false, reason: `applied todos ${String(apply.arguments.operation)}; expected ${operation}` };
+  }
+  if (
+    container
+    && apply.arguments.container !== undefined
+    && apply.arguments.container !== container
+  ) {
+    return {
+      pass: false,
+      reason: `todos ${operation} targeted ${String(apply.arguments.container)}; expected ${container}`,
+    };
+  }
 
-  const sync = toolEvents
+  const nextOkh = toolEvents
     .map((event, index) => ({ event, index }))
-    .find(({ event, index }) => index > apply.index && isSuccessfulSync(event));
-  if (!sync) {
-    return { pass: false, reason: `missing successful sync after applied ${operation}` };
+    .find(({ event, index }) =>
+      index > apply.index
+      && event.server === "open-knowledge-hub",
+    );
+  if (!nextOkh || !isSuccessfulSync(nextOkh.event)) {
+    const found = nextOkh ? nextOkh.event.tool : "no OKH call";
+    return { pass: false, reason: `expected successful sync immediately after applied ${operation}; found ${found}` };
+  }
+  if (nextOkh.event.turn !== apply.turn) {
+    return { pass: false, reason: `sync occurred on turn ${nextOkh.event.turn}; expected turn ${apply.turn}` };
+  }
+  if (container && asObject(nextOkh.event.arguments)?.container !== container) {
+    return {
+      pass: false,
+      reason: `sync targeted ${String(asObject(nextOkh.event.arguments)?.container)}; expected ${container}`,
+    };
   }
 
   return {
     pass: true,
-    reason: `${operation} applied directly with apply:true on turn ${apply.turn}, sync followed`,
+    reason: `${operation} applied directly with apply:true on turn ${apply.turn}, sync followed immediately`,
   };
 }
 
@@ -178,7 +199,7 @@ export async function evaluateCheck(check: Check, ctx: CheckContext): Promise<Ch
       }
     }
     case "todo-apply-sync":
-      return checkTodoApplySync(ctx, check.operation);
+      return checkTodoApplySync(ctx, check.operation, check.container);
     default:
       return { pass: false, reason: `unknown check kind: ${(check as { kind?: string }).kind ?? "?"}` };
   }

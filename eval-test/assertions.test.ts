@@ -12,7 +12,7 @@ import containerRegistered from "../eval/assertions/container-registered.js";
 import manifestInitialized from "../eval/assertions/manifest-initialized.js";
 import wakePhraseSet from "../eval/assertions/wake-phrase-set.js";
 import llmwikiState from "../eval/assertions/llmwiki-state.js";
-import { isDeepSubset, matchesTool, missingTools } from "../eval/assertions/tool-events.js";
+import { isDeepSubset, matchesTool, matchesToolAttempt, missingTools } from "../eval/assertions/tool-events.js";
 import type { ToolEvent } from "../eval/copilot.js";
 
 const cleanups: string[] = [];
@@ -58,6 +58,13 @@ describe("matchesTool", () => {
   it("matches a successful completed event with matching tool and server", () => {
     const ev = mkEvent({ tool: "run", arguments: { module: "wiki", skill: "write" } });
     expect(matchesTool(ev, { name: "run", arguments: { module: "wiki", skill: "write" } })).toBe(true);
+  });
+
+  describe("matchesToolAttempt", () => {
+    it("matches failed and incomplete attempts", () => {
+      expect(matchesToolAttempt(mkEvent({ completed: true, success: false }), { name: "run" })).toBe(true);
+      expect(matchesToolAttempt(mkEvent({ completed: false, success: false }), { name: "run" })).toBe(true);
+    });
   });
   it("rejects when completed is false", () => {
     expect(matchesTool(mkEvent({ completed: false }), { name: "run" })).toBe(false);
@@ -131,6 +138,21 @@ describe("missingTools", () => {
     expect(missingTools(events, ["run", "inspect", "sync"])).toEqual([]);
     expect(missingTools(events, ["run", "missing"])).toEqual(["missing"]);
   });
+
+  it("does not reuse one event for duplicate unordered expectations", () => {
+    expect(missingTools([mkEvent({ tool: "run" })], ["run", "run"])).toEqual(["run"]);
+  });
+
+  it("finds a complete unordered assignment when generic and specific expectations overlap", () => {
+    const overlapping = [
+      mkEvent({ tool: "run", callId: "c1", arguments: { skill: "learn" } }),
+      mkEvent({ tool: "run", callId: "c2", arguments: { skill: "other" } }),
+    ];
+    expect(missingTools(overlapping, [
+      "run",
+      { name: "run", arguments: { skill: "learn" } },
+    ])).toEqual([]);
+  });
 });
 
 describe("tools-called", () => {
@@ -191,12 +213,57 @@ describe("tools-called", () => {
     ));
     expect(result.pass).toBe(false);
   });
+
+  it("fails when a forbidden tool was called successfully", () => {
+    const evts = [
+      mkEvent({ tool: "run", callId: "c1" }),
+      mkEvent({ tool: "sync", callId: "c2" }),
+    ];
+    const result = toolsCalled("", ctx(
+      { toolCalls: ["run", "sync"], toolEvents: evts },
+      { expect: ["run"], forbid: ["sync"] },
+    ));
+    expect(result.pass).toBe(false);
+    expect(result.reason).toContain("forbidden tool calls: sync");
+  });
+
+  it.each([
+    { completed: true, success: false },
+    { completed: false, success: false },
+  ])("fails when a forbidden tool was attempted: %o", (state) => {
+    const result = toolsCalled("", ctx(
+      { toolCalls: [], toolEvents: [mkEvent({ tool: "sync", ...state })] },
+      { forbid: ["sync"] },
+    ));
+    expect(result.pass).toBe(false);
+  });
 });
 
 describe("transcript", () => {
   it("checks mustContain / mustNotContain", () => {
     expect(transcript("see kb/auth.md", ctx({}, { mustContain: ["kb/auth.md"] })).pass).toBe(true);
     expect(transcript("boom error", ctx({}, { mustNotContain: ["error"] })).pass).toBe(false);
+  });
+
+  it("can validate only the final spoken assistant message", () => {
+    const metadata = { finalMessage: "Use tools/csv2json/README.md to inspect CSV data." };
+    expect(transcript(
+      "tool output mentioned kb/auth.md",
+      ctx(metadata, {
+        source: "final-message",
+        mustContain: ["csv2json"],
+        mustNotContain: ["auth\\.md"],
+      }),
+    ).pass).toBe(true);
+  });
+
+  it("fails final-message checks when metadata is absent", () => {
+    const result = transcript("token appears in the prompt", ctx({}, {
+      source: "final-message",
+      mustContain: ["token"],
+    }));
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/missing or empty/i);
   });
 });
 
@@ -210,6 +277,16 @@ describe("okf-valid", () => {
 
     await writeFile(join(c, "kb", "bad.md"), "no frontmatter here\n", "utf8");
     expect((await okfValid("", ctx({ containerPath: c }, { module: "kb" }))).pass).toBe(false);
+  });
+
+  it("validates uppercase Markdown concept extensions", async () => {
+    const c = await makeTempDir("okf-"); cleanups.push(c);
+    await mkdir(join(c, "kb"), { recursive: true });
+    await writeFile(join(c, "kb", "valid.md"), "---\ntype: Concept\n---\nvalid\n", "utf8");
+    await writeFile(join(c, "kb", "bad.MD"), "missing frontmatter\n", "utf8");
+    const result = await okfValid("", ctx({ containerPath: c }, { module: "kb" }));
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/bad\.MD: missing frontmatter type/i);
   });
 
   it("with requireChanged, fails when the module equals the fixture and passes when a concept changed", async () => {
@@ -226,6 +303,45 @@ describe("okf-valid", () => {
     // extend the existing concept (as a real learn run may) -> changed -> passes
     await writeFile(join(c, "kb", "auth.md"), "---\ntype: Concept\n---\nbody\n\n# Signing\nRS256\n", "utf8");
     expect((await okfValid("", ctx(meta, { module: "kb", requireChanged: true }))).pass).toBe(true);
+  });
+
+  it("requires configured patterns in files changed from the fixture", async () => {
+    const fx = await makeTempDir("okf-fx-"); cleanups.push(fx);
+    const c = await makeTempDir("okf-c-"); cleanups.push(c);
+    await mkdir(join(fx, "kb"), { recursive: true });
+    await mkdir(join(c, "kb"), { recursive: true });
+    const original = "---\ntype: Concept\n---\nSigned tokens.\n";
+    await writeFile(join(fx, "kb", "auth.md"), original, "utf8");
+    await writeFile(join(c, "kb", "auth.md"), `${original}\nRS256 keys rotate weekly.\n`, "utf8");
+    const meta = { containerPath: c, fixtureDir: fx };
+
+    expect((await okfValid("", ctx(meta, {
+      module: "kb",
+      requiredChangedPatterns: ["RS256", "weekly"],
+    }))).pass).toBe(true);
+    expect((await okfValid("", ctx(meta, {
+      module: "kb",
+      requiredChangedPatterns: ["HS256"],
+    }))).pass).toBe(false);
+  });
+
+  it("does not accept required patterns written only to reserved index or log files", async () => {
+    const fx = await makeTempDir("okf-fx-"); cleanups.push(fx);
+    const c = await makeTempDir("okf-c-"); cleanups.push(c);
+    await mkdir(join(fx, "kb"), { recursive: true });
+    await mkdir(join(c, "kb"), { recursive: true });
+    const concept = "---\ntype: Concept\n---\nSigned tokens.\n";
+    await writeFile(join(fx, "kb", "auth.md"), concept, "utf8");
+    await writeFile(join(c, "kb", "auth.md"), concept, "utf8");
+    await writeFile(join(fx, "kb", "index.md"), "# Knowledge\n", "utf8");
+    await writeFile(join(c, "kb", "index.md"), "# Knowledge\nRS256 keys rotate weekly.\n", "utf8");
+
+    const result = await okfValid("", ctx(
+      { containerPath: c, fixtureDir: fx },
+      { module: "kb", requiredChangedPatterns: ["RS256", "weekly"] },
+    ));
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/no concept document/i);
   });
 });
 
@@ -264,6 +380,15 @@ describe("memory-append", () => {
   it("fails when an extra 'completed successfully' sentence is appended after the observation", async () => {
     const { fx, c } = await pair();
     const extra = `## 2026-07-02T14:05:00Z\n\n${observation}\nCompleted successfully.\n`;
+    await writeFile(join(c, "mem", "2026-07-02.md"), extra, "utf8");
+    const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toMatch(/extra non-empty line/i);
+  });
+
+  it("fails when a new memory file adds YAML frontmatter", async () => {
+    const { fx, c } = await pair();
+    const extra = `---\ndate: 2026-07-02\n---\n${validEntry(observation)}`;
     await writeFile(join(c, "mem", "2026-07-02.md"), extra, "utf8");
     const r = await memoryAppend("", ctx({ containerPath: c, fixtureDir: fx }, { module: "mem", observation }));
     expect(r.pass).toBe(false);

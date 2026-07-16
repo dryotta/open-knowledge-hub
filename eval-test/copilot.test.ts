@@ -1,8 +1,19 @@
 import { describe, it, expect } from "vitest";
+import { spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  buildCopilotTurnArgs,
   buildJudgeCopilotArgs,
+  attachTermination,
   parseCopilotEvents,
+  resolvedProcessExitCode,
   runConversation,
+  spawnCopilotTurn,
+  terminateProcessTree,
+  terminateProcessTreeAndWait,
   type CopilotTurnRunner,
   type CopilotTurnResult,
   type ToolEvent,
@@ -11,7 +22,32 @@ import {
 
 const line = (o: unknown) => JSON.stringify(o);
 
+async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`condition not met within ${timeoutMs}ms`);
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("buildJudgeCopilotArgs", () => {
+  it("makes an infrastructure failure authoritative over a parsed success code", () => {
+    expect(resolvedProcessExitCode(0, 0, "[judge timed out]")).toBeNull();
+    expect(resolvedProcessExitCode(0, 1)).toBe(1);
+    expect(resolvedProcessExitCode(0, null, "[judge exited from signal SIGKILL]")).toBeNull();
+    expect(resolvedProcessExitCode(null, 1)).toBe(1);
+  });
+
   it("uses a silent tool-free CLI invocation for judge-only calls", () => {
     expect(buildJudgeCopilotArgs("grade this", "gpt-5.6-luna")).toEqual([
       "-p",
@@ -27,6 +63,167 @@ describe("buildJudgeCopilotArgs", () => {
       "--model",
       "gpt-5.6-luna",
     ]);
+  });
+
+  describe("terminateProcessTree", () => {
+    it("waits for a spawned process to exit after forced termination", async () => {
+      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+        detached: process.platform !== "win32",
+        windowsHide: true,
+      });
+      try {
+        const closed = once(child, "close");
+        await terminateProcessTree(child);
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          await Promise.race([
+            closed,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error("child did not exit")), 5_000);
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+        expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }
+    });
+
+    it("settles after forced termination even when close never arrives", async () => {
+      const fakeExitedChild = {
+        exitCode: 1,
+        signalCode: null,
+        stdin: null,
+        stdout: null,
+        stderr: null,
+      } as ReturnType<typeof spawn>;
+      const reason = await new Promise<string>((resolve) => {
+        attachTermination(fakeExitedChild, 10, undefined, resolve);
+      });
+      expect(reason).toBe("timeout");
+    });
+
+    it("bounds waiting for open stdio when close never arrives", async () => {
+      let stdoutDestroyed = false;
+      const fakeChild = Object.assign(new EventEmitter(), {
+        pid: undefined,
+        exitCode: 1,
+        signalCode: null,
+        stdin: null,
+        stdout: {
+          destroyed: false,
+          closed: false,
+          destroy() {
+            this.destroyed = true;
+            stdoutDestroyed = true;
+          },
+        },
+        stderr: null,
+      }) as unknown as ReturnType<typeof spawn>;
+      await terminateProcessTreeAndWait(fakeChild, 20);
+      expect(stdoutDestroyed).toBe(true);
+    });
+
+    it("terminates descendants in the child's process group", async () => {
+      const root = await mkdtemp(join(tmpdir(), "okh-process-tree-"));
+      const heartbeat = join(root, "heartbeat");
+      const grandchildScript = [
+        'const { appendFileSync } = require("node:fs");',
+        "const path = process.argv[1];",
+        'setInterval(() => appendFileSync(path, "x"), 25);',
+      ].join("");
+      const parentScript = [
+        'const { spawn } = require("node:child_process");',
+        `const child = spawn(process.execPath, ["-e", ${JSON.stringify(grandchildScript)}, process.argv[1]], { stdio: "ignore" });`,
+        "console.log(child.pid);",
+        "setInterval(() => {}, 1000);",
+      ].join("");
+      const child = spawn(process.execPath, ["-e", parentScript, heartbeat], {
+        detached: process.platform !== "win32",
+        windowsHide: true,
+      });
+      let grandchildPid: number | undefined;
+      try {
+        const [data] = await once(child.stdout!, "data");
+        grandchildPid = Number(String(data).trim());
+        expect(Number.isInteger(grandchildPid)).toBe(true);
+        await waitFor(async () => (await readFile(heartbeat).catch(() => Buffer.alloc(0))).length > 0);
+
+        const closed = once(child, "close");
+        await terminateProcessTree(child);
+        await closed;
+        await waitFor(async () => !isProcessAlive(grandchildPid!));
+        const firstSize = (await readFile(heartbeat)).length;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect((await readFile(heartbeat)).length).toBe(firstSize);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) {
+          await terminateProcessTree(child);
+        }
+        if (grandchildPid) {
+          try {
+            process.kill(grandchildPid, "SIGKILL");
+          } catch {
+            // Already terminated with the process tree.
+          }
+        }
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+describe("buildCopilotTurnArgs", () => {
+  it("uses deterministic flags and creates the requested session", () => {
+    expect(buildCopilotTurnArgs({
+      prompt: "do the task",
+      sessionId: "session-1",
+      resume: false,
+      model: "claude-sonnet-4.5",
+    })).toEqual([
+      "-p",
+      "do the task",
+      "--allow-all",
+      "--output-format",
+      "json",
+      "--no-color",
+      "--no-custom-instructions",
+      "--disable-builtin-mcps",
+      "--no-remote-export",
+      "--no-auto-update",
+      "--session-id",
+      "session-1",
+      "--model",
+      "claude-sonnet-4.5",
+    ]);
+  });
+
+  it("resumes an existing session without requiring a model", () => {
+    const args = buildCopilotTurnArgs({
+      prompt: "continue",
+      sessionId: "session-1",
+      resume: true,
+    });
+    expect(args).toContain("--resume=session-1");
+    expect(args).not.toContain("--session-id");
+    expect(args).not.toContain("--model");
+  });
+
+  it("does not spawn a Copilot turn when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const result = await spawnCopilotTurn({
+      prompt: "never run",
+      sessionId: "session-1",
+      resume: false,
+      copilotHome: "unused",
+      cwd: "unused",
+      abortSignal: controller.signal,
+    });
+    expect(result.code).toBeNull();
+    expect(result.raw).toMatch(/aborted before Copilot turn started/i);
   });
 });
 
@@ -212,6 +409,7 @@ describe("runConversation", () => {
     expect(seen).toEqual(["start onboarding", "call it brain", "yes go ahead", "thanks, everyday use?"]);
     expect(res.toolCalls).toEqual(["add", "config", "onboard"]);
     expect(res.turns).toHaveLength(4);
+    expect(res.finalMessage).toBe("Done!");
     expect(res.transcript).toContain("=== USER (turn 1) ===");
     expect(res.transcript).toContain("Which wake phrase");
   });
@@ -346,6 +544,37 @@ describe("runConversation", () => {
     expect(seen).toEqual(["start"]);
     expect(res.code).toBe(1);
   });
+
+  it("stops immediately and preserves a process failure even if a runner reports code zero", async () => {
+    const seen: string[] = [];
+    const runner: CopilotTurnRunner = async (opts) => {
+      seen.push(opts.prompt);
+      return {
+        messages: [],
+        lastMessage: "",
+        tools: [],
+        toolEvents: [],
+        cost: 0,
+        sessionId: opts.sessionId,
+        code: 0,
+        raw: "",
+        render: "",
+        processFailure: "[Copilot turn timed out after 10ms]",
+        processFailureKind: "timeout",
+      };
+    };
+    const res = await runConversation(
+      {
+        initial: "start",
+        responses: [{ send: "next", id: "n", after: "start" }],
+        terminal: { after: "n" },
+      },
+      ctx(runner),
+    );
+    expect(seen).toEqual(["start"]);
+    expect(res.processFailureKind).toBe("timeout");
+    expect(res.processFailure).toMatch(/timed out/);
+  });
 });
 
 describe("runConversation — state machine", () => {
@@ -474,6 +703,82 @@ describe("runConversation — state machine", () => {
     const res = await runConversation({ initial: "hello", responses: [] }, ctx(runner));
     expect(res.turns).toHaveLength(1);
     expect(res.failure).toBeUndefined();
+    expect(res.finalMessage).toBe("world");
+  });
+
+  it("single-turn scripts enforce terminal requiredTools", async () => {
+    const seen: string[] = [];
+    const runner = fakeRunner([
+      { match: "hello", agent: "done", toolEvents: [okh("c1", "run")] },
+    ], seen);
+    const success = await runConversation({
+      initial: "hello",
+      responses: [],
+      terminal: { after: "start", requiredTools: ["run"] },
+    }, ctx(runner));
+    expect(success.failure).toBeUndefined();
+
+    const missing = await runConversation({
+      initial: "hello",
+      responses: [],
+      terminal: { after: "start", requiredTools: ["sync"] },
+    }, ctx(runner));
+    expect(missing.failure).toMatch(/sync/);
+  });
+
+  it("terminal finalTool must be the last successful OKH call on the terminal turn", async () => {
+    const successRunner = fakeRunner([{
+      match: "hello",
+      agent: "done",
+      toolEvents: [okh("c1", "run"), okh("c2", "sync")],
+    }], []);
+    const success = await runConversation({
+      initial: "hello",
+      responses: [],
+      terminal: { after: "start", finalTool: "sync" },
+    }, ctx(successRunner));
+    expect(success.failure).toBeUndefined();
+
+    const failureRunner = fakeRunner([{
+      match: "hello",
+      agent: "done",
+      toolEvents: [okh("c1", "sync"), okh("c2", "inspect")],
+    }], []);
+    const failure = await runConversation({
+      initial: "hello",
+      responses: [],
+      terminal: { after: "start", finalTool: "sync" },
+    }, ctx(failureRunner));
+    expect(failure.failure).toMatch(/must end with successful sync/i);
+  });
+
+  it("enforces terminal finalTool when terminal state is reached at maxTurns", async () => {
+    const runner = fakeRunner([
+      { match: "hello", agent: "continue" },
+      {
+        match: "finish",
+        agent: "done",
+        toolEvents: [okh("c1", "sync"), okh("c2", "inspect")],
+      },
+    ], []);
+    const result = await runConversation({
+      initial: "hello",
+      responses: [{ id: "done", after: "start", send: "finish" }],
+      terminal: { after: "done", finalTool: "sync" },
+      maxTurns: 2,
+    }, ctx(runner));
+    expect(result.failure).toMatch(/must end with successful sync/i);
+  });
+
+  it("single-turn scripts fail when the declared terminal state is unreachable", async () => {
+    const seen: string[] = [];
+    const runner = fakeRunner([{ match: "hello", agent: "done" }], seen);
+    const res = await runConversation({
+      initial: "hello",
+      responses: [],
+      terminal: { after: "later" },
+    }, ctx(runner));
+    expect(res.failure).toMatch(/cannot reach terminal state "later"/);
   });
 
   it("fully unguarded linear chain fires each turn strictly by after-state despite arbitrary agent wording", async () => {

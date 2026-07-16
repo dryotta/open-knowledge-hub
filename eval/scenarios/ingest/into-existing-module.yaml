@@ -6,28 +6,28 @@
     - vars:
         env: health
         prompt: |
-          hub, ingest ./lab-results.txt into my Health module.
+          hub, use the shared "ingest" skill to ingest ./lab-results.txt into my
+          existing Health module.
   tests:
     - description: Ingest - existing scoped module - path source, no re-initialize
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [inspect, run] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { skill: ingest }
+              - name: run
+                arguments: { container: health-hub, module: health, skill: learn }
+              - name: sync
+                arguments: { container: health-hub }
+            forbid:
+              - name: run
+                arguments: { skill: initialize }
         - type: javascript
           value: file://assertions/okf-valid.ts
           config: { module: health, requireChanged: true }
         - type: javascript
           value: file://assertions/source-retained.ts
           config: { module: health, filename: lab-results.txt }
-        - type: javascript
-          value: file://assertions/judge.ts
-          config:
-            criteria:
-              - id: resolved-module
-                text: The agent located the existing Health knowledge module (in health-hub) to ingest into.
-              - id: read-scope-contract
-                text: The agent read or acknowledged the module's existing scope contract before writing, rather than treating the module as uninitialized.
-              - id: no-reinitialize
-                text: The agent did NOT run the initialize skill on the already-scoped module.
-              - id: retained-source
-                text: The agent kept a copy of the ingested file under the module's sources folder, per the module's retention policy.

@@ -3,9 +3,8 @@
     - vars:
         env: wiki
         prompt: |
-          Use the open-knowledge-hub MCP tools. Ask module "wiki" in container "wiki-hub"
-          how Attention fits within a Transformer, then file the durable answer back into
-          that wiki and sync it.
+          hub, ask module "wiki" in container "wiki-hub" how Attention fits within a
+          Transformer, then file the durable answer back into that wiki.
   tests:
     - description: Ask - llmwiki compounding - answers then files durable synthesis
       assert:
@@ -14,6 +13,9 @@
           config:
             ordered: true
             expect:
+              - name: ask
+                arguments: { container: wiki-hub, module: wiki }
+              - { name: task, server: "", arguments: { mode: sync } }
               - name: run
                 arguments: { container: wiki-hub, module: wiki, skill: write }
               - name: run
@@ -22,6 +24,16 @@
                 arguments: { container: wiki-hub, module: wiki }
               - name: sync
                 arguments: { container: wiki-hub }
+            forbid:
+              - { name: task, server: "", arguments: { mode: background } }
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustContain:
+              - "\\battention\\b"
+              - "\\btransformer\\b"
+              - "(?:attention|transformer)\\.md"
         - type: javascript
           value: file://assertions/llmwiki-state.ts
           config:
@@ -39,13 +51,7 @@
             criteria:
               - id: answered-from-wiki
                 text: The agent answered how Attention fits within a Transformer using the existing wiki pages.
-              - id: ran-write
-                text: The agent invoked the wiki module's write skill to persist the durable answer.
-                required: false
               - id: filed-synthesis
                 text: The on-disk changes include a new OKF synthesis page explaining the Attention-to-Transformer relationship.
               - id: maintained-wiki
                 text: The synthesis is cross-linked and the root index.md catalog and log.md were updated.
-              - id: persisted-via-sync
-                text: The wiki changes were persisted via the sync tool.
-                required: false

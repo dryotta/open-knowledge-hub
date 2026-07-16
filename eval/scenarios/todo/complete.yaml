@@ -3,18 +3,29 @@
     - vars:
         env: local-and-git
         prompt: |
-          Use the open-knowledge-hub MCP tools. In container "kb-hub", module "mem",
-          mark "Buy milk" as complete. Apply the change and sync immediately — do not
-          ask for confirmation first.
+          hub, use the todo workflow in container "kb-hub"'s "mem" memory module
+          to mark "Buy milk" as complete.
         terminal:
           after: start
-          requiredTools: [todos, sync]
+          requiredTools: [run, todos, sync]
+          finalTool: sync
   tests:
-    - description: Todo - complete - directly completes only Buy milk and syncs
+    - description: Todo - complete - routes and completes only Buy milk
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [todos, sync] }
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: kb-hub, module: mem, skill: todo }
+              - name: todos
+                arguments: { operation: update, apply: true }
+              - name: sync
+                arguments: { container: kb-hub }
+        - type: javascript
+          value: file://assertions/todo-apply-sync.ts
+          config: { operation: update, container: kb-hub }
         - type: javascript
           value: file://assertions/todo-markdown.ts
           config:
@@ -23,12 +34,5 @@
             status: completed
             labels: [shopping]
         - type: javascript
-          value: file://assertions/judge.ts
-          config:
-            artifacts: { module: mem }
-            criteria:
-              - id: direct-apply-sync
-                text: The agent applied the todo completion directly with apply:true in a single todos call and immediately called sync without requesting confirmation.
-                check: { kind: todo-apply-sync, operation: update }
-              - id: completed-target-only
-                text: Only the Buy milk todo was completed; unrelated memory content and the Review launch notes todo remain intact and unchanged.
+          value: file://assertions/todo-module-change.ts
+          config: { module: mem, operation: update, text: Buy milk }

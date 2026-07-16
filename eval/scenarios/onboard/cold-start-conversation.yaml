@@ -5,7 +5,7 @@
     - vars:
         env: empty
         prompt: |
-          Use the Open Knowledge Hub MCP and run onboard to set me up.
+          I just installed Open Knowledge Hub. Help me set it up for the first time.
         turns:
           - id: wake-phrase
             after: start
@@ -13,13 +13,18 @@
           - id: container-choice
             after: wake-phrase
             send: |
-              Create a brand-new folder called "my-notes" with a knowledge module
+              I'd like a brand-new folder called "my-notes" with a knowledge module
               named "kb".
           - id: create-confirmed
             after: container-choice
-            send: "Yes, go ahead and create it."
-          - id: wrap-up
+            send: "The plan looks right. Yes, create it."
+          - id: module-purpose
             after: create-confirmed
+            send: |
+              Use it for concise engineering notes and decisions that I can search
+              later. Build that structure now.
+          - id: wrap-up
+            after: module-purpose
             send: "Thanks — how would I use it day to day?"
         terminal:
           after: wrap-up
@@ -29,7 +34,31 @@
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
-          config: { expect: [onboard, config, add_container] }
+          config:
+            ordered: true
+            expect:
+              - { name: onboard, turn: 1 }
+              - name: config
+                turn: 2
+                arguments: { set: { wakePhrase: brain } }
+              - { name: add_container, turn: 3 }
+              - name: add_container
+                turn: 4
+                arguments: { create: true }
+              - name: add_module
+                turn: 4
+                arguments: { container: my-notes, path: kb, type: knowledge, create: true }
+              - name: run
+                turn: 4
+                arguments: { container: my-notes, module: kb, skill: initialize }
+              - name: sync
+                turn: 5
+                arguments: { container: my-notes }
+            forbid:
+              - name: add_container
+                turn: 3
+                arguments: { create: true }
+              - { name: add_module, turn: 3 }
         - type: javascript
           value: file://assertions/wake-phrase-set.ts
         - type: javascript
@@ -42,18 +71,7 @@
           value: file://assertions/judge.ts
           config:
             criteria:
-              - id: ran-onboard
-                text: The agent ran the onboard flow to begin guided setup.
-                check: { kind: tool, name: onboard }
               - id: asked-wake-phrase
                 text: Early on, the agent explained OKH briefly and asked the user to choose a wake phrase before doing setup.
-              - id: set-wake-phrase
-                text: The agent saved the user's chosen wake phrase via the config tool.
-                check: { kind: wake-phrase }
-              - id: previewed-before-create
-                text: The agent showed or echoed the add plan and waited for a yes before creating anything.
-              - id: created-hub-kb
-                text: A container "my-notes" with a "kb" knowledge module was created.
-                check: { kind: container, name: my-notes, backend: local, module: kb }
               - id: showed-everyday-use
                 text: The agent closed by showing how to use the hub day to day (e.g. remember/learn/ask examples).
