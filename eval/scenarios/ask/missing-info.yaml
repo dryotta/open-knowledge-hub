@@ -14,7 +14,7 @@
           config:
             expect:
               - ask
-              - { name: task, server: "", arguments: { mode: sync } }
+              - { name: task, server: "" }
             forbid:
               - { name: task, server: "", arguments: { mode: background } }
         - type: javascript

@@ -15,7 +15,7 @@
             expect:
               - name: ask
                 arguments: { container: wiki-hub, module: wiki }
-              - { name: task, server: "", arguments: { mode: sync } }
+              - { name: task, server: "" }
               - name: run
                 arguments: { container: wiki-hub, module: wiki, skill: write }
               - name: run

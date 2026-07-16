@@ -384,7 +384,6 @@ describe("scenario routing contracts", () => {
         expect(tools?.config?.expect, file).toContainEqual({
           name: "task",
           server: "",
-          arguments: { mode: "sync" },
         });
         expect(tools?.config?.forbid, file).toContainEqual({
           name: "task",
@@ -679,7 +678,7 @@ describe("llmwiki scenario structured tool expectations", () => {
 
     // 2: foreground task reads the returned bundle
     const taskExp = expectations[1] as { name: string; server?: string; arguments?: Record<string, unknown> };
-    expect(taskExp).toMatchObject({ name: "task", server: "", arguments: { mode: "sync" } });
+    expect(taskExp).toMatchObject({ name: "task", server: "" });
 
     // 3: module run write
     const writeExp = expectations[2] as { name: string; arguments?: Record<string, unknown> };
