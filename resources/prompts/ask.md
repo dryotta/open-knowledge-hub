@@ -54,7 +54,9 @@ Instruct the sub-agent to:
    implementation details that the source does not state. Do not specialize a generic source
    term: if the source says `tokens`, do not rewrite it as `access tokens`.
    Use each source's exact path relative to the module root. Never add an assumed directory
-   such as `concepts/` when the source path does not contain it.
+   such as `concepts/` when the source path does not contain it. When a source says an event
+   happens "after", "during", or "on" another event, preserve that wording; do not relabel the
+   relationship as causal or correlational unless the source explicitly does so.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
 4. **Assess scope explicitly.** For each question, say whether the pack actually covers it:
@@ -70,7 +72,8 @@ Instruct the sub-agent to:
 
 Explicit user constraints override the default gap and next-step elaboration. If the user asks for
 only stated facts or forbids unstated examples and implementation details, use a compact coverage
-label without speculating about specific missing technologies, mechanisms, or categories.
+label without speculating about specific missing technologies, mechanisms, or categories. A request
+not to add absent details also forbids listing those absent details as coverage gaps.
 
 ### Stage 3 — Relay the distilled answer
 

@@ -21,7 +21,9 @@ Do NOT dump whole modules into context.
    directory, or recency — read enough content to verify direct task relevance.
    Direct relevance means the stated task needs the item now, not that a generic
    procedure might become useful later. For example, do not select a debugging skill
-   for an implementation task unless the task includes a failure to debug.
+   for an implementation task unless the task includes a failure to debug. Never put
+   a conditional item in the selected working set merely because it could help "if"
+   a different problem appears later; omit it until that problem is part of the task.
 3. Select every item the task needs across ALL module types — knowledge alone is
    rarely enough:
    - knowledge concepts that inform the task,

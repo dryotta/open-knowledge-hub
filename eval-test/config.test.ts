@@ -420,6 +420,16 @@ describe("scenario routing contracts", () => {
       }
     });
 
+    it("across-hubs rejects invented gap categories and causal labels", async () => {
+      const sc = await loadScenario("ask/across-hubs.yaml");
+      const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
+      const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+      const patterns = transcript?.config?.mustNotContain as string[];
+      expect(patterns).toHaveLength(2);
+      expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
+      expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);
+    });
+
     it("CSV context requests only selected entries and rejects cited irrelevant paths", async () => {
       const sc = await loadScenario("context/csv-debug.yaml");
       expect(sc.config[0].vars.prompt).toMatch(/rejected files out of the selected working set/i);
