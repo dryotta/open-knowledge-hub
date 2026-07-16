@@ -5,8 +5,8 @@
         prompt: |
           hub, assemble the context needed to implement a secure login feature in
           container "kb-hub". This is new implementation work, not an existing
-          failure investigation. Use one broad gap statement rather than a list of
-          possible requirements.
+          failure investigation. Use one broad gap statement without enumerating
+          possible requirements or subtopics.
   tests:
     - description: Context - login task - compact set, cites paths
       assert:
@@ -24,9 +24,20 @@
               - "engineering/testing/debugging/SKILL\\.md"
               - "tools/csv2json/README\\.md"
         - type: javascript
+          value: file://assertions/tool-argument.ts
+          config:
+            tool: context
+            argument: task
+            mustContain:
+              - "implement a secure login feature"
+              - "(?:new implementation work|not an existing failure)"
+              - "(?:broad gap statement|without enumerating|not a list)"
+            mustNotContain:
+              - "\\b(?:credential|password|session management|infrastructure|storage)\\b"
+        - type: javascript
           value: file://assertions/transcript.ts
           config:
             source: final-message
             mustNotContain:
-              - "\\b(?:security best practices|password hashing|rate limiting|MFA|2FA|session storage|secure session management|API(?:/|\\s+)?endpoint specifications?|(?:login|logout|token refresh) endpoints?|testing strateg(?:y|ies)|code examples?)\\b"
+              - "\\b(?:credential validation|security best practices|password[^.\\n]{0,40}(?:storage|hash)|rate limiting|MFA|2FA|session (?:storage|management|lifecycle)|secure storage|token (?:generation|signing)|API(?:/|\\s+)?endpoint specifications?|(?:login|logout|token refresh) endpoints?|testing strateg(?:y|ies)|code examples?)\\b"
               - "\\b(?:debugging skill|csv2json)\\b|engineering/testing/debugging/SKILL\\.md|tools/csv2json/README\\.md"

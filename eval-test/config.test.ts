@@ -93,7 +93,7 @@ describe("deterministic custom, context, and ingest scenarios", () => {
       "tools/csv2json/README\\.md",
     ]));
     expect(sc.config[0].vars.prompt).toMatch(/new implementation work, not an existing\s+failure investigation/i);
-    expect(sc.config[0].vars.prompt).toMatch(/one broad gap statement rather than a list/i);
+    expect(sc.config[0].vars.prompt).toMatch(/one broad gap statement without enumerating/i);
     const transcript = sc.tests[0].assert.find(
       (a: { value?: string }) => String(a.value).endsWith("transcript.ts"),
     );
@@ -101,6 +101,13 @@ describe("deterministic custom, context, and ingest scenarios", () => {
     expect(new RegExp(gapPattern, "i").test(
       "Gaps: password hashing, rate limiting, API endpoint specifications, and testing strategy",
     )).toBe(true);
+    const toolArgument = sc.tests[0].assert.find(
+      (a: { value?: string }) => String(a.value).endsWith("tool-argument.ts"),
+    );
+    expect(toolArgument.config).toMatchObject({ tool: "context", argument: "task" });
+    expect(toolArgument.config.mustNotContain).toEqual(expect.arrayContaining([
+      expect.stringMatching(/credential/),
+    ]));
     expect(sc.tests[0].assert.some((a: { value?: string }) => String(a.value).endsWith("judge.ts"))).toBe(false);
   });
 

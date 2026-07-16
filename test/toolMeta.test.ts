@@ -90,7 +90,8 @@ describe("every tool has complete, consistent metadata", () => {
   it("flow arguments preserve user scope without inferred expansion", async () => {
     const context = await loadToolMeta("context");
     const ask = await loadToolMeta("ask");
-    expect(context.args.task).toMatch(/copied without adding inferred requirements/i);
+    expect(context.args.task).toMatch(/copy the user's task[\s\S]*verbatim/i);
+    expect(context.args.task).toMatch(/never add inferred requirements/i);
     expect(ask.args.question).toMatch(/copied without weakening or expanding/i);
   });
 });

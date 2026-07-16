@@ -73,6 +73,8 @@ describe("prompt builders", () => {
   });
   it("context discipline keeps rejected candidates out of the selected working set", async () => {
     const text = await buildContext(targets, "Debug CSV import");
+    expect(text).toMatch(/caller's original request is authoritative/i);
+    expect(text).toMatch(/only user-stated details define scope/i);
     expect(text).toMatch(/never create a bullet\s+for an excluded item/i);
     expect(text).toMatch(/gap summary[\s\S]{0,120}must not name or cite[\s\S]{0,80}rejected item/i);
     expect(text).toMatch(/never select.{0,160}(filename|recency)/is);
@@ -81,7 +83,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
     expect(text).toMatch(/do not invent concrete libraries, algorithms/i);
     expect(text).toMatch(/same broad\s+level without examples or an invented checklist/i);
-    expect(text).toMatch(/one broad gap statement[\s\S]{0,80}one sentence/i);
+    expect(text).toMatch(/one broad gap statement[\s\S]{0,100}one non-enumerative sentence/i);
     expect(text).toMatch(/complete listed\s+item path/i);
     expect(text).toMatch(/under a `## Gaps` heading/i);
   });
