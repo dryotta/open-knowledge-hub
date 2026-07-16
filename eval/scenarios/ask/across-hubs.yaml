@@ -22,7 +22,7 @@
           config:
             source: final-message
             mustContain:
-              - "\\bsigned session tokens?\\b"
+              - "(?:signed\\W+session\\W+tokens?|session\\W+tokens?[^\\n]{0,40}signed)"
               - "kb-hub[/\\\\]kb"
               - "git-hub[/\\\\]kb"
         - type: javascript

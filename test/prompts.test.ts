@@ -60,6 +60,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/do not use background\s+mode/i);
     expect(text).toMatch(/still include the distilled answer itself/i);
     expect(text).toMatch(/do not replace it with a\s+statement that the answer was retrieved or handled/i);
+    expect(text).toMatch(/explicit user constraints override the default gap and next-step elaboration/i);
+    expect(text).toMatch(/without speculating about specific missing technologies/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);

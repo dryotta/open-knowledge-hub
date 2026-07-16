@@ -29,6 +29,7 @@
               - "(?:^|[\\s`(])(?:kb[/\\\\])?auth\\.md(?=[\\s`),.;:]|$)"
             mustNotContain:
               - "\\baccess tokens?\\b"
+              - "\\b(?:JWT|opaque tokens?|signing algorithms?|key management|token format|validation logic|rotation mechan\\w*|error handling|token scopes?|permissions?|server-side|client-side)\\b"
         - type: javascript
           value: file://assertions/judge.ts
           config:

@@ -358,8 +358,12 @@ describe("scenario routing contracts", () => {
       expect(new RegExp(citationPattern, "i").test("Source: kb/auth.md")).toBe(true);
       expect(new RegExp(citationPattern, "i").test("Source: auth.md")).toBe(true);
       expect(new RegExp(citationPattern, "i").test("Source: concepts/auth.md")).toBe(false);
-      expect(mustNotContain).toEqual(["\\baccess tokens?\\b"]);
+      expect(mustNotContain).toEqual([
+        "\\baccess tokens?\\b",
+        "\\b(?:JWT|opaque tokens?|signing algorithms?|key management|token format|validation logic|rotation mechan\\w*|error handling|token scopes?|permissions?|server-side|client-side)\\b",
+      ]);
       expect(new RegExp(mustNotContain[0]!, "i").test("Access tokens expire after 24 hours.")).toBe(true);
+      expect(new RegExp(mustNotContain[1]!, "i").test("The module lacks signing algorithms and key management.")).toBe(true);
       const judgeAssert = assertions.find((a) => String(a.value).endsWith("judge.ts"));
       expect(judgeAssert?.config?.criteria).toEqual([
         expect.objectContaining({ id: "no-fabrication" }),
@@ -392,7 +396,7 @@ describe("scenario routing contracts", () => {
     it("ask scenarios require a substantive final user-facing answer", async () => {
       const representativeFinalMessages: Record<string, string> = {
         "ask/missing-info.yaml": "The vacation policy is not documented in this knowledge base.",
-        "ask/across-hubs.yaml": "Signed session tokens are documented in kb-hub/kb and git-hub/kb.",
+        "ask/across-hubs.yaml": "Session tokens are signed in kb-hub/kb and git-hub/kb.",
         "ask/llmwiki-compounding.yaml": "Attention is the core mechanism used by a Transformer. Filed at syntheses/attention-in-transformer.md.",
       };
       for (const file of [

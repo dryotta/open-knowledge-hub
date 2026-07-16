@@ -68,6 +68,10 @@ Instruct the sub-agent to:
    `initialize` skill if the module needs a fresh scope entirely). For an llmwiki module, point at
    its `write` skill to file a durable answer back as a page.
 
+Explicit user constraints override the default gap and next-step elaboration. If the user asks for
+only stated facts or forbids unstated examples and implementation details, use a compact coverage
+label without speculating about specific missing technologies, mechanisms, or categories.
+
 ### Stage 3 — Relay the distilled answer
 
 Return the sub-agent's answer to the user largely as-is. Do not remove, weaken,
