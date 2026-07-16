@@ -92,6 +92,8 @@ describe("deterministic custom, context, and ingest scenarios", () => {
       "engineering/testing/debugging/SKILL\\.md",
       "tools/csv2json/README\\.md",
     ]));
+    expect(sc.config[0].vars.prompt).toMatch(/new implementation work, not an existing\s+failure investigation/i);
+    expect(sc.config[0].vars.prompt).toMatch(/rather than brainstorming possible requirements/i);
     const transcript = sc.tests[0].assert.find(
       (a: { value?: string }) => String(a.value).endsWith("transcript.ts"),
     );
@@ -429,6 +431,8 @@ describe("scenario routing contracts", () => {
 
     it("across-hubs rejects invented gap categories and causal labels", async () => {
       const sc = await loadScenario("ask/across-hubs.yaml");
+      expect(sc.config[0].vars.prompt).toMatch(/preserve each source's\s+evidentiary strength/i);
+      expect(sc.config[0].vars.prompt).toMatch(/without turning correlation into causation/i);
       const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
       const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
       const patterns = transcript?.config?.mustNotContain as string[];

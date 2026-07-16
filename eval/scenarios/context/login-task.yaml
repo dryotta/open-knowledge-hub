@@ -4,7 +4,9 @@
         env: local-and-git
         prompt: |
           hub, assemble the context needed to implement a secure login feature in
-          container "kb-hub".
+          container "kb-hub". This is new implementation work, not an existing
+          failure investigation. Keep gaps at the same broad level as the request
+          rather than brainstorming possible requirements.
   tests:
     - description: Context - login task - compact set, cites paths
       assert:

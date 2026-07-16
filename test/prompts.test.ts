@@ -55,7 +55,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/do not specialize a generic source\s+term/i);
     expect(text).toMatch(/exact path relative to the module root/i);
     expect(text).toMatch(/never add an assumed directory/i);
-    expect(text).toMatch(/do not remove, weaken,\s+or rewrite the sub-agent's citations/i);
+    expect(text).toMatch(/never attach a source citation\s+to a detail that source does not contain/i);
+    expect(text).toMatch(/do not remove, weaken,\s+combine, or rewrite the sub-agent's citations/i);
     expect(text).toMatch(/run it in the foreground and wait for its result/i);
     expect(text).toMatch(/do not use background\s+mode/i);
     expect(text).toMatch(/still include the distilled answer itself/i);
@@ -74,6 +75,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/never create a bullet\s+for an excluded item/i);
     expect(text).toMatch(/gap summary[\s\S]{0,120}must not name or cite[\s\S]{0,80}rejected item/i);
     expect(text).toMatch(/never select.{0,160}(filename|recency)/is);
+    expect(text).toMatch(/do not\s+open clearly irrelevant candidates merely to confirm their rejection/i);
     expect(text).toMatch(/do not select a debugging skill[\s\S]{0,100}unless the task includes a failure to debug/i);
     expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
     expect(text).toMatch(/do not invent concrete libraries, algorithms/i);

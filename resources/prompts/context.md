@@ -19,6 +19,8 @@ Do NOT dump whole modules into context.
    custom/tool modules: their task-relevant nested files).
    Skim; do not ingest wholesale. Never select an item from only its filename,
    directory, or recency — read enough content to verify direct task relevance.
+   The inspect summary is enough to reject an obviously unrelated item; do not
+   open clearly irrelevant candidates merely to confirm their rejection.
    Direct relevance means the stated task needs the item now, not that a generic
    procedure might become useful later. For example, do not select a debugging skill
    for an implementation task unless the task includes a failure to debug. Never put

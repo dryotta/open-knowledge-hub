@@ -4,9 +4,9 @@
         env: local-and-git
         prompt: |
           hub, across all my registered hubs, what do we know about authentication and
-          session tokens? Cite the module path for each fact, distinguish correlation
-          from causation, and do not add details absent from the cited modules. Report
-          only stated facts, not a list of topics the modules do not cover.
+          session tokens? Cite the module path for each fact and preserve each source's
+          evidentiary strength without turning correlation into causation. Do not add
+          details absent from the cited modules or list topics they do not cover.
   tests:
     - description: Ask - across hubs - cites each module path
       assert:

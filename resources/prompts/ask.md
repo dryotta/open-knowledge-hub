@@ -54,7 +54,9 @@ Instruct the sub-agent to:
    implementation details that the source does not state. Do not specialize a generic source
    term: if the source says `tokens`, do not rewrite it as `access tokens`.
    Use each source's exact path relative to the module root. Never add an assumed directory
-   such as `concepts/` when the source path does not contain it. When a source says an event
+   such as `concepts/` when the source path does not contain it. Never attach a source citation
+   to a detail that source does not contain; state shared facts and source-specific additions
+   separately. When a source says an event
    happens "after", "during", or "on" another event, preserve that wording; do not relabel the
    relationship as causal or correlational unless the source explicitly does so. If asked to
    distinguish the two and the sources establish neither, say that neither classification is
@@ -80,7 +82,7 @@ not to add absent details also forbids listing those absent details as coverage 
 ### Stage 3 — Relay the distilled answer
 
 Return the sub-agent's answer to the user largely as-is. Do not remove, weaken,
-or rewrite the sub-agent's citations when relaying its answer. If the user also requested
+combine, or rewrite the sub-agent's citations when relaying its answer. If the user also requested
 follow-up actions, still include the distilled answer itself; do not replace it with a
 statement that the answer was retrieved or handled. Structure it as:
 
