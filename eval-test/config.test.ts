@@ -433,6 +433,12 @@ describe("scenario routing contracts", () => {
       expect(new RegExp(required[0]!, "i").test(
         "Here are the authentication and session tokens:\n\n**Token mechanisms:**\n- Tokens are signed",
       )).toBe(true);
+      expect(new RegExp(required[1]!, "i").test(
+        "## kb-hub\n- Signed session tokens are verified. (source: kb/auth.md)",
+      )).toBe(true);
+      expect(new RegExp(required[2]!, "i").test(
+        "## git-hub\n- Signed session tokens are verified. (source: kb/auth.md)",
+      )).toBe(true);
       expect(patterns).toHaveLength(3);
       expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);
