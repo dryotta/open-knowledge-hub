@@ -736,6 +736,13 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(page.terms.some((t: string) => /transformer/i.test(t))).toBe(true);
     expect(cfg!.requireIndexAndLogChanged).toBe(true);
     expect(cfg!.requireCleanHealth).toBe(true);
+    const transcript = sc.tests[0].assert.find(
+      (assertion: { value?: string }) => String(assertion.value).endsWith("transcript.ts"),
+    );
+    const relationPattern = transcript.config.mustContain[2] as string;
+    expect(new RegExp(relationPattern, "i").test(
+      "Attention is the fundamental building block of Transformer architecture.",
+    )).toBe(true);
   });
 
   it("run/shared-grilling.yaml routes a concrete plan through the module-less shared skill", async () => {
