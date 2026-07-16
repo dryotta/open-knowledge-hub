@@ -385,7 +385,7 @@ describe("scenario routing contracts", () => {
       expect(mustContain).toEqual(expect.arrayContaining([
         expect.stringMatching(/session token/i),
         expect.stringMatching(/sign/i),
-        "(?:^|[\\s`(])(?:(?:kb-hub[/\\\\])?kb[/\\\\])?auth\\.md(?=[\\s`),.;:]|$)",
+        "(?:^|[\\s`(])(?:(?:kb-hub[/\\\\])?kb[/\\\\])?auth\\.md(?=$|[\\s`),.;:\\]])",
       ]));
       const validParaphrase = "Authentication uses signed session tokens. Tokens have a 24-hour expiration, and refresh tokens are rotated on use. Source: auth.md";
       for (const pattern of mustContain) {
@@ -400,6 +400,7 @@ describe("scenario routing contracts", () => {
       expect(new RegExp(citationPattern, "i").test("Auth uses signed session tokens.")).toBe(false);
       expect(new RegExp(citationPattern, "i").test("Source: kb/auth.md")).toBe(true);
       expect(new RegExp(citationPattern, "i").test("Source: auth.md")).toBe(true);
+      expect(new RegExp(citationPattern, "i").test("[source: kb-hub/kb/auth.md]")).toBe(true);
       expect(new RegExp(citationPattern, "i").test("Source: concepts/auth.md")).toBe(false);
       expect(mustNotContain).toEqual([
         "\\baccess tokens?\\b",
