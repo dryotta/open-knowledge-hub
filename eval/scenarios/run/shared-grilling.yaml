@@ -19,3 +19,13 @@
             forbid: [add_container, add_module, sync, config, todos]
         - type: javascript
           value: file://assertions/grilling-response.ts
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            criteria:
+              - id: one-decision-topic
+                text: >-
+                  The response asks the user to decide exactly one coherent topic from
+                  the supplied OAuth plan. A framing question and related subquestions
+                  are allowed only when they can all be answered as that same decision.
+                  Questions spanning independent plan decisions must fail.

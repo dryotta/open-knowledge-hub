@@ -755,7 +755,10 @@ describe("llmwiki scenario structured tool expectations", () => {
     expect(cfg!.forbid).toEqual(expect.arrayContaining(["add_container", "add_module", "sync", "config", "todos"]));
     const assertionValues = sc.tests[0].assert.map((assertion: { value?: string }) => assertion.value);
     expect(assertionValues).toContain("file://assertions/grilling-response.ts");
-    expect(assertionValues).not.toContain("file://assertions/judge.ts");
+    expect(assertionValues).toContain("file://assertions/judge.ts");
+    expect(getJudgeCriteria(sc)).toEqual([
+      expect.objectContaining({ id: "one-decision-topic" }),
+    ]);
   });
 
   function getJudgeCriteria(sc: {

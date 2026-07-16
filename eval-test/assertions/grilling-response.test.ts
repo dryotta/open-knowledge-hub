@@ -19,39 +19,9 @@ describe("grilling-response assertion", () => {
     expect(result.pass).toBe(true);
   });
 
-  it("accepts three tightly related questions about one provider decision", () => {
+  it("accepts three compact questions for semantic grading", () => {
     const result = evaluate(
       "Why GitHub? Are your users GitHub developers? Will other OAuth providers follow? My recommendation is GitHub-only first.",
-    );
-    expect(result.pass).toBe(true);
-  });
-
-  it("rejects bundled decisions", () => {
-    const result = evaluate(
-      "Why GitHub instead of Google? How should callback state be validated? When should idle logins expire? My recommendation is to decide the provider first.",
-    );
-    expect(result.pass).toBe(false);
-    expect(result.reason).toMatch(/span 3 decision topics/i);
-  });
-
-  it("rejects bundled decisions after a recommendation", () => {
-    const result = evaluate(
-      "My recommendation is GitHub first. Why GitHub instead of Google? How should callback state be validated? When should idle logins expire?",
-    );
-    expect(result.pass).toBe(false);
-    expect(result.reason).toMatch(/span 3 decision topics/i);
-  });
-
-  it("treats token and session storage as one threat-model decision", () => {
-    const result = evaluate(
-      "Should OAuth tokens live in encrypted server-side sessions? What database threat are we defending against? My recommendation is envelope encryption.",
-    );
-    expect(result.pass).toBe(true);
-  });
-
-  it("treats refresh-token storage and expiry rationale as one decision", () => {
-    const result = evaluate(
-      "Why keep the GitHub refresh token server-side instead of restarting OAuth when the access token expires? My recommendation is not to store it. What's your reasoning for storing the refresh token?",
     );
     expect(result.pass).toBe(true);
   });
