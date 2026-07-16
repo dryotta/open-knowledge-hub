@@ -393,7 +393,7 @@ describe("scenario routing contracts", () => {
       const representativeFinalMessages: Record<string, string> = {
         "ask/missing-info.yaml": "The vacation policy is not documented in this knowledge base.",
         "ask/across-hubs.yaml": "Signed session tokens are documented in kb-hub/kb and git-hub/kb.",
-        "ask/llmwiki-compounding.yaml": "Attention is the core mechanism in a Transformer. Filed at syntheses/attention-in-transformer.md.",
+        "ask/llmwiki-compounding.yaml": "Attention is the core mechanism used by a Transformer. Filed at syntheses/attention-in-transformer.md.",
       };
       for (const file of [
         "ask/answerable.yaml",

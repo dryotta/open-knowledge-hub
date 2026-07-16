@@ -71,7 +71,9 @@ Instruct the sub-agent to:
 ### Stage 3 — Relay the distilled answer
 
 Return the sub-agent's answer to the user largely as-is. Do not remove, weaken,
-or rewrite the sub-agent's citations when relaying its answer. Structure it as:
+or rewrite the sub-agent's citations when relaying its answer. If the user also requested
+follow-up actions, still include the distilled answer itself; do not replace it with a
+statement that the answer was retrieved or handled. Structure it as:
 
 - **Answer** — per question, with its citations.
 - **Confidence / coverage** — fully answered, partial (with the gap named), or out of scope.

@@ -22,7 +22,8 @@
           config:
             source: final-message
             mustContain:
-              - "(?:not (?:documented|found|available|present)(?: in)?|does not (?:contain|include|cover)|no (?:information|details?) (?:about|on)|is absent)"
+              - "\\bvacation policy\\b"
+              - "(?:\\babsent\\b|not\\s+(?:documented|found|available|present)|does not\\s+(?:contain|include|cover)|no\\s+(?:information|details?))"
         - type: javascript
           value: file://assertions/judge.ts
           config:

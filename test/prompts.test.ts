@@ -58,6 +58,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/do not remove, weaken,\s+or rewrite the sub-agent's citations/i);
     expect(text).toMatch(/run it in the foreground and wait for its result/i);
     expect(text).toMatch(/do not use background\s+mode/i);
+    expect(text).toMatch(/still include the distilled answer itself/i);
+    expect(text).toMatch(/do not replace it with a\s+statement that the answer was retrieved or handled/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
