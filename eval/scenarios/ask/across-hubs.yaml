@@ -25,8 +25,8 @@
             source: final-message
             mustContain:
               - "(?:signed\\W+session\\W+tokens?|session\\W+tokens?(?:\\s+(?:are|is)\\s+signed\\b|[\\s\\S]{0,200}\\btokens?\\s+(?:are|is)\\s+signed\\b))"
-              - "kb-hub(?:\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb|[\\s\\S]{0,600}\\bsource:\\s*`?kb[/\\\\])"
-              - "git-hub(?:\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb|[\\s\\S]{0,600}\\bsource:\\s*`?kb[/\\\\])"
+              - "kb-hub(?:\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb|[\\s\\S]{0,600}\\bkb[/\\\\]auth\\.md\\b)"
+              - "git-hub(?:\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb|[\\s\\S]{0,600}\\bkb[/\\\\]auth\\.md\\b)"
             mustNotContain:
               - "\\b(?:storage|algorithms?|MFA|authorization scopes?)\\b"
               - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"
