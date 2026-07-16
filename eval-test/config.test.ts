@@ -432,11 +432,14 @@ describe("scenario routing contracts", () => {
       expect(new RegExp(required[0]!, "i").test(
         "Here are the authentication and session tokens:\n\n**Token mechanisms:**\n- Tokens are signed",
       )).toBe(true);
-      expect(patterns).toHaveLength(2);
+      expect(patterns).toHaveLength(3);
       expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test(
         "Tokens are issued at login and verified on each request; these are two separate behaviors that occur (correlation)",
+      )).toBe(true);
+      expect(new RegExp(patterns[2]!, "i").test(
+        "The git-hub module confirms verification but does not document expiration timing",
       )).toBe(true);
     });
 
@@ -901,7 +904,7 @@ describe("health-hub lint fixture", () => {
 });
 
 describe("ask/across-hubs — no-fabrication criterion", () => {
-  it("states complete fixture-backed fact boundary, allows coverage-gap/inference, rejects unsupported claims presented as known facts", async () => {
+  it("states the fact boundary, permits bare coverage/inference, and rejects unsupported claims", async () => {
     const doc = parseYaml(await readFile(join(SCENARIOS, "ask/across-hubs.yaml"), "utf8"));
     const sc = doc[0];
     const judgeAssert = sc.tests[0].assert.find(
@@ -926,8 +929,9 @@ describe("ask/across-hubs — no-fabrication criterion", () => {
     expect(text, "must name fixture-backed >60-second drift threshold").toMatch(/greater than 60/i);
     expect(text, "must name the fixture-backed root-cause-family link").toMatch(/same root-cause\s+family/i);
 
-    // Must explicitly allow coverage-gap statements
-    expect(text, "must explicitly allow coverage-gap statements").toMatch(/coverage.gap/i);
+    // Must allow only a bare coverage label under this user's no-absent-topics constraint
+    expect(text, "must allow a bare coverage label").toMatch(/bare coverage label/i);
+    expect(text, "must forbid named absent topics").toMatch(/without named absent topics/i);
     // Must explicitly allow clearly labeled inference or synthesis
     expect(text, "must explicitly allow labeled inference or synthesis").toMatch(/inference|synthesis/i);
 

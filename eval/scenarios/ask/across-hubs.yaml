@@ -29,6 +29,7 @@
             mustNotContain:
               - "\\b(?:storage|algorithms?|MFA|authorization scopes?)\\b"
               - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"
+              - "git-hub[^.\\n]{0,160}\\b(?:does not|doesn't|lacks|omits?|not\\s+(?:mention|document|specify|cover))\\b"
         - type: javascript
           value: file://assertions/judge.ts
           config:
@@ -45,9 +46,9 @@
                   refresh tokens rotate on use; (3) if the response draws on memory evidence,
                   kb-hub memory reports refresh failures correlated with client clock drift greater
                   than 60 seconds, and identifies the February regression as the same root-cause
-                  family as the January auth spike. A compact coverage-gap label and clearly labeled
-                  synthesis or inference drawn from the listed facts are allowed. The user's constraint
-                  forbids enumerating absent-topic gaps. Unsupported specific algorithms, timeout
+                  family as the January auth spike. A bare coverage label without named absent topics
+                  and clearly labeled synthesis or inference drawn from the listed facts are allowed.
+                  The user's constraint forbids enumerating absent-topic gaps. Unsupported specific algorithms, timeout
                   values, or implementation details not present in any fixture remain disallowed even
                   when labeled as inference/synthesis. None of the source facts classifies the
                   implementation statements as causal or correlational; the answer may say that neither

@@ -65,8 +65,9 @@ Instruct the sub-agent to:
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
 4. **Honor the caller's output boundary before assessing scope.** Explicit user constraints
    override the default gap elaboration. If the user asks for only stated facts or forbids
-   absent details, use at most a compact coverage label; do not name missing technologies,
-   mechanisms, categories, or other absent topics. Otherwise, for each question say whether
+   absent details, omit coverage, gap, and next-step sections unless the user explicitly asks
+   for a bare coverage status; never name missing technologies, mechanisms, categories, or
+   other absent topics. Otherwise, for each question say whether
    the pack fully answers it, partially answers it, or does not cover it, and name only the
    evidence-backed gap.
 5. **Suggest next steps when the caller permits them** and the question opens further ones — follow-up questions worth
@@ -87,7 +88,7 @@ output boundary. If the sub-agent added a prohibited gap or next-step section, o
 section without changing its supported facts or citations. Structure the permitted sections as:
 
 - **Answer** — per question, with its citations.
-- **Confidence / coverage** — only when the caller permits it: fully answered, partial
+- **Confidence / coverage** — only when the caller explicitly permits it: fully answered, partial
   (with the gap named), or out of scope.
 - **Next steps** — only when the caller permits them: suggested follow-up questions and, where relevant, the skill to use
   (ask again for follow-ups, the `learn` skill to fill a gap).

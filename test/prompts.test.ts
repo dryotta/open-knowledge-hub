@@ -62,7 +62,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/still include the distilled answer itself/i);
     expect(text).toMatch(/do not replace it with a\s+statement that the answer was retrieved or handled/i);
     expect(text).toMatch(/explicit user constraints\s+override the default gap elaboration/i);
-    expect(text).toMatch(/do not name missing technologies,\s+mechanisms, categories/i);
+    expect(text).toMatch(/omit coverage, gap, and next-step sections/i);
+    expect(text).toMatch(/never name missing technologies, mechanisms, categories/i);
     expect(text).toMatch(/do not relabel the\s+relationship as causal or correlational/i);
     expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
     expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
