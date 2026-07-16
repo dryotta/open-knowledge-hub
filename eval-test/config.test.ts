@@ -443,7 +443,7 @@ describe("scenario routing contracts", () => {
       expect(new RegExp(required[2]!, "i").test(
         "## git-hub\n- Signed session tokens are verified. (source: kb/auth.md)",
       )).toBe(true);
-      expect(patterns).toHaveLength(3);
+      expect(patterns).toHaveLength(4);
       expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test(
@@ -452,6 +452,7 @@ describe("scenario routing contracts", () => {
       expect(new RegExp(patterns[2]!, "i").test(
         "The git-hub module confirms verification but does not document expiration timing",
       )).toBe(true);
+      expect(new RegExp(patterns[3]!, "i").test("Citation: concepts/auth.md")).toBe(true);
     });
 
     it("CSV context requests only selected entries and rejects cited irrelevant paths", async () => {

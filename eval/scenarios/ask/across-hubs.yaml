@@ -31,6 +31,7 @@
               - "\\b(?:storage|algorithms?|MFA|authorization scopes?)\\b"
               - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"
               - "git-hub[^.\\n]{0,160}\\b(?:does not|doesn't|lacks|omits?|not\\s+(?:mention|document|specify|cover))\\b"
+              - "concepts?[/\\\\]auth\\.md"
         - type: javascript
           value: file://assertions/judge.ts
           config:
@@ -50,3 +51,4 @@
                   when labeled as inference/synthesis. None of the source facts classifies the
                   implementation statements as causal or correlational; the answer may say that neither
                   relationship is established but must not assign either classification to them.
+                  A citation to nonexistent `concepts/auth.md` is also a fabrication.

@@ -42,9 +42,9 @@ mode or inspect the bundle in parallel. Give it **only**:
 Instruct the sub-agent to:
 
 1. **Navigate by progressive disclosure** — start from the root `index.md`, recover the scope
-   contract (goals + target questions + out-of-scope), then open **only** the concept docs needed
+   contract (goals + target questions + out-of-scope), then open **only** the source files needed
    to answer the question. Do not read the whole bundle.
-2. **Ground every claim** in the pack — cite the concept (and its underlying `# Citations` origin
+2. **Ground every claim** in the pack — cite the source item (and its underlying `# Citations` origin
    URL / `path:line`) it drew each fact from. Carry through any `⚠️ UNVERIFIED` flags rather than
    laundering them into fact. Preserve evidentiary strength exactly: correlation is not causation,
    an observation is not a root cause, and absence of detail is not evidence that a behavior does
@@ -56,7 +56,9 @@ Instruct the sub-agent to:
    Use each source's exact path relative to the module root. Never add an assumed directory
    such as `concepts/` when the source path does not contain it. Never attach a source citation
    to a detail that source does not contain; state shared facts and source-specific additions
-   separately. When a source says an event
+   separately. For a multi-target answer, identify each source as
+   `<container>/<module>/<exact item path>` (for example, `kb-hub/kb/auth.md`).
+   When a source says an event
    happens "after", "during", or "on" another event, preserve that wording; do not relabel the
    relationship as causal or correlational unless the source explicitly does so. If asked to
    distinguish the two and the sources establish neither, say that neither classification is
@@ -85,7 +87,9 @@ combine, or rewrite the sub-agent's citations when relaying its answer. If the u
 follow-up actions, still include the distilled answer itself; do not replace it with a
 statement that the answer was retrieved or handled. Before relaying, enforce the original
 output boundary. If the sub-agent added a prohibited gap or next-step section, omit that
-section without changing its supported facts or citations. Structure the permitted sections as:
+section without changing its supported facts or valid citations. Verify every citation against
+the provided module and item paths; never relay an invented path, and correct only an invalid
+path to the exact `<container>/<module>/<item>` identifier. Structure the permitted sections as:
 
 - **Answer** — per question, with its citations.
 - **Confidence / coverage** — only when the caller explicitly permits it: fully answered, partial

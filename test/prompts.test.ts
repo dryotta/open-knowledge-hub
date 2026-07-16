@@ -56,6 +56,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/exact path relative to the module root/i);
     expect(text).toMatch(/never add an assumed directory/i);
     expect(text).toMatch(/never attach a source citation\s+to a detail that source does not contain/i);
+    expect(text).toMatch(/<container>\/<module>\/<exact item path>/i);
     expect(text).toMatch(/do not remove, weaken,\s+combine, or rewrite the sub-agent's citations/i);
     expect(text).toMatch(/run it in the foreground and wait for its result/i);
     expect(text).toMatch(/do not use background\s+mode/i);
@@ -68,6 +69,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
     expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
     expect(text).toMatch(/if the sub-agent added a prohibited gap or next-step section, omit that\s+section/i);
+    expect(text).toMatch(/verify every citation against\s+the provided module and item paths/i);
     expect(text).toMatch(/for a facts-only request[\s\S]{0,120}end\s+after the last fact/i);
     expect(text).toMatch(/remove cross-source comparisons, coverage notes, and missing-topic summaries/i);
   });
