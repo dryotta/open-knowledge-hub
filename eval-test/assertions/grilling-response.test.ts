@@ -49,6 +49,13 @@ describe("grilling-response assertion", () => {
     expect(result.pass).toBe(true);
   });
 
+  it("treats refresh-token storage and expiry rationale as one decision", () => {
+    const result = evaluate(
+      "Why keep the GitHub refresh token server-side instead of restarting OAuth when the access token expires? My recommendation is not to store it. What's your reasoning for storing the refresh token?",
+    );
+    expect(result.pass).toBe(true);
+  });
+
   it("rejects a repetitive four-question prompt even within one topic", () => {
     const result = evaluate(
       "Why GitHub? Are users on GitHub? Will Google follow? Is GitLab needed? My recommendation is GitHub-only first.",
