@@ -427,7 +427,11 @@ describe("scenario routing contracts", () => {
       expect(sc.config[0].vars.prompt).toMatch(/without turning correlation into causation/i);
       const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
       const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
+      const required = transcript?.config?.mustContain as string[];
       const patterns = transcript?.config?.mustNotContain as string[];
+      expect(new RegExp(required[0]!, "i").test(
+        "Here are the authentication and session tokens:\n\n**Token mechanisms:**\n- Tokens are signed",
+      )).toBe(true);
       expect(patterns).toHaveLength(2);
       expect(new RegExp(patterns[0]!, "i").test("Not covered: storage, algorithms, MFA, authorization scopes")).toBe(true);
       expect(new RegExp(patterns[1]!, "i").test("Tokens expire after 24 hours (causal: time -> expiration)")).toBe(true);

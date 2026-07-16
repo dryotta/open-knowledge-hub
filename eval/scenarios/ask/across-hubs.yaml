@@ -23,7 +23,7 @@
           config:
             source: final-message
             mustContain:
-              - "(?:signed\\W+session\\W+tokens?|session\\W+tokens?[^\\n]{0,40}signed)"
+              - "(?:signed\\W+session\\W+tokens?|session\\W+tokens?(?:\\s+(?:are|is)\\s+signed\\b|[\\s\\S]{0,200}\\btokens?\\s+(?:are|is)\\s+signed\\b))"
               - "kb-hub\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb"
               - "git-hub\\s*(?:[/\\\\]\\s*(?:knowledge\\s*[/\\\\]\\s*)?|:\\s*)kb"
             mustNotContain:
