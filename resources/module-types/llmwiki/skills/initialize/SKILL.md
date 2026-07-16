@@ -10,12 +10,12 @@ scope-bounded shape: an agreed scope contract and an organized OKF structure. Th
 *living* knowledge base — it welcomes breadth **within its declared scope** and is read by **both
 humans and agents**. The failure mode is a wiki with no boundary, not a small one.
 
-Pages are OKF concept docs, authored later with the shared **okf-writer** skill. This skill only
+Pages are OKF concept docs, authored later with the global **okf-writer** skill. This skill only
 sets up the contract and structure.
 
 ## Stage 1 — Grill the scope and structure
 
-You **must invoke** the shared `grilling` skill with `run { skill: "grilling" }`; do not emulate or
+You **must invoke** the global `grilling` skill with `run { skill: "grilling" }`; do not emulate or
 summarize its discipline yourself. After agreement, perform Stage 2 in this run. Reporting "next
 steps" without writing the contract and group indexes is not completion.
 
@@ -48,7 +48,7 @@ about X" is not a boundary.
 declared group folders (each with its own stub `index.md`), and seed `log.md`. **Do not invent
 content** — pages accrue through the `write` skill. You're done.
 
-**Existing content** — review it against the scope with the shared **okf-writer** skill. Keep and
+**Existing content** — review it against the scope with the global **okf-writer** skill. Keep and
 map what fits; cut what's out of scope; fix or flag `⚠️ UNVERIFIED` any claim you can't back up;
 note gaps for `write`. Then update `index.md`'s catalog.
 

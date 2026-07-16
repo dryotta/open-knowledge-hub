@@ -133,25 +133,63 @@ describe("validate", () => {
 });
 
 describe("inspect", () => {
-  it("lists containers with no args", async () => {
+  it("returns a hub map with the container and global skills", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     const res = await service.inspect();
-    expect(res.kind).toBe("containers");
-    if (res.kind === "containers") expect(res.containers[0]!.name).toBe("hub");
+    expect(res.kind).toBe("hub");
+    if (res.kind !== "hub") throw new Error("expected hub map");
+    expect(res.containers[0]!.name).toBe("hub");
+    // Global (server-bundled, module-less) skills are always listed, with descriptions.
+    expect(res.globalSkills.length).toBeGreaterThan(0);
+    expect(res.globalSkills.map((s) => s.name)).toContain("ingest");
+    expect(res.globalSkills.every((s) => typeof s.description === "string")).toBe(true);
   });
 
-  it("lists each container's modules in the top-level inspect", async () => {
+  it("hoists module type skills once per in-use type and lists modules by type", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     await seedModule(dir, "kb", "knowledge", "KB", "team kb");
     const res = await service.inspect();
-    expect(res.kind).toBe("containers");
-    if (res.kind === "containers") {
-      expect(res.containers[0]!.modules).toEqual([{ path: "kb", type: "knowledge", name: "KB" }]);
-    }
+    expect(res.kind).toBe("hub");
+    if (res.kind !== "hub") throw new Error("expected hub map");
+    // The knowledge type's skills are hoisted (once) with descriptions...
+    const knowledge = res.moduleTypeSkills["knowledge"];
+    expect(knowledge).toBeDefined();
+    const names = knowledge!.map((s) => s.name);
+    expect(names).toContain("learn");
+    expect(names).toContain("initialize");
+    expect(knowledge!.find((s) => s.name === "learn")!.description.length).toBeGreaterThan(0);
+    // ...and are NOT repeated inline on the module (only local skills live there).
+    const mod = res.containers[0]!.modules[0]!;
+    expect(mod).toMatchObject({ path: "kb", type: "knowledge", name: "KB", items: 0 });
+    expect(mod.local).toBeUndefined();
+    expect(mod.overrides).toBeUndefined();
+  });
+
+  it("carries local skills and records overrides of module type skills", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await seedModule(dir, "kb", "knowledge", "KB", "team kb");
+    // A same-named local skill shadows the "learn" module type skill; a new one adds.
+    await mkdir(join(dir, "kb", ".okh", "skills", "learn"), { recursive: true });
+    await writeFile(
+      join(dir, "kb", ".okh", "skills", "learn", "SKILL.md"),
+      "---\nname: learn\ndescription: custom learn\n---\nbody\n",
+    );
+    await mkdir(join(dir, "kb", ".okh", "skills", "digest"), { recursive: true });
+    await writeFile(
+      join(dir, "kb", ".okh", "skills", "digest", "SKILL.md"),
+      "---\nname: digest\ndescription: local digest\n---\nbody\n",
+    );
+    const res = await service.inspect();
+    if (res.kind !== "hub") throw new Error("expected hub map");
+    const mod = res.containers[0]!.modules[0]!;
+    expect(mod.local!.map((s) => s.name).sort()).toEqual(["digest", "learn"]);
+    expect(mod.overrides).toEqual(["learn"]);
   });
 
   it("returns container status with a container arg, and module items with both", async () => {
