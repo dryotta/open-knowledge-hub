@@ -26,7 +26,7 @@
               - "\\bsign(?:ed|ing|ature)\\b"
               - "24[\\s-]*hours?"
               - "(?:refresh tokens?[\\s\\S]{0,40}rotat|rotat\\w*[\\s\\S]{0,40}refresh tokens?)"
-              - "(?:^|[\\s`(])(?:kb[/\\\\])?auth\\.md(?=[\\s`),.;:]|$)"
+              - "(?:^|[\\s`(])(?:(?:kb-hub[/\\\\])?kb[/\\\\])?auth\\.md(?=[\\s`),.;:]|$)"
             mustNotContain:
               - "\\baccess tokens?\\b"
               - "\\b(?:JWT|opaque tokens?|signing algorithms?|key management|token format|validation logic|rotation mechan\\w*|error handling|token scopes?|permissions?|server-side|client-side)\\b"
@@ -39,5 +39,5 @@
                   The answer states only the module's facts: authentication uses signed session
                   tokens issued at login and verified on each request; tokens expire after 24
                   hours; refresh tokens rotate on use. A compact coverage label is allowed. The
-                  cited concept path must be the existing auth.md (optionally kb/auth.md), not an
-                  invented directory such as concepts/auth.md.
+                  cited concept path must be the existing auth.md (optionally kb/auth.md or
+                  kb-hub/kb/auth.md), not an invented directory such as concepts/auth.md.
