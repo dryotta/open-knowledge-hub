@@ -5,8 +5,9 @@
         prompt: |
           hub, across all my registered hubs, what do we know about authentication and
           session tokens? Cite the module path for each fact and preserve each source's
-          evidentiary strength without turning correlation into causation. Do not add
-          details absent from the cited modules or list topics they do not cover.
+          evidentiary strength without turning correlation into causation. Return separate
+          per-hub fact lists and stop after the facts, without a coverage comparison or
+          missing-topic note.
   tests:
     - description: Ask - across hubs - cites each module path
       assert:

@@ -425,6 +425,7 @@ describe("scenario routing contracts", () => {
       const sc = await loadScenario("ask/across-hubs.yaml");
       expect(sc.config[0].vars.prompt).toMatch(/preserve each source's\s+evidentiary strength/i);
       expect(sc.config[0].vars.prompt).toMatch(/without turning correlation into causation/i);
+      expect(sc.config[0].vars.prompt).toMatch(/separate\s+per-hub fact lists and stop after the facts/i);
       const assertions = sc.tests[0].assert as Array<{ value?: string; config?: Record<string, unknown> }>;
       const transcript = assertions.find((a) => String(a.value).endsWith("transcript.ts"));
       const required = transcript?.config?.mustContain as string[];

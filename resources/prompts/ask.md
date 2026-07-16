@@ -93,6 +93,9 @@ section without changing its supported facts or citations. Structure the permitt
 - **Next steps** — only when the caller permits them: suggested follow-up questions and, where relevant, the skill to use
   (ask again for follow-ups, the `learn` skill to fill a gap).
 
+For a facts-only request, return only the cited facts in the requested grouping and end
+after the last fact. Remove cross-source comparisons, coverage notes, and missing-topic summaries.
+
 If a follow-up question arises, ask again rather than holding the bundle open in
 context — each ask is a fresh, cheap fork.
 

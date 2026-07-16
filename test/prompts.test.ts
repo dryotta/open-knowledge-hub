@@ -68,6 +68,8 @@ describe("prompt builders", () => {
     expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
     expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
     expect(text).toMatch(/if the sub-agent added a prohibited gap or next-step section, omit that\s+section/i);
+    expect(text).toMatch(/for a facts-only request[\s\S]{0,120}end\s+after the last fact/i);
+    expect(text).toMatch(/remove cross-source comparisons, coverage notes, and missing-topic summaries/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
