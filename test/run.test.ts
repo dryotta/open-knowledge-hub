@@ -180,7 +180,7 @@ describe("shared skills", () => {
     expect(s.body.length).toBeGreaterThan(0);
     expect(s.body).toMatch(/one decision at a time/i);
     expect(s.body).toMatch(/do\s+not\s+bundle\s+separate\s+decisions/i);
-    expect(s.body).toMatch(/at most two question marks/i);
+    expect(s.body).toMatch(/at most three tightly related question marks/i);
     expect(s.body).toMatch(/ask no question after the recommendation/i);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/grilling|okf-writer/);
   });

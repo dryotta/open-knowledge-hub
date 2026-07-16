@@ -13,7 +13,8 @@ question, provide your recommended answer.
 Ask questions **one decision at a time**, waiting for the answer before continuing.
 A short framing question plus one same-topic decision question is acceptable, but do
 not bundle separate decisions or add "deeper" follow-ups. Give your recommended answer
-for that single decision, then stop. Use at most two question marks in the response.
+for that single decision, then stop. Use at most three tightly related question marks
+that can all be answered as one decision.
 Ask no question after the recommendation, and do not repeat or rephrase the decision
 prompt at the end. Asking several decisions at once is bewildering.
 

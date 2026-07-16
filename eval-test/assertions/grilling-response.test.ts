@@ -19,12 +19,27 @@ describe("grilling-response assertion", () => {
     expect(result.pass).toBe(true);
   });
 
+  it("accepts three tightly related questions about one provider decision", () => {
+    const result = evaluate(
+      "Why GitHub? Are your users GitHub developers? Will other OAuth providers follow? My recommendation is GitHub-only first.",
+    );
+    expect(result.pass).toBe(true);
+  });
+
   it("rejects bundled decisions", () => {
     const result = evaluate(
       "Which OAuth tokens are stored? Do you need refresh tokens? Which session backend will you use? My recommendation is to start with token storage.",
     );
     expect(result.pass).toBe(false);
-    expect(result.reason).toMatch(/one decision prompt.*found 3/i);
+    expect(result.reason).toMatch(/span 2 decision topics/i);
+  });
+
+  it("rejects a repetitive four-question prompt even within one topic", () => {
+    const result = evaluate(
+      "Why GitHub? Are users on GitHub? Will Google follow? Is GitLab needed? My recommendation is GitHub-only first.",
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/compact decision prompt.*found 4/i);
   });
 
   it("requires both a recommendation and plan relevance", () => {
