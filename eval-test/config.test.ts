@@ -93,14 +93,6 @@ describe("deterministic custom, context, and ingest scenarios", () => {
       "tools/csv2json/README\\.md",
     ]));
     expect(sc.config[0].vars.prompt).toMatch(/new implementation work, not an existing\s+failure investigation/i);
-    expect(sc.config[0].vars.prompt).toMatch(/one broad gap statement without enumerating/i);
-    const transcript = sc.tests[0].assert.find(
-      (a: { value?: string }) => String(a.value).endsWith("transcript.ts"),
-    );
-    const gapPattern = transcript.config.mustNotContain[0] as string;
-    expect(new RegExp(gapPattern, "i").test(
-      "Gaps: password hashing, rate limiting, API endpoint specifications, and testing strategy",
-    )).toBe(true);
     expect(sc.tests[0].assert.some((a: { value?: string }) => String(a.value).endsWith("judge.ts"))).toBe(false);
   });
 
@@ -405,7 +397,7 @@ describe("scenario routing contracts", () => {
     it("ask scenarios require a substantive final user-facing answer", async () => {
       const representativeFinalMessages: Record<string, string> = {
         "ask/missing-info.yaml": "The vacation policy is not documented in this knowledge base.",
-        "ask/across-hubs.yaml": "Session tokens are signed in kb-hub: kb and git-hub: kb.",
+        "ask/across-hubs.yaml": "Session tokens are signed in kb-hub / knowledge / kb and git-hub / knowledge / kb.",
         "ask/llmwiki-compounding.yaml": "Attention is the core mechanism used by a Transformer. Filed at syntheses/attention-in-transformer.md.",
       };
       for (const file of [

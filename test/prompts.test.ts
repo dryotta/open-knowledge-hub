@@ -83,7 +83,6 @@ describe("prompt builders", () => {
     expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
     expect(text).toMatch(/do not invent concrete libraries, algorithms/i);
     expect(text).toMatch(/same broad\s+level without examples or an invented checklist/i);
-    expect(text).toMatch(/one broad gap statement[\s\S]{0,100}one non-enumerative sentence/i);
     expect(text).toMatch(/complete listed\s+item path/i);
     expect(text).toMatch(/under a `## Gaps` heading/i);
   });

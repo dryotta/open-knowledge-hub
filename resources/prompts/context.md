@@ -50,8 +50,6 @@ that were added while paraphrasing the `Task` line; only user-stated details def
    at the narrowest evidence-backed level instead of brainstorming likely subtopics.
    When only the broad task establishes a gap, state that gap once at the same broad
    level without examples or an invented checklist of subcategories.
-   Honor requested output shape: if the caller asks for one broad gap statement
-   without subtopics, return one non-enumerative sentence under `## Gaps`, not a list.
    Put this separate from the selected working set under a `## Gaps` heading.
 
 Output a concise brief the agent can act on — not a transcript of file contents.
