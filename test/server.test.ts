@@ -568,12 +568,19 @@ describe("MCP server surface", () => {
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
     await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
     const res = await client.callTool({ name: "inspect", arguments: {} });
-    expect(textOf(res)).toContain("hub");
-    expect(textOf(res)).toMatch(/knowledge · kb/);
+    // No-arg inspect renders the hub map: container line + module (labeled by type) +
+    // the module type skills block + the routing footer.
+    expect(textOf(res)).toContain("hub  [local]");
+    expect(textOf(res)).toMatch(/· kb {2}\(module type: knowledge\) {2}0 items/);
+    expect(textOf(res)).toContain('Module type "knowledge":');
+    expect(textOf(res)).toContain("Routing gates");
 
     const mod = await client.callTool({ name: "inspect", arguments: { container: "hub", module: "kb" } });
     expect(textOf(mod)).toContain("[knowledge]");
     expect(textOf(mod)).toContain("team kb");
+    // The module drilldown tags a type-provided skill's provenance in hub-map vocabulary.
+    expect(textOf(mod)).toContain("[module type:");
+    expect(textOf(mod)).not.toContain("[vendored");
   });
 
   it("module inspect shows the scope contract / overview", async () => {

@@ -1,9 +1,9 @@
 ---
 title: Run (module skill)
 args:
-  container: Container name. Provide with module to run a module skill; omit both to run a shared skill.
-  module: Module path within the container. Provide with container; omit both to run a shared skill.
-  skill: "Skill name to run: unique within the target module, or a shared skill name when container/module are omitted (e.g. grilling, okf-writer)."
+  container: Container name. Provide with module to run a module skill; omit both to run a global skill.
+  module: Module path within the container. Provide with container; omit both to run a global skill.
+  skill: "Skill name to run: unique within the target module, or a global skill name when container/module are omitted (e.g. grilling, okf-writer)."
   input: Freeform payload passed to the skill (e.g. the knowledge to learn, the observation to remember).
 ---
 This is the mandatory first step for module-skill work. Learn/teach/add-knowledge

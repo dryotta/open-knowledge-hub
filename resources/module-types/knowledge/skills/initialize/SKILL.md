@@ -14,7 +14,7 @@ know-how.
 
 ## Stage 1 — Grill the requirements and structure
 
-Run the shared **grilling** skill (`run { skill: "grilling" }`), then record the agreed **scope
+Run the global **grilling** skill (`run { skill: "grilling" }`), then record the agreed **scope
 contract** in the module's `index.md` (its skeleton already lays out these sections):
 
 - **Goals** — what this module is *for*: who reads it and what they need to accomplish (1–3
@@ -48,7 +48,7 @@ the root `index.md`, and create the declared group folders with their own `index
 invent content** — concepts accrue later through the `learn` skill. You're done.
 
 **Existing content** (an imported pack, or material already in the folder) — review it against the
-requirements and edit it to fit. For an OKF bundle, author edits with the shared **okf-writer**
+requirements and edit it to fit. For an OKF bundle, author edits with the global **okf-writer**
 skill (`run { skill: "okf-writer" }`):
 
 - **Keep & organize** what serves a requirement; map it into the declared structure.

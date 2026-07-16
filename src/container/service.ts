@@ -37,8 +37,9 @@ import {
   validateModuleSkills,
   type Skill,
 } from "../modules/skills.js";
-import { resolveSharedSkill as resolveShared } from "../modules/shared.js";
+import { resolveSharedSkill as resolveShared, sharedSkills } from "../modules/shared.js";
 import { vendoredSkills } from "../modules/vendored.js";
+import { loadPreferences } from "../preferences.js";
 import { BackendRegistry, createBackendRegistry } from "../sync/backendRegistry.js";
 import type { BackendSyncResult, SyncSelection } from "../sync/types.js";
 
@@ -172,20 +173,52 @@ export interface ContainerStatus {
   git?: GitStatus;
 }
 
+/** A skill reference in the hub map: just enough to list and route to it. */
+export interface SkillRef {
+  name: string;
+  description: string;
+}
+
+/** One module in the hub map. Module type skills are hoisted to `HubMap.moduleTypeSkills`
+ * (keyed by `type`) so they are never repeated here; only in-repo `local` skills live on
+ * the module. `overrides` are local skill names that shadow a same-named module type skill.
+ * Full per-skill provenance (source path) is available via the module drilldown. */
+export interface HubModule {
+  path: string;
+  type: string;
+  description: string;
+  items: number;
+  local?: SkillRef[];
+  overrides?: string[];
+}
+
+/** One container in the hub map. */
+export interface HubContainer {
+  name: string;
+  backend: BackendType;
+  sync?: SyncDescriptor;
+  syncActions?: string[];
+  localPath: string;
+  manifestValid: boolean;
+  manifestError?: string;
+  modules: HubModule[];
+}
+
+/** The full hub map returned by no-arg `inspect`: every container, module, and runnable
+ * skill, factored by provenance. Global skills are listed once; module type skills once
+ * per in-use type; only local skills are carried per module. */
+export interface HubMap {
+  kind: "hub";
+  wakePhrase: string;
+  /** Server-bundled skills, run module-less via `run { skill }`. */
+  globalSkills: SkillRef[];
+  /** Skills provided by a module's type, keyed by type. Only in-use types with skills appear. */
+  moduleTypeSkills: Record<string, SkillRef[]>;
+  containers: HubContainer[];
+}
+
 export type InspectResult =
-  | {
-      kind: "containers";
-      containers: Array<{
-        name: string;
-        backend: BackendType;
-        sync?: SyncDescriptor;
-        syncActions?: string[];
-        moduleCount: number;
-        modules: Array<{ path: string; type: string }>;
-        manifestValid: boolean;
-        localPath: string;
-      }>;
-    }
+  | HubMap
   | { kind: "container"; status: ContainerStatus }
   | {
       kind: "module";
@@ -379,22 +412,7 @@ export class ContainerService {
 
   async inspect(container?: string, module?: string): Promise<InspectResult> {
     const reg = await this.loadRegistryData();
-    if (!container) {
-      const containers = await Promise.all(
-        reg.containers.map(async (c) => {
-          const st = await this.status(c.name).catch(() => undefined);
-          return {
-            name: c.name, backend: c.backend.type, sync: st?.sync ?? c.sync,
-            syncActions: st?.syncActions ?? [...this.backends.actions(c)],
-            moduleCount: st?.modules.length ?? 0,
-            modules: (st?.modules ?? []).map((m) => ({ path: m.path, type: m.type })),
-            manifestValid: st?.manifestValid ?? false,
-            localPath: c.localPath,
-          };
-        }),
-      );
-      return { kind: "containers", containers };
-    }
+    if (!container) return this.buildHubMap(reg);
 
     const entry = requireContainer(reg, container);
     if (!module) return { kind: "container", status: await this.status(container) };
@@ -435,6 +453,62 @@ export class ContainerService {
       discoverModuleSkillSet(moduleRoot, skillRootsForType(type)),
     ]);
     return { skills: mergeSkills(vendored, local.skills), issues: local.issues };
+  }
+
+  /** Build the full hub map: containers → modules, with skills factored by provenance
+   * (global once, module type once per in-use type, local per module). */
+  private async buildHubMap(reg: { containers: ContainerEntry[] }): Promise<HubMap> {
+    const wakePhrase = (await loadPreferences(this.paths)).wakePhrase;
+    const containers: HubContainer[] = [];
+    const typesInUse = new Set<string>();
+    for (const c of reg.containers) {
+      const st = await this.status(c.name).catch(() => undefined);
+      const mods = st?.modules ?? [];
+      for (const m of mods) typesInUse.add(m.type);
+      const modules = await Promise.all(mods.map((m) => this.buildHubModule(c.localPath, m)));
+      containers.push({
+        name: c.name,
+        backend: c.backend.type,
+        sync: st?.sync ?? c.sync,
+        syncActions: st?.syncActions ?? [...this.backends.actions(c)],
+        localPath: c.localPath,
+        manifestValid: st?.manifestValid ?? false,
+        ...(st?.manifestError ? { manifestError: st.manifestError } : {}),
+        modules,
+      });
+    }
+
+    const moduleTypeSkills: Record<string, SkillRef[]> = {};
+    for (const type of [...typesInUse].sort()) {
+      const skills = await vendoredSkills(type);
+      if (skills.length) {
+        moduleTypeSkills[type] = skills.map((s) => ({ name: s.name, description: s.description }));
+      }
+    }
+
+    const globalSkills = (await sharedSkills()).map((s) => ({ name: s.name, description: s.description }));
+    return { kind: "hub", wakePhrase, globalSkills, moduleTypeSkills, containers };
+  }
+
+  /** Build one hub-map module entry: carries only its in-repo `local` skills (module type
+   * skills are hoisted) and records `overrides` where a local name shadows a module type skill. */
+  private async buildHubModule(containerRoot: string, m: ModuleStatus): Promise<HubModule> {
+    const moduleRoot = this.moduleRoot(containerRoot, m.path);
+    const [localSet, vendored] = await Promise.all([
+      discoverModuleSkillSet(moduleRoot, skillRootsForType(m.type)),
+      vendoredSkills(m.type),
+    ]);
+    const vendoredNames = new Set(vendored.map((s) => s.name));
+    const local: SkillRef[] = localSet.skills.map((s) => ({ name: s.name, description: s.description }));
+    const overrides = local.filter((s) => vendoredNames.has(s.name)).map((s) => s.name);
+    return {
+      path: m.path,
+      type: m.type,
+      description: m.description,
+      items: m.items,
+      ...(local.length ? { local } : {}),
+      ...(overrides.length ? { overrides } : {}),
+    };
   }
 
   private async effectiveSkillSet(
