@@ -175,31 +175,46 @@ describe("addModule", () => {
   });
 });
 
-describe("setModuleDescription", () => {
-  it("overwrites the manifest description and drops a legacy name", async () => {
+describe("setModuleConfig", () => {
+  it("sets the description via the description key and drops a legacy name", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "old", create: true });
-    await service.setModuleDescription("hub", "kb", "  auth flows and token lifecycle  ");
-    const m = await loadModuleManifest(join(dir, "kb"));
-    expect(m.description).toBe("auth flows and token lifecycle");
+    const m = await service.setModuleConfig("hub", "kb", { description: "  auth flows  " });
+    expect(m.description).toBe("auth flows");
     expect("name" in m).toBe(false);
   });
 
-  it("rejects a blank description", async () => {
+  it("stores arbitrary keys in the config map and deletes them with null", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
     await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "old", create: true });
-    await expect(service.setModuleDescription("hub", "kb", "   ")).rejects.toBeInstanceOf(OkhError);
+    const added = await service.setModuleConfig("hub", "kb", { owner: "team-auth", priority: 3 });
+    expect(added.config).toEqual({ owner: "team-auth", priority: 3 });
+    const removed = await service.setModuleConfig("hub", "kb", { owner: null });
+    expect(removed.config).toEqual({ priority: 3 });
+    const emptied = await service.setModuleConfig("hub", "kb", { priority: null });
+    expect(emptied.config).toBeUndefined();
+  });
+
+  it("rejects changing type, a blank description, and an empty patch", async () => {
+    const dir = await makeTempDir(); cleanups.push(dir);
+    const { service } = await setup();
+    await service.addContainer({ source: dir, name: "hub", create: true });
+    await service.addModule({ container: "hub", path: "kb", type: "knowledge", description: "old", create: true });
+    await expect(service.setModuleConfig("hub", "kb", { type: "memory" })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.setModuleConfig("hub", "kb", { description: "   " })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.setModuleConfig("hub", "kb", { description: null })).rejects.toBeInstanceOf(OkhError);
+    await expect(service.setModuleConfig("hub", "kb", {})).rejects.toBeInstanceOf(OkhError);
   });
 
   it("rejects an unknown module", async () => {
     const dir = await makeTempDir(); cleanups.push(dir);
     const { service } = await setup();
     await service.addContainer({ source: dir, name: "hub", create: true });
-    await expect(service.setModuleDescription("hub", "ghost", "x")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(service.setModuleConfig("hub", "ghost", { owner: "x" })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

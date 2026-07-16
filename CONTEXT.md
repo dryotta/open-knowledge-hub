@@ -33,12 +33,12 @@ there is no `name` field (a legacy `name:` is stripped on read). Modules are
 direct children — a folder is a module iff it has `.okh/module.yaml`, and a manifest
 nested deeper is flagged as misplaced rather than loaded. An empty description is
 tolerated on read (the module still loads) but flagged by `validate`/`sync`; run the
-`sleep` tool to regenerate it. Built-in types ship vendored skills (`knowledge` →
+`dream` tool to regenerate it. Built-in types ship vendored skills (`knowledge` →
 `learn`, `initialize`; `memory` → `remember`, `reflect`, `todo`; `skills` →
 `initialize`). Module-local skills are discovered recursively from `.okh/skills/` and
 common external roots like `.claude/skills/`. Shared, module-less skills (`grilling`,
-`okf-writer`, `dream`) live under `resources/shared/skills/` and run via
-`run { skill }` with no container/module (or, for `dream`, via the `sleep` tool).
+`ingest`, `okf-writer`) live under `resources/shared/skills/` and run via
+`run { skill }` with no container/module.
 `.okh/` is reserved for OKH state.
 
 ### Module
@@ -60,12 +60,11 @@ and conformance.
 
 ### Cognitive flows
 `ask` (query), `context` (assemble a working set), `onboard` (guided setup), `run`
-(invoke a named skill on a module), `sleep` (run the `dream` consolidation pass over a
-container/module to refresh each module's `description`). `learn`, `remember`,
-`reflect`, `todo`, and `dream` are **skills**, not standalone tools — `learn`/
-`remember`/`reflect`/`todo` are invoked via `run { container, module, skill, input? }`,
-and `dream` is surfaced by the `sleep` flow; `todo` handles natural-language memory
-todo management. `todos` is the direct operational tool for deterministic
+(invoke a named skill on a module), `dream` (consolidate each module's `description`
+from its `index.md` across a container/module so `inspect` routes work accurately).
+`learn`, `remember`, `reflect`, and `todo` are **skills**, not standalone tools —
+invoked via `run { container, module, skill, input? }`; `todo` handles natural-language
+memory todo management. `todos` is the direct operational tool for deterministic
 list/create/update work. Agent-driven todo mutations preview by default, require
 confirmation, then repeat with `apply: true`; MCP App checkbox clicks may apply
 directly. All todo mutations remain local until `sync`.
@@ -79,9 +78,14 @@ prompt-tools (identical content).
   `esbuild` is the build-time browser bundler. Run via `npx` on Node.js >= 18.
   Requires `git`; `gh` only for `pr`-mode containers. See ADR-0001, 0002, 0004.
 - Operational tools (act on state): `inspect`, `add_container`, `add_module`, `sync`,
-  `config`, `todos`.
+  `config`, `todos`. `config` is a scoped key/value editor: with no container/module it
+  views/edits global preferences (`preferences.json`, `.passthrough()` — known keys like
+  `wakePhrase` validated, unknown keys accepted); with `{ container, module }` it
+  views/edits that module's manifest (`description` → top-level field, `type` protected,
+  other keys → the manifest `config` map). `set` is the edit verb for both scopes; a
+  `null` value deletes a key.
 - Flows (return discipline/instructions, never act): `ask`, `context`, `onboard`,
-  `run`, `sleep`. Each is exposed as a prompt-tool and as an MCP prompt with identical
+  `run`, `dream`. Each is exposed as a prompt-tool and as an MCP prompt with identical
   content.
 - App resource: `ui://open-knowledge-hub/todos` renders the unified todo list and
   filters in app-capable hosts; other hosts receive a text fallback. App and tool

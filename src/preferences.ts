@@ -15,7 +15,7 @@ export const wakePhraseSchema = z
 
 export const preferencesSchema = z
   .object({ wakePhrase: wakePhraseSchema.default(DEFAULT_WAKE_PHRASE) })
-  .strict();
+  .passthrough();
 export type Preferences = z.infer<typeof preferencesSchema>;
 
 /** Human-facing metadata for each configurable key. Keep in sync with preferencesSchema. */

@@ -45,7 +45,7 @@ description: Project notes   # required at creation; keep it routing-quality
 The module's **folder name is its identity** — there is no `name` field. Modules must
 be top-level folders in the container (no nesting). The `description` is required when a
 module is created and should describe what the module holds well enough to route work to
-it; run the `sleep` tool to regenerate it from the module's `index.md` when it drifts. A
+it; run the `dream` tool to regenerate it from the module's `index.md` when it drifts. A
 legacy `name:` key is stripped on read.
 
 The container's `name` and `sync` mode (`auto` | `shared`) are set in the **registry
@@ -205,10 +205,12 @@ onboarding — say **"Use the Open Knowledge Hub MCP and run onboard to set me u
 - `run { container: "my-notes", module: "kb", skill: "learn", input: "..." }` → your agent
   folds knowledge in, then `sync { container: "my-notes" }` commits+pushes.
 - `ask { container: "my-notes", question: "..." }` → cited answer from the modules.
-- `sleep { container: "my-notes" }` → run the `dream` consolidation pass to refresh each
+- `dream { container: "my-notes" }` → run the consolidation pass to refresh each
   module's `description` from its `index.md` so `inspect` routes work accurately.
-- `config { container: "my-notes", module: "kb", description: "..." }` → set a module's
-  description deterministically (what `sleep`/`dream` persists under the hood).
+- `config { container: "my-notes", module: "kb", set: { description: "..." } }` → set a
+  module's description deterministically (what `dream` persists under the hood). The
+  same tool edits arbitrary global keys (`config { set: { … } }`) and module keys
+  (`config { container, module, set: { … } }`); a `null` value deletes a key.
 - `todos { labels: ["shopping"], status: "open" }` → interactive filtered list (or text fallback).
 - `todos {}` → list todos and return the live hosted `/todos` URL.
 - `todos { operation: "create", container: "my-notes", module: "mem", text: "Buy milk", labels: ["shopping"], apply: true }` → write the todo immediately and sync.

@@ -8,6 +8,7 @@ import type {
   SyncResult,
 } from "../container/service.js";
 import type { OkhPaths } from "../config.js";
+import type { ModuleManifest } from "../modules/manifest.js";
 import {
   configFieldMeta,
   configKeys,
@@ -16,7 +17,7 @@ import {
   savePreferences,
   type Preferences,
 } from "../preferences.js";
-import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun, buildSleep } from "../prompts/index.js";
+import { buildAddModule, buildAsk, buildContext, buildOnboard, buildRun, buildDream } from "../prompts/index.js";
 import { BUILTIN_MODULE_TYPES } from "../modules/types.js";
 import { vendoredSkills } from "../modules/vendored.js";
 import { TodoService } from "../todos/service.js";
@@ -77,7 +78,7 @@ function formatHub(r: HubMap): string {
         const local = m.local?.length ? `   +local: ${m.local.map((s) => s.name).join(", ")}` : "";
         const overrides = m.overrides?.length ? ` (overrides: ${m.overrides.join(", ")})` : "";
         const desc = isBlank(m.description ?? "")
-          ? " — (no description; run sleep to consolidate one)"
+          ? " — (no description; run dream to consolidate one)"
           : ` — ${m.description!.trim()}`;
         lines.push(`    · ${m.path}  (module type: ${m.type})  ${m.items} items${desc}${local}${overrides}`);
       }
@@ -98,7 +99,7 @@ function formatInspect(r: InspectResult): string {
       `Manifest valid: ${s.manifestValid}${s.manifestError ? ` (${s.manifestError})` : ""}`,
       "Modules:",
       ...(s.modules.length
-        ? s.modules.map((m) => `  - ${m.type}: ${m.path}${isBlank(m.description ?? "") ? " — (no description; run sleep to consolidate one)" : ` — ${m.description!.trim()}`} (${m.items} items)`)
+        ? s.modules.map((m) => `  - ${m.type}: ${m.path}${isBlank(m.description ?? "") ? " — (no description; run dream to consolidate one)" : ` — ${m.description!.trim()}`} (${m.items} items)`)
         : ["  (none)"]),
     ];
     if (s.syncActions?.length) {
@@ -111,7 +112,7 @@ function formatInspect(r: InspectResult): string {
     }
     return lines.join("\n");
   }
-  const head = `Module ${r.module.path} [${r.module.type}]${isBlank(r.module.description ?? "") ? " — (no description; run sleep to consolidate one)" : ` — ${r.module.description!.trim()}`} — ${r.items.length} items`;
+  const head = `Module ${r.module.path} [${r.module.type}]${isBlank(r.module.description ?? "") ? " — (no description; run dream to consolidate one)" : ` — ${r.module.description!.trim()}`} — ${r.items.length} items`;
   const items = r.items.length
     ? r.items.map((i) => `  - ${i.title}${i.description ? ` — ${i.description}` : ""} (${i.path})`)
     : ["  (empty)"];
@@ -190,9 +191,28 @@ function formatSync(rs: SyncResult[]): string {
 
 function formatConfig(prefs: Preferences, paths: OkhPaths): string {
   const lines = [`Config (${paths.preferencesFile}):`];
+  const known = new Set<string>(configKeys);
   for (const { key, description } of configFieldMeta) {
     const value = (prefs as Record<string, unknown>)[key];
     lines.push(`- ${key}: ${JSON.stringify(value)} — ${description}`);
+  }
+  for (const [key, value] of Object.entries(prefs as Record<string, unknown>)) {
+    if (known.has(key)) continue;
+    lines.push(`- ${key}: ${JSON.stringify(value)}`);
+  }
+  return lines.join("\n");
+}
+
+function formatModuleConfig(container: string, module: string, m: ModuleManifest): string {
+  const lines = [`Module config — ${container}/${module}:`];
+  lines.push(`- type: ${JSON.stringify(m.type)} — identity (selects the loader; not settable via config)`);
+  lines.push(`- description: ${JSON.stringify(m.description)} — drives inspect routing`);
+  const cfg = m.config ?? {};
+  const keys = Object.keys(cfg);
+  if (keys.length === 0) {
+    lines.push("- (no additional config keys)");
+  } else {
+    for (const key of keys) lines.push(`- ${key}: ${JSON.stringify(cfg[key])}`);
   }
   return lines.join("\n");
 }
@@ -269,7 +289,7 @@ export async function registerTools(
       if (isBlank(args.container ?? "")) return fail("container cannot be empty. (required when create:true)");
       if (isBlank(args.path ?? "")) return fail("path cannot be empty. (required when create:true)");
       if (isBlank(args.type ?? "")) return fail("type cannot be empty. (required when create:true)");
-      if (isBlank(args.description ?? "")) return fail("description cannot be empty. (required when create:true — it drives inspect routing; run sleep later to refine it)");
+      if (isBlank(args.description ?? "")) return fail("description cannot be empty. (required when create:true — it drives inspect routing; run dream later to refine it)");
       const outcome = await service.addModule({
         container: args.container!,
         path: args.path!,
@@ -301,32 +321,53 @@ export async function registerTools(
   server.registerTool(
     "config",
     { ...(await toolReg("config", { vars: { configKeys: configKeys.join(", ") } })), annotations: { readOnlyHint: false, openWorldHint: false } },
-    handler(async (args: { set?: Record<string, unknown>; container?: string; module?: string; description?: string }) => {
-      const wantsSetDescription =
-        args.container !== undefined || args.module !== undefined || args.description !== undefined;
-      if (wantsSetDescription) {
-        if (args.set !== undefined) {
-          return fail("Provide either { set } (preferences) or { container, module, description } (module description), not both.");
+    handler(async (args: { set?: Record<string, unknown>; container?: string; module?: string }) => {
+      const moduleScope = !isBlank(args.container ?? "") || !isBlank(args.module ?? "");
+
+      // Module scope: view or edit a module's manifest config.
+      if (moduleScope) {
+        if (isBlank(args.container ?? "")) {
+          return fail("container is required to view or edit a module's config.");
         }
-        if (isBlank(args.container ?? "")) return fail("container cannot be empty. (required to set a module description)");
-        if (isBlank(args.module ?? "")) return fail("module cannot be empty. (required to set a module description)");
-        if (isBlank(args.description ?? "")) return fail("description cannot be empty.");
-        await service.setModuleDescription(args.container!, args.module!, args.description!);
-        return ok(`Updated description for module "${args.module}" in container "${args.container}".`, {
-          container: args.container,
-          module: args.module,
-          description: args.description!.trim(),
-        });
+        if (isBlank(args.module ?? "")) {
+          return fail("module is required to view or edit a module's config (module names are not unique across containers).");
+        }
+        const container = args.container!;
+        const module = args.module!;
+        if (args.set === undefined) {
+          const manifest = await service.getModuleManifest(container, module);
+          return ok(formatModuleConfig(container, module, manifest), {
+            container,
+            module,
+            manifest,
+          });
+        }
+        if (Object.keys(args.set).length === 0) {
+          return fail("config { set } must include at least one key.");
+        }
+        const manifest = await service.setModuleConfig(container, module, args.set);
+        const changed = Object.keys(args.set);
+        return ok(
+          `Updated ${changed.join(", ")} for module "${module}" in container "${container}".\n\n${formatModuleConfig(container, module, manifest)}`,
+          { container, module, changed, manifest },
+        );
       }
+
+      // Global scope: view or edit preferences.
       if (args.set === undefined) {
         const prefs = await loadPreferences(paths);
         return ok(formatConfig(prefs, paths), { preferences: prefs, keys: configKeys });
       }
       if (Object.keys(args.set).length === 0) {
-        return fail("config { set } must include at least one key.", `Valid keys: ${configKeys.join(", ")}.`);
+        return fail("config { set } must include at least one key.", `Known keys: ${configKeys.join(", ")}.`);
       }
       const current = await loadPreferences(paths);
-      const parsed = preferencesSchema.safeParse({ ...current, ...args.set });
+      const merged: Record<string, unknown> = { ...current };
+      for (const [key, value] of Object.entries(args.set)) {
+        if (value === null) delete merged[key];
+        else merged[key] = value;
+      }
+      const parsed = preferencesSchema.safeParse(merged);
       if (!parsed.success) return fail(describeConfigError(parsed.error));
       await savePreferences(paths, parsed.data);
       const changed = Object.keys(args.set);
@@ -413,15 +454,14 @@ async function registerFlowTools(server: McpServer, service: ContainerService): 
   );
 
   server.registerTool(
-    "sleep",
-    { ...(await toolReg("sleep")), annotations: { readOnlyHint: true } },
+    "dream",
+    { ...(await toolReg("dream")), annotations: { readOnlyHint: true } },
     handler(async (args: { container?: string; module?: string }) => {
       if (args.module !== undefined && !isBlank(args.module) && isBlank(args.container ?? "")) {
-        return fail("sleep needs a container when a module is given (module names are not unique across containers).");
+        return fail("dream needs a container when a module is given (module names are not unique across containers).");
       }
-      const skill = await service.resolveSharedSkill("dream");
       const targets = await service.resolveTargets(args.container, args.module);
-      return ok(await buildSleep(skill, targets));
+      return ok(await buildDream(targets));
     }),
   );
 }

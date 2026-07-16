@@ -70,8 +70,8 @@ export async function buildRun(
   });
 }
 
-/** Render a "sleep" consolidation run: the shared `dream` skill applied to the resolved target module(s). */
-export async function buildSleep(skill: Skill, targets: ResolvedContainer[]): Promise<string> {
+/** Render a "dream" consolidation run: the consolidation discipline applied to the resolved target module(s). */
+export async function buildDream(targets: ResolvedContainer[]): Promise<string> {
   const modules = targets.flatMap((c) => c.modules.map((module) => ({ container: c, module })));
   const list = modules.length
     ? modules
@@ -82,11 +82,5 @@ export async function buildSleep(skill: Skill, targets: ResolvedContainer[]): Pr
         )
         .join("\n")
     : "_No modules to consolidate. Add one with `add_module` first._";
-  return renderTemplate("sleep", {
-    vars: {
-      skill: { name: skill.name, description: skill.description, body: skill.body },
-      targets: list,
-      resources: renderResources(await skillResourcePaths(skill)),
-    },
-  });
+  return renderTemplate("dream", { vars: { targets: list } });
 }

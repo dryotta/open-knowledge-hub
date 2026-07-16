@@ -1,18 +1,19 @@
----
-name: dream
-description: Consolidate each module's one-line manifest description against its index.md overview so inspect routes work accurately. The maintenance pass the sleep tool runs; persists descriptions deterministically via the config tool.
----
+# OKH: dream — consolidate module descriptions
+
+**Modules to consolidate:**
+{{var:targets}}
+
+<discipline name="dream">
 
 # Dream — consolidate module descriptions
 
 A module's manifest `description` is what `inspect` shows an agent that is deciding **where a
 piece of work belongs**. If it is stale, empty, or vague, routing degrades. This is the
-maintenance pass — run during `sleep` — that reconciles each module's description with what the
-module has actually become, reading from its `index.md` overview and writing a crisp one-liner
-back.
+maintenance pass that reconciles each module's description with what the module has actually
+become, reading from its `index.md` overview and writing a crisp one-liner back.
 
 OKH runs no model and never reads files — the reading and the judgement are **yours**. OKH only
-persists the result: you write the description through `config { container, module, description }`,
+persists the result: you write the description through `config { container, module, set: { description } }`,
 never by hand-editing `module.yaml`. Run the stages in order, once per target module listed above.
 
 ## Stage 1 — Read the module's current state
@@ -53,7 +54,7 @@ get a "yes" first. Consolidation should never silently redraw a module's boundar
 
 For each accepted description, write it:
 
-`config { container, module, description }`
+`config { container, module, set: { description } }`
 
 This updates the module manifest atomically and drops any legacy fields. Do not edit `module.yaml`
 directly.
@@ -70,3 +71,7 @@ unchanged; empty/uninitialized modules skipped; and any scope contradictions you
   through `config`.
 - Descriptions that redefined a module's scope were confirmed with the user before writing.
 - Empty or uninitialized modules were reported, not given invented descriptions.
+
+</discipline>
+
+{{prompt:partials/write-policy.md}}

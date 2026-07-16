@@ -26,7 +26,7 @@ Propose, and get the user's explicit agreement on:
 - **path** — the module's folder name (a single top-level segment). This name is the
   module's identity; modules live directly under the container root and cannot be nested.
 - **description** — a one-line description of what the module holds and who reads it.
-  This drives `inspect` routing, so make it specific; you can refine it later with `sleep`.
+  This drives `inspect` routing, so make it specific; you can refine it later with `dream`.
 
 Present the proposal and wait for a clear "yes" before creating anything.
 

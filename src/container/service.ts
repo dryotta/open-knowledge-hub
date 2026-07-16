@@ -394,7 +394,7 @@ export class ContainerService {
       const m = d.manifest!;
       const moduleRoot = this.moduleRoot(root, d.path);
       if (m.description.trim().length === 0) {
-        issues.push(`module "${d.path}": missing description (run sleep to consolidate one).`);
+        issues.push(`module "${d.path}": missing description (run dream to consolidate one).`);
       }
       const loader = getLoader(m.type);
       for (const requiredFile of loader.requiredFiles ?? []) {
@@ -757,15 +757,29 @@ export class ContainerService {
     return this.mutex.run(() => this.addModuleImpl(input));
   }
 
+  /** Read a module's manifest (type, description, and arbitrary config map). */
+  async getModuleManifest(container: string, module: string): Promise<ModuleManifest> {
+    const reg = await this.loadRegistryData();
+    const entry = requireContainer(reg, container);
+    const moduleRoot = this.moduleRoot(entry.localPath, module);
+    if (!(await moduleManifestExists(moduleRoot))) {
+      throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+    }
+    return loadModuleManifest(moduleRoot);
+  }
+
   /**
-   * Deterministically set a module's manifest `description`, preserving `type`/`config`
-   * (and dropping any legacy `name`). Used by the `config` tool and the `dream` skill.
+   * Apply a key/value patch to a module's manifest. `description` maps to the
+   * top-level field (validated non-blank); `type` is rejected (it selects the
+   * loader); every other key is written into the manifest's arbitrary `config`
+   * map. A `null` value deletes an arbitrary config key. Returns the saved
+   * manifest. Legacy fields (e.g. `name`) are dropped as a side effect of the
+   * rewrite through the schema.
    */
-  setModuleDescription(container: string, module: string, description: string): Promise<void> {
+  setModuleConfig(container: string, module: string, patch: Record<string, unknown>): Promise<ModuleManifest> {
     return this.mutex.run(async () => {
-      const trimmed = description.trim();
-      if (trimmed.length === 0) {
-        throw new OkhError("INVALID_ARGUMENT", "Module description cannot be empty.");
+      if (Object.keys(patch).length === 0) {
+        throw new OkhError("INVALID_ARGUMENT", "config { set } must include at least one key.");
       }
       const reg = await this.loadRegistryData();
       const entry = requireContainer(reg, container);
@@ -774,7 +788,33 @@ export class ContainerService {
         throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
       }
       const manifest = await loadModuleManifest(moduleRoot);
-      await saveModuleManifest(moduleRoot, { ...manifest, description: trimmed });
+      const cfg: Record<string, unknown> = { ...(manifest.config ?? {}) };
+      let description = manifest.description;
+      for (const [key, value] of Object.entries(patch)) {
+        if (key === "type") {
+          throw new OkhError(
+            "INVALID_ARGUMENT",
+            "A module's type cannot be changed via config (it selects the loader). Recreate the module to change its type.",
+          );
+        }
+        if (key === "description") {
+          if (value === null) {
+            throw new OkhError("INVALID_ARGUMENT", "Module description is required and cannot be deleted.");
+          }
+          if (typeof value !== "string" || value.trim().length === 0) {
+            throw new OkhError("INVALID_ARGUMENT", "Module description must be a non-empty string.");
+          }
+          description = value.trim();
+          continue;
+        }
+        if (value === null) delete cfg[key];
+        else cfg[key] = value;
+      }
+      const next: ModuleManifest = { ...manifest, description };
+      if (Object.keys(cfg).length > 0) next.config = cfg;
+      else delete next.config;
+      await saveModuleManifest(moduleRoot, next);
+      return next;
     });
   }
 

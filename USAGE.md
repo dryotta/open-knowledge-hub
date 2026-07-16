@@ -11,11 +11,10 @@ Your agent decides which tools to call from their descriptions and the hub's
 announced **wake phrase**. Address the hub with the wake phrase — by default
 `hub` — for example: `hub, ask …` or `hub, run …`.
 
-- The *cognitive flows* (`ask`, `context`, `run`, `sleep`) return instructions your
+- The *cognitive flows* (`ask`, `context`, `run`, `dream`) return instructions your
   agent then follows — they don't act on their own. Naming the hub matters most for
-  these; without it, a request often won't reach OKH. `learn`, `remember`, `reflect`,
-  and `dream` are module skills — `learn`/`remember`/`reflect` are invoked via
-  `run { container, module, skill }`, and `dream` runs through the `sleep` flow.
+  these; without it, a request often won't reach OKH. `learn`, `remember`, and
+  `reflect` are module skills invoked via `run { container, module, skill }`.
 - The *operational tools* (`inspect`, `add_container`, `add_module`, `sync`, `config`) act directly and
   usually route reliably even without the prefix.
 - Most explicit option: clients with a prompt UI expose OKH's flows as pickable
@@ -43,11 +42,11 @@ live as top-level folders in the container.
 ## Keeping module descriptions fresh
 
 `inspect` routes work to modules using each module's `description`, so it should stay
-accurate as content grows. Say **`hub, sleep`** (or `hub, sleep on my-notes`) to run the
-`dream` consolidation pass: your agent reads each module's `index.md`, drafts a
+accurate as content grows. Say **`hub, dream`** (or `hub, dream on my-notes`) to run the
+consolidation pass: your agent reads each module's `index.md`, drafts a
 routing-quality description, and persists it. You can also set one directly —
 `hub, set kb's description to "auth flows and token lifecycle"` — which your agent
-applies via `config { container, module, description }`.
+applies via `config { container, module, set: { description } }`.
 
 ## Organizing many skills
 
