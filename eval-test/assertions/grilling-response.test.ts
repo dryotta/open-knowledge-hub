@@ -34,6 +34,14 @@ describe("grilling-response assertion", () => {
     expect(result.reason).toMatch(/span 3 decision topics/i);
   });
 
+  it("rejects bundled decisions after a recommendation", () => {
+    const result = evaluate(
+      "My recommendation is GitHub first. Why GitHub instead of Google? How should callback state be validated? When should idle logins expire?",
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/span 3 decision topics/i);
+  });
+
   it("treats token and session storage as one threat-model decision", () => {
     const result = evaluate(
       "Should OAuth tokens live in encrypted server-side sessions? What database threat are we defending against? My recommendation is envelope encryption.",

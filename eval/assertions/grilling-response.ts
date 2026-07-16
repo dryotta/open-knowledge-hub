@@ -12,7 +12,7 @@ export default function grillingResponse(_output: string, context: Ctx) {
   const questionCount = message.match(/\?/g)?.length ?? 0;
   const hasRecommendation = /\b(?:my recommendation|I (?:recommend|suggest)|recommendation|I'd recommend)\b/i.test(message);
   const referencesPlan = /\b(?:OAuth|GitHub|token|session|callback|state)\b/i.test(message);
-  const questionText = message.split(/\b(?:my recommendation|I (?:recommend|suggest)|recommendation|I'd recommend)\b/i)[0]!;
+  const questionText = (message.match(/[^.!?\n]*\?/g) ?? []).join(" ");
   const decisionTopicCount = [
     /\b(?:GitHub|Google|GitLab|Microsoft|OAuth providers?|email\/password)\b/i,
     /\b(?:access tokens?|refresh tokens?|tokens?|sessions?|backend|cookies?|database|KMS|secrets?)\b/i,
