@@ -24,8 +24,8 @@
             source: final-message
             mustContain:
               - "(?:signed\\W+session\\W+tokens?|session\\W+tokens?[^\\n]{0,40}signed)"
-              - "kb-hub[/\\\\]kb"
-              - "git-hub[/\\\\]kb"
+              - "kb-hub(?:[/\\\\]|\\s*:\\s*)kb"
+              - "git-hub(?:[/\\\\]|\\s*:\\s*)kb"
             mustNotContain:
               - "\\b(?:storage|algorithms?|MFA|authorization scopes?)\\b"
               - "(?:causal\\s*:\\s*time|correlational\\s*:\\s*use|issued at login[^.\\n]{0,180}\\bcorrelation\\b|two separate behaviors[^.\\n]{0,80}\\bcorrelation\\b)"

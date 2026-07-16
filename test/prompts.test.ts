@@ -61,11 +61,12 @@ describe("prompt builders", () => {
     expect(text).toMatch(/do not use background\s+mode/i);
     expect(text).toMatch(/still include the distilled answer itself/i);
     expect(text).toMatch(/do not replace it with a\s+statement that the answer was retrieved or handled/i);
-    expect(text).toMatch(/explicit user constraints override the default gap and next-step elaboration/i);
-    expect(text).toMatch(/without speculating about specific missing technologies/i);
+    expect(text).toMatch(/explicit user constraints\s+override the default gap elaboration/i);
+    expect(text).toMatch(/do not name missing technologies,\s+mechanisms, categories/i);
     expect(text).toMatch(/do not relabel the\s+relationship as causal or correlational/i);
     expect(text).toMatch(/neither classification is\s+established rather than forcing each fact into a category/i);
     expect(text).toMatch(/forbids listing those absent details as coverage gaps/i);
+    expect(text).toMatch(/if the sub-agent added a prohibited gap or next-step section, omit that\s+section/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
@@ -80,6 +81,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/never put\s+a conditional item in the selected working set/i);
     expect(text).toMatch(/do not invent concrete libraries, algorithms/i);
     expect(text).toMatch(/same broad\s+level without examples or an invented checklist/i);
+    expect(text).toMatch(/one broad gap statement[\s\S]{0,80}one sentence/i);
     expect(text).toMatch(/complete listed\s+item path/i);
     expect(text).toMatch(/under a `## Gaps` heading/i);
   });

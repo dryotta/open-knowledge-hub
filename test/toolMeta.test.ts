@@ -86,4 +86,11 @@ describe("every tool has complete, consistent metadata", () => {
     // Must not document the legacy "pr" string as a valid mode value
     expect(addContainer.args.sync).not.toMatch(/"pr"/);
   });
+
+  it("flow arguments preserve user scope without inferred expansion", async () => {
+    const context = await loadToolMeta("context");
+    const ask = await loadToolMeta("ask");
+    expect(context.args.task).toMatch(/copied without adding inferred requirements/i);
+    expect(ask.args.question).toMatch(/copied without weakening or expanding/i);
+  });
 });

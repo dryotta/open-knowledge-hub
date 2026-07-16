@@ -63,32 +63,33 @@ Instruct the sub-agent to:
    established rather than forcing each fact into a category.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
-4. **Assess scope explicitly.** For each question, say whether the pack actually covers it:
-   - Fully answered → give the answer.
-   - Partially answered → answer what's covered, name what's missing.
-   - Out of scope / absent → say so plainly (referencing the pack's goals/out-of-scope), and do
-     not invent an answer.
-5. **Suggest next steps** whenever the question opens further ones — follow-up questions worth
+4. **Honor the caller's output boundary before assessing scope.** Explicit user constraints
+   override the default gap elaboration. If the user asks for only stated facts or forbids
+   absent details, use at most a compact coverage label; do not name missing technologies,
+   mechanisms, categories, or other absent topics. Otherwise, for each question say whether
+   the pack fully answers it, partially answers it, or does not cover it, and name only the
+   evidence-backed gap.
+5. **Suggest next steps when the caller permits them** and the question opens further ones — follow-up questions worth
    asking, related concepts in the pack to explore next, or, when the answer is missing/partial,
    pointing at the knowledge module's `learn` skill to teach it the new knowledge (or the
    `initialize` skill if the module needs a fresh scope entirely). For an llmwiki module, point at
    its `write` skill to file a durable answer back as a page.
 
-Explicit user constraints override the default gap and next-step elaboration. If the user asks for
-only stated facts or forbids unstated examples and implementation details, use a compact coverage
-label without speculating about specific missing technologies, mechanisms, or categories. A request
-not to add absent details also forbids listing those absent details as coverage gaps.
+A request not to add absent details also forbids listing those absent details as coverage gaps.
 
 ### Stage 3 — Relay the distilled answer
 
 Return the sub-agent's answer to the user largely as-is. Do not remove, weaken,
 combine, or rewrite the sub-agent's citations when relaying its answer. If the user also requested
 follow-up actions, still include the distilled answer itself; do not replace it with a
-statement that the answer was retrieved or handled. Structure it as:
+statement that the answer was retrieved or handled. Before relaying, enforce the original
+output boundary. If the sub-agent added a prohibited gap or next-step section, omit that
+section without changing its supported facts or citations. Structure the permitted sections as:
 
 - **Answer** — per question, with its citations.
-- **Confidence / coverage** — fully answered, partial (with the gap named), or out of scope.
-- **Next steps** — suggested follow-up questions and, where relevant, the skill to use
+- **Confidence / coverage** — only when the caller permits it: fully answered, partial
+  (with the gap named), or out of scope.
+- **Next steps** — only when the caller permits them: suggested follow-up questions and, where relevant, the skill to use
   (ask again for follow-ups, the `learn` skill to fill a gap).
 
 If a follow-up question arises, ask again rather than holding the bundle open in
