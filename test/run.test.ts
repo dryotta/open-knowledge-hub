@@ -191,6 +191,9 @@ describe("shared skills", () => {
     expect(s.name).toBe("ingest");
     expect(s.body).toMatch(/route/i);
     expect(s.body).toMatch(/llmwiki/);
+    expect(s.body).toMatch(/hard turn boundary/i);
+    expect(s.body).toMatch(/internal scope-gate decision is not user confirmation/i);
+    expect(s.body).toMatch(/do not copy sources, call the target skill, edit module files, or sync/i);
     await expect(svc.resolveSharedSkill("nope")).rejects.toThrow(/ingest/);
   });
 });

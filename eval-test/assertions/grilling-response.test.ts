@@ -7,7 +7,7 @@ const evaluate = (finalMessage?: string) =>
 describe("grilling-response assertion", () => {
   it("accepts one plan-specific question with a recommendation", () => {
     const result = evaluate(
-      "My recommendation is to start with the callback boundary. Which OAuth callback origins should be trusted?",
+      "Which OAuth callback origins should be trusted?\n\n*Recommendation:* Start with the callback boundary.",
     );
     expect(result.pass).toBe(true);
   });

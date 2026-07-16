@@ -108,6 +108,12 @@ describe("deterministic custom, context, and ingest scenarios", () => {
     ]);
     expect(tools?.config?.forbid).toEqual([
       expect.objectContaining({ name: "run", arguments: { skill: "initialize" } }),
+      expect.objectContaining({
+        name: "run",
+        turn: 1,
+        arguments: expect.objectContaining({ skill: "learn" }),
+      }),
+      expect.objectContaining({ name: "sync", turn: 1 }),
     ]);
     expect(assertions.map((a) => a.value)).toEqual(expect.arrayContaining([
       "file://assertions/okf-valid.ts",

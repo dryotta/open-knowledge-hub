@@ -36,6 +36,12 @@
             forbid:
               - name: run
                 arguments: { skill: initialize }
+              - name: run
+                turn: 1
+                arguments: { container: health-hub, module: health, skill: learn }
+              - name: sync
+                turn: 1
+                arguments: { container: health-hub }
         - type: javascript
           value: file://assertions/okf-valid.ts
           config: { module: health, requireChanged: true }

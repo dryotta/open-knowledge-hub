@@ -10,7 +10,7 @@ export default function grillingResponse(_output: string, context: Ctx) {
   }
 
   const questionCount = message.match(/\?/g)?.length ?? 0;
-  const hasRecommendation = /\b(?:my recommendation|I (?:recommend|suggest)|recommendation:|I'd recommend)\b/i.test(message);
+  const hasRecommendation = /\b(?:my recommendation|I (?:recommend|suggest)|recommendation|I'd recommend)\b/i.test(message);
   const referencesPlan = /\b(?:OAuth|GitHub|token|session|callback|state)\b/i.test(message);
   const failures = [
     ...(questionCount >= 1 && questionCount <= 2 ? [] : [`expected one decision prompt (1-2 questions), found ${questionCount}`]),
