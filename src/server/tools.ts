@@ -67,12 +67,6 @@ function formatHub(r: HubMap): string {
     "",
   ];
 
-  lines.push("# Common instructions");
-  lines.push("Reusable guidance is read through MCP resources and linked by module skills.");
-  lines.push("- index: okh://instructions/index.md");
-  lines.push("- source ingestion: okh://instructions/ingest.md");
-  lines.push("");
-
   lines.push("# Module skills");
   lines.push("Every runnable skill is scoped to the module where it appears.");
   if (r.containers.length === 0) {

@@ -617,10 +617,10 @@ describe("MCP server surface", () => {
     expect(textOf(res).match(/^# .+$/gm)).toEqual([
       "# Hub",
       "# Run a module skill",
-      "# Common instructions",
       "# Module skills",
       "# Guardrails",
     ]);
+    expect(textOf(res)).not.toContain("okh://instructions/");
     // The example shows the module-scoped run shape with real container/module names.
     expect(textOf(res)).toContain("Example:");
     expect(textOf(res)).toMatch(/run \{ container: "hub", module: "kb", skill: "\w+" \}/);
