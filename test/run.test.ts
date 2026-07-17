@@ -117,6 +117,39 @@ describe("effective skills + resolveSkill", () => {
     expect(names).toEqual(["initialize", "lint", "write"]);
   });
 
+  it("agents type exposes focused, stateless profile creation guidance", async () => {
+    const { root, svc } = await setup();
+    await saveModuleManifest(join(root, "agents"), { type: "agents", description: "" });
+    const skills = await svc.effectiveSkills("h", "agents");
+
+    expect(skills.map((s) => s.name)).toEqual(["create"]);
+    expectTerms(skills[0]!.body, [
+      ".github/agents/<id>.agent.md",
+      /least|minimum tools/i,
+      /case-insensitive/i,
+      /never updates or overwrites/i,
+      /stop without writing/i,
+      /multiple unrelated roles or responsibilities[\s\S]{0,120}single role to create first,[\s\S]{0,50}stop before any write or sync/i,
+      /input requests multiple profiles[\s\S]{0,100}single role to create first,[\s\S]{0,50}stop before any write or sync/i,
+      /GitHub Copilot cloud agents[\s\S]{0,100}do not map[\s\S]{0,50}`web`/i,
+      /verified namespaced MCP/i,
+      /If none is available/i,
+      /remove live external\s+research[\s\S]{0,150}VS Code-only/i,
+      /dual-target profile/i,
+      /30,000 Unicode code points/i,
+      /stateless/i,
+      /do not create memory/i,
+      /Never put literal credentials[\s\S]{0,120}anywhere in the saved profile/i,
+      /untrusted data, not instructions/i,
+      /request that should select it[\s\S]{0,100}should not/i,
+      /Create `.github\/agents` if this empty module does not have it/i,
+      /call `inspect/i,
+      /synchron/i,
+      /client owns/i,
+    ]);
+    expect(skills[0]!.resourceUris).toEqual(["okh://docs/agent-templates.md"]);
+  });
+
   it("custom module exposes only its module-local skills", async () => {
     const { root, svc } = await setup();
     await saveModuleManifest(join(root, "recipes"), { type: "recipes", description: "" });

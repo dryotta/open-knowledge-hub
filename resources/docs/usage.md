@@ -37,6 +37,7 @@ item with `contentIndex`.
 | Learn | `hub, add this verified token-lifecycle fact to the auth knowledge module` |
 | Remember | `hub, remember that the release moved to Friday` |
 | Reflect | `hub, reflect on the memory module and propose consolidations` |
+| Use a Hub agent | `hub, use the researcher agent to find primary evidence` |
 | List todos | `hub, show open todos tagged shopping` |
 | Refresh descriptions | `hub, dream on my-notes` |
 | Explain OKH | `hub, how should I organize several skill collections?` |
@@ -87,6 +88,23 @@ skills/
 
 A directory with `SKILL.md` is a leaf. Descendants are bundled files for that
 skill, exposed as module resources when it runs.
+
+## Agent modules
+
+An `agents` module stores ordinary GitHub Copilot profiles under
+`.github/agents/*.agent.md`; compatible direct `.md` profiles are also accepted.
+`inspect` lists each profile ID and description. `use_agent` returns the exact
+selected profile and task without running a model or writing runtime state.
+
+To add a profile, run the module's `create` skill with the desired role and
+constraints. It selects a recipe from the
+[agent template catalog](okh://docs/agent-templates.md), writes one focused
+`.agent.md` profile, validates it with `inspect`, and synchronizes the container.
+
+The MCP client should prefer a native subagent that accepts the returned
+instructions. If unavailable, it follows the profile in the parent context for
+that task only. The client reports `native-subagent` or `inline-parent`; OKH keeps
+no per-agent memory, history, or execution log.
 
 ## Todos and sync
 

@@ -27,6 +27,7 @@ export interface CapabilityReport {
     elicitation: CapabilityFeatureResult;
     apps: CapabilityFeatureResult;
     serverTools: CapabilityFeatureResult;
+    subagentDelegation: CapabilityFeatureResult;
   };
 }
 
@@ -109,7 +110,12 @@ export async function runCapabilityProbes(ops: CapabilityProbeOperations): Promi
       )
     : feat("unsupported", "Server tool proxying does not apply because MCP Apps is not advertised.");
 
-  return { features: { roots, sampling, elicitation, apps, serverTools } };
+  const subagentDelegation = feat(
+    "unknown",
+    "Unknown. Standard MCP does not expose subagent execution. To check behavior, run use_agent with a harmless task and ask the client to report native-subagent or inline-parent. Treat the answer as client-reported.",
+  );
+
+  return { features: { roots, sampling, elicitation, apps, serverTools, subagentDelegation } };
 }
 
 export function createCapabilityProbeOperations(
@@ -152,12 +158,13 @@ export function createCapabilityProbeOperations(
 }
 
 export function formatCapabilityReport(report: CapabilityReport): string {
-  const { roots, sampling, elicitation, apps, serverTools } = report.features;
+  const { roots, sampling, elicitation, apps, serverTools, subagentDelegation } = report.features;
   return [
     `Roots: ${roots.message}`,
     `Sampling: ${sampling.message}`,
     `Form Elicitation: ${elicitation.message}`,
     `MCP Apps: ${apps.message}`,
     `App Server Tools: ${serverTools.message}`,
+    `Subagent delegation: ${subagentDelegation.message}`,
   ].join("\n");
 }

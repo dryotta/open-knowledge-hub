@@ -3,7 +3,7 @@ title: Add a module
 args:
   container: Target container (required when create:true).
   path: "Module folder name within the container — a single top-level segment (modules cannot be nested). This name is the module's identity (required when create:true)."
-  type: "Module type: a built-in (knowledge, skills, memory, llmwiki) or a custom type name (required when create:true)."
+  type: "Module type: a built-in (knowledge, skills, memory, llmwiki, agents) or a custom type name (required when create:true)."
   description: "One-line description of what the module holds and who reads it — it drives inspect routing (required when create:true; refine later with dream)."
   config: Optional module config.
   create: Apply the change. Omit to get a step-by-step workflow (no changes).

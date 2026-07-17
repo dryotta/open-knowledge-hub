@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, readdir } from "node:fs/promises";
+import { lstat, mkdir, realpath, rm, stat, readdir } from "node:fs/promises";
 import { resolve, relative, basename, join, isAbsolute, normalize } from "node:path";
 import { z } from "zod";
 import type { ZodType } from "zod";
@@ -10,6 +10,7 @@ import { Gh } from "../git/gh.js";
 import { Mutex } from "../util/mutex.js";
 import {
   loadRegistry,
+  loadRegistryReadOnly,
   saveRegistry,
   findContainer,
   requireContainer,
@@ -30,6 +31,11 @@ import { migrateLegacyContainerManifest, removeLegacyContainerManifest } from ".
 import { loadModuleManifest, saveModuleManifest, moduleManifestExists, type ModuleManifest } from "../modules/manifest.js";
 import { type Item, type WikiHealth } from "../modules/types.js";
 import { getLoader } from "../modules/registry.js";
+import { isPathWithin } from "../modules/pathSafety.js";
+import {
+  resolveAgentProfile as loadAgentProfile,
+  type AgentProfile,
+} from "../modules/loaders/agents.js";
 import {
   discoverModuleSkillSet,
   mergeSkills,
@@ -224,6 +230,7 @@ export type InspectResult =
       items: Item[];
       skills: Array<{ name: string; description: string; source: string; path?: string }>;
       skillIssues?: string[];
+      itemIssues?: string[];
       health?: WikiHealth;
     };
 
@@ -400,6 +407,9 @@ export class ContainerService {
           issues.push(`${m.type} module "${d.path}": missing ${requiredFile}`);
         }
       }
+      for (const issue of await this.loaderValidationIssues(m.type, moduleRoot)) {
+        issues.push(`${m.type} module "${d.path}": ${issue}`);
+      }
       for (const issue of await validateModuleSkills(moduleRoot, skillRootsForType(m.type))) {
         issues.push(`module "${d.path}" skill tree: ${issue}`);
       }
@@ -425,6 +435,7 @@ export class ContainerService {
     const loader = getLoader(manifest.type);
     const overview = await loader.overview(moduleRoot).catch(() => "");
     const health = await loader.health?.(moduleRoot).catch(() => undefined);
+    const itemIssues = await this.loaderValidationIssues(manifest.type, moduleRoot);
     return {
       kind: "module",
       module: { path: module, type: manifest.type, description: manifest.description, ...(manifest.config ? { config: manifest.config } : {}) },
@@ -437,8 +448,87 @@ export class ContainerService {
         ...(s.path ? { path: s.path } : {}),
       })),
       ...(skillSet.issues.length ? { skillIssues: skillSet.issues } : {}),
+      ...(itemIssues.length ? { itemIssues } : {}),
       ...(health ? { health } : {}),
     };
+  }
+
+  private async loaderValidationIssues(type: string, moduleRoot: string): Promise<string[]> {
+    const validateLoader = getLoader(type).validate;
+    if (!validateLoader) return [];
+    try {
+      return await validateLoader(moduleRoot);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown validation failure";
+      return [`loader validation failed: ${message}`];
+    }
+  }
+
+  /** Resolve one stateless profile from an agents module without using the ID as a path. */
+  async resolveAgentProfile(
+    container: string,
+    module: string,
+    agent: string,
+  ): Promise<AgentProfile> {
+    const reg = await loadRegistryReadOnly(this.paths);
+    const entry = requireContainer(reg, container);
+    const moduleRoot = this.moduleRoot(entry.localPath, module);
+    let moduleInfo;
+    try {
+      moduleInfo = await lstat(moduleRoot);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      throw new OkhError("NOT_FOUND", `Container "${container}" has no module "${module}".`);
+    }
+    if (moduleInfo.isSymbolicLink()) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Module "${module}" cannot be a symbolic link or junction.`,
+      );
+    }
+    if (!moduleInfo.isDirectory()) {
+      throw new OkhError("INVALID_MANIFEST", `Module "${module}" is not a directory.`);
+    }
+
+    let containerReal: string;
+    let moduleReal: string;
+    try {
+      [containerReal, moduleReal] = await Promise.all([
+        realpath(entry.localPath),
+        realpath(moduleRoot),
+      ]);
+    } catch {
+      throw new OkhError("INVALID_MANIFEST", `Module "${module}" cannot be resolved safely.`);
+    }
+    if (!isPathWithin(containerReal, moduleReal)) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Module "${module}" resolves outside container "${container}".`,
+      );
+    }
+
+    const discovered = await discoverModules(entry.localPath);
+    const selected = discovered.find((candidate) => candidate.path === module);
+    if (!selected) {
+      throw new OkhError(
+        "NOT_FOUND",
+        `Container "${container}" has no direct module "${module}".`,
+      );
+    }
+    if (selected.error || !selected.manifest) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Module "${module}" is invalid: ${selected.error ?? "missing manifest"}.`,
+      );
+    }
+    const manifest = selected.manifest;
+    if (manifest.type !== "agents") {
+      throw new OkhError(
+        "INVALID_ARGUMENT",
+        `Module "${module}" has type "${manifest.type}"; use_agent requires an agents module.`,
+      );
+    }
+    return loadAgentProfile(moduleRoot, agent);
   }
 
   private async collectEffectiveSkills(

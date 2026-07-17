@@ -16,6 +16,12 @@ const syncSelection = z.object({
 /** Bare Zod arg shapes for every tool; descriptions come from resources/tool-meta/<name>.md. */
 export const toolShapes = {
   inspect: { container, module: moduleArg },
+  use_agent: {
+    container: z.string(),
+    module: z.string(),
+    agent: z.string(),
+    task: z.string(),
+  },
   add_container: {
     source: z.string(),
     name: z.string().optional(),

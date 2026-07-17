@@ -264,18 +264,26 @@ describe("formatCapabilityReport", () => {
         elicitation: { status: "failed" as const, available: true, message: "Elicitation request failed." },
         apps: { status: "advertised" as const, available: true, message: "MCP Apps extension is advertised." },
         serverTools: { status: "unknown" as const, available: false, message: "verify in-app." },
+        subagentDelegation: {
+          status: "unknown" as const,
+          available: false,
+          message: "Unknown. Standard MCP does not expose subagent execution.",
+        },
       },
     };
 
     const output = formatCapabilityReport(report);
     const lines = output.split("\n");
 
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(6);
     expect(lines[0]).toBe("Roots: Roots request succeeded.");
     expect(lines[1]).toBe("Sampling: Sampling is not advertised.");
     expect(lines[2]).toBe("Form Elicitation: Elicitation request failed.");
     expect(lines[3]).toBe("MCP Apps: MCP Apps extension is advertised.");
     expect(lines[4]).toBe("App Server Tools: verify in-app.");
+    expect(lines[5]).toBe(
+      "Subagent delegation: Unknown. Standard MCP does not expose subagent execution.",
+    );
   });
 
   it("does not include raw response values", () => {
@@ -286,6 +294,11 @@ describe("formatCapabilityReport", () => {
         elicitation: { status: "passed" as const, available: true, message: "Elicitation request succeeded." },
         apps: { status: "unsupported" as const, available: false, message: "MCP Apps is not advertised." },
         serverTools: { status: "unsupported" as const, available: false, message: "does not apply." },
+        subagentDelegation: {
+          status: "unknown" as const,
+          available: false,
+          message: "Unknown. Standard MCP does not expose subagent execution.",
+        },
       },
     };
 
@@ -296,7 +309,8 @@ describe("formatCapabilityReport", () => {
         "Sampling: Sampling request succeeded.\n" +
         "Form Elicitation: Elicitation request succeeded.\n" +
         "MCP Apps: MCP Apps is not advertised.\n" +
-        "App Server Tools: does not apply.",
+        "App Server Tools: does not apply.\n" +
+        "Subagent delegation: Unknown. Standard MCP does not expose subagent execution.",
     );
   });
 });

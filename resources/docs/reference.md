@@ -10,6 +10,7 @@ description: Complete current reference for OKH tools, resources, module types, 
 | Tool | Arguments | Behavior |
 | --- | --- | --- |
 | `inspect` | `container?`, `module?` | List the hub map with skills nested under modules, a container, or one module's items, overview, skills, and health. |
+| `use_agent` | `container`, `module`, `agent`, `task` | Return one exact Copilot profile and task for client-side subagent delegation or inline fallback. |
 | `add_container` | `source`, `name?`, `sync?`, `backend?`, `create?` | Preview or register/clone a container. |
 | `add_module` | `container?`, `path?`, `type?`, `description?`, `config?`, `create?` | Return the module design workflow or create the agreed module. |
 | `sync` | `container?`, `message?`, `action?` | Validate and synchronize; `publish-pr` is a shared-mode action. |
@@ -22,7 +23,7 @@ description: Complete current reference for OKH tools, resources, module types, 
 | `dream` | `container?`, `module?` | Return description-consolidation guidance. |
 | `help` | `question?` | Search canonical docs/common instructions and return bounded embedded matches plus links. |
 | `read_resource` | `uri`, `contentIndex?`, `offset?`, `maxBytes?` | Read one bounded chunk from an `okh://` resource as embedded content. |
-| `capabilities` | none | Probe roots, sampling, form elicitation, and MCP Apps support. |
+| `capabilities` | none | Probe MCP client features and report standard MCP subagent delegation as unknown. |
 
 All cognitive tools return guidance for the client agent; they do not run an LLM.
 OKH does not register an MCP prompt surface.
@@ -64,6 +65,7 @@ remain linked and are marked for `read_resource`.
 | `memory` | Recursive files and optional `README.md` | `reflect`, `remember`, `todo` |
 | `llmwiki` | OKF pages, index, log, link health | `initialize`, `write`, `lint` |
 | `skills` | Nested `SKILL.md` leaves and `index.md` | `initialize` |
+| `agents` | Direct `.github/agents/*.agent.md` and compatible `.md` profiles | `create` |
 | custom | Generic recursive file listing | None; use local skills |
 
 Common instructions live at:
@@ -93,6 +95,32 @@ manifests, while the `add_module` workflow requires a meaningful description.
 `config` is an optional arbitrary mapping. The module folder name is its identity.
 The `config` tool may update `description` and arbitrary config keys but cannot
 change `type`.
+
+### Agent profile format
+
+An `agents` module preserves the standard Copilot repository layout:
+
+```text
+team-agents/
+  .okh/module.yaml
+  .github/agents/
+    researcher.agent.md
+    reviewer.md
+```
+
+Profiles remain ordinary YAML-frontmatter Markdown. A non-empty `description` is
+required. `.agent.md` is canonical and direct `.md` is accepted for VS Code
+compatibility. IDs come from the filename after removing the longest supported
+suffix and must be unique case-insensitively. Profiles are read-only definitions;
+`use_agent` creates no agent memory, run state, or log.
+
+An empty agents module may omit `.github/agents` because Git does not preserve empty
+directories. The `create` skill creates the directory with the first profile.
+
+Run `create` on an agents module to design and write one focused profile. The skill
+uses the [agent template catalog](okh://docs/agent-templates.md), applies
+least-privilege tools and explicit boundaries, then requires `inspect` validation
+and container sync.
 
 ## Skill format
 

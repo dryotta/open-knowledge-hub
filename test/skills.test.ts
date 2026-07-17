@@ -219,6 +219,9 @@ describe("vendored skills", () => {
     expect((await vendoredSkills("knowledge")).map((s) => s.name)).toContain("learn");
     expect((await vendoredSkills("memory")).map((s) => s.name).sort()).toEqual(["reflect", "remember", "todo"]);
     expect((await vendoredSkills("skills")).map((s) => s.name)).toEqual(["initialize"]);
+    const agentSkills = await vendoredSkills("agents");
+    expect(agentSkills.map((s) => s.name)).toEqual(["create"]);
+    expect(agentSkills[0]?.resourceUris).toEqual(["okh://docs/agent-templates.md"]);
     expect(await vendoredSkills("recipes")).toEqual([]);
   });
 });

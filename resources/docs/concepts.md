@@ -14,7 +14,7 @@ description: The OKH domain model, skill precedence, common instructions, resour
 - **Module** - a typed top-level folder inside a container. Its
   `.okh/module.yaml` selects a loader and carries a routing description.
 - **Item** - a discoverable unit inside a module, such as a knowledge concept,
-  memory entry, wiki page, or skill.
+  memory entry, wiki page, skill, or agent profile.
 - **Skill** - module-scoped discipline in a `SKILL.md`. `run` returns its
   instructions; the client agent performs the work.
 - **Common instruction** - reusable built-in guidance exposed under
@@ -35,7 +35,7 @@ graph TD
 
 ## Module types
 
-Built-in types are `knowledge`, `memory`, `llmwiki`, and `skills`. Any other
+Built-in types are `knowledge`, `memory`, `llmwiki`, `skills`, and `agents`. Any other
 non-empty type is custom and uses the generic file-listing loader.
 
 Modules must be direct children of a container. The folder name is the module
@@ -73,6 +73,10 @@ specific module required to run it; there is no independent skill catalog.
 - Read, list, or filter todos: call `todos` directly.
 - Answer from stored content: call `ask`.
 - Assemble a task-specific working set: call `context`.
+- Create a stateless Hub agent: run `create` on the target `agents` module.
+- Run a stateless Hub agent: select an ID from `inspect`, then call `use_agent`.
+  Prefer the returned profile and task in a native subagent; otherwise follow them
+  in the parent context and report the fallback mode.
 - Ingest source documents: call `help { question: "ingest" }`, apply its embedded
   instructions, confirm the routing plan, then run the target module's writing skill.
 - Explain OKH: call `help`.

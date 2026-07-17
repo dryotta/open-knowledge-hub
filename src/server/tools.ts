@@ -41,6 +41,7 @@ import { formatSyncDescriptor } from "../util/syncFormat.js";
 import { loadPromptFile } from "../prompts/templates.js";
 import type { OkhResourceRegistry } from "../resources/index.js";
 import { chunkResourceResult } from "../resources/embedding.js";
+import { renderUseAgentResult } from "./agentDelegation.js";
 
 /** Render the no-arg hub map with every runnable skill nested under its module. */
 function formatHub(r: HubMap): string {
@@ -149,6 +150,9 @@ function formatInspect(r: InspectResult): string {
   const skillIssueLines = r.skillIssues?.length
     ? ["Skill tree issues:", ...r.skillIssues.map((issue) => `  - ${issue}`)]
     : [];
+  const itemIssueLines = r.itemIssues?.length
+    ? ["Item issues:", ...r.itemIssues.map((issue) => `  - ${issue}`)]
+    : [];
   const overview = r.overview.trim();
   const overviewLines = overview
     ? ["Scope / overview:", ...overview.split("\n").map((l) => `  ${l}`)]
@@ -174,6 +178,7 @@ function formatInspect(r: InspectResult): string {
     "Skills:",
     ...skillLines,
     ...skillIssueLines,
+    ...itemIssueLines,
     ...overviewLines,
     ...healthLines,
   ].join("\n");
@@ -278,6 +283,31 @@ export async function registerTools(
           ? `${formatInspect(result)}\n\n${await loadPromptFile("partials/inspect-usage.md")}`
           : formatInspect(result);
       return ok(text, { result });
+    }),
+  );
+
+  server.registerTool(
+    "use_agent",
+    {
+      ...(await toolReg("use_agent")),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    handler(async (args: {
+      container: string;
+      module: string;
+      agent: string;
+      task: string;
+    }) => {
+      if (isBlank(args.container)) return fail("container cannot be empty.");
+      if (isBlank(args.module)) return fail("module cannot be empty.");
+      if (isBlank(args.agent)) return fail("agent cannot be empty.");
+      if (isBlank(args.task)) return fail("task cannot be empty.");
+      const profile = await service.resolveAgentProfile(
+        args.container,
+        args.module,
+        args.agent,
+      );
+      return renderUseAgentResult(args.container, args.module, profile, args.task);
     }),
   );
 

@@ -13,21 +13,16 @@ import {
 } from "./schema.js";
 import { migrateRegistryV1, type RegistryMigrationOptions } from "./migrate.js";
 
-/** Read the registry. Missing file => empty; v1 file => migrate+save; invalid => hard error. */
-export async function loadRegistry(
-  paths: OkhPaths,
-  options: RegistryMigrationOptions = {},
-): Promise<Registry> {
+async function readRegistryJson(paths: OkhPaths): Promise<unknown | undefined> {
   let raw: string;
   try {
     raw = await readFile(paths.registryFile, "utf8");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return emptyRegistry();
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw err;
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    return JSON.parse(raw);
   } catch {
     throw new OkhError(
       "INVALID_MANIFEST",
@@ -35,14 +30,20 @@ export async function loadRegistry(
       "Fix or delete the file to reset the registry.",
     );
   }
+}
+
+async function parseRegistry(
+  paths: OkhPaths,
+  parsed: unknown,
+  options: RegistryMigrationOptions,
+): Promise<{ registry: Registry; migrated: boolean }> {
   const current = registrySchema.safeParse(parsed);
-  if (current.success) return current.data;
+  if (current.success) return { registry: current.data, migrated: false };
 
   const legacy = legacyRegistrySchema.safeParse(parsed);
   if (legacy.success) {
     const migrated = await migrateRegistryV1(legacy.data, options);
-    await saveRegistry(paths, migrated);
-    return migrated;
+    return { registry: migrated, migrated: true };
   }
 
   throw new OkhError(
@@ -50,6 +51,29 @@ export async function loadRegistry(
     `Registry at ${paths.registryFile} does not match the expected schema: ${current.error.message}`,
     "Fix or delete the file to reset the registry.",
   );
+}
+
+/** Read the registry. Missing file => empty; v1 file => migrate+save; invalid => hard error. */
+export async function loadRegistry(
+  paths: OkhPaths,
+  options: RegistryMigrationOptions = {},
+): Promise<Registry> {
+  const parsed = await readRegistryJson(paths);
+  if (parsed === undefined) return emptyRegistry();
+  const result = await parseRegistry(paths, parsed, options);
+  if (result.migrated) await saveRegistry(paths, result.registry);
+  return result.registry;
+}
+
+/**
+ * Read a registry snapshot without writes or external identity lookup.
+ * Legacy auto-sync entries migrate in memory; legacy PR entries return the
+ * existing migration error instead of consulting GitHub or persisting state.
+ */
+export async function loadRegistryReadOnly(paths: OkhPaths): Promise<Registry> {
+  const parsed = await readRegistryJson(paths);
+  if (parsed === undefined) return emptyRegistry();
+  return (await parseRegistry(paths, parsed, {})).registry;
 }
 
 /**
