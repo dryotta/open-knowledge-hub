@@ -125,6 +125,10 @@ describe("prompt builders", () => {
     expect(text).toMatch(/onboard/i);
     expect(text).toContain('help { question: "ingest" }');
     expect(text).toContain('help { question: "grilling" }');
+    expect(text).toContain("use_agent");
+    expect(text).toContain("native-subagent");
+    expect(text).toContain("inline-parent");
+    expect(text).toMatch(/client, not the Hub/i);
     // Routing discipline lives in server instructions and help, not a separate legacy gate block.
     expect(text).not.toContain("Routing gates");
     expect(text).not.toContain('skill: "learn"');

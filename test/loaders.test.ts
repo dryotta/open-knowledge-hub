@@ -235,7 +235,7 @@ describe("memory loader (thin file listing)", () => {
 
 describe("getLoader dispatch", () => {
   it("returns a loader for every module type", () => {
-    for (const t of ["knowledge", "skills", "memory", "llmwiki"] as const) {
+    for (const t of ["knowledge", "skills", "memory", "llmwiki", "agents"] as const) {
       expect(typeof getLoader(t).enumerate).toBe("function");
       expect(typeof getLoader(t).overview).toBe("function");
     }
@@ -254,6 +254,11 @@ describe("type registry", () => {
   it("recognises llmwiki as a built-in type", () => {
     expect(isBuiltinType("llmwiki")).toBe(true);
     expect(BUILTIN_MODULE_TYPES).toContain("llmwiki");
+  });
+
+  it("recognises agents as a built-in type", () => {
+    expect(isBuiltinType("agents")).toBe(true);
+    expect(BUILTIN_MODULE_TYPES).toContain("agents");
   });
 
   it("treats retired types (tools, project) as custom", () => {

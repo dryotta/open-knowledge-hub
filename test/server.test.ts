@@ -71,7 +71,7 @@ function normalizedWhitespace(text: string | undefined): string {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 14 tools and no prompts", async () => {
+  it("exposes exactly the 15 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([
@@ -89,6 +89,7 @@ describe("MCP server surface", () => {
       "run",
       "sync",
       "todos",
+      "use_agent",
     ]);
     expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
@@ -276,6 +277,8 @@ describe("MCP server surface", () => {
     const tools = (await client.listTools()).tools;
     const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations ?? {}]));
     expect(byName.inspect!.readOnlyHint).toBe(true);
+    expect(byName.use_agent!.readOnlyHint).toBe(true);
+    expect(byName.use_agent!.openWorldHint).toBe(false);
     expect(byName.ask!.readOnlyHint).toBe(true);
     expect(byName.help!.readOnlyHint).toBe(true);
     expect(byName.read_resource!.readOnlyHint).toBe(true);

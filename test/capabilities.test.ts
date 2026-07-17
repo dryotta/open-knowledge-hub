@@ -170,6 +170,8 @@ describe("capabilities tool — all-supported client", () => {
     expect(features.apps?.available).toBe(true);
     expect(features.serverTools?.status).toBe("unknown");
     expect(features.serverTools?.available).toBe(false);
+    expect(features.subagentDelegation?.status).toBe("unknown");
+    expect(features.subagentDelegation?.available).toBe(false);
 
     // Text output must not contain any handler-provided secrets
     const text = textOf(res);
@@ -211,6 +213,31 @@ describe("capabilities tool — no-support client", () => {
     expect(features.apps?.available).toBe(false);
     expect(features.serverTools?.status).toBe("unsupported");
     expect(features.serverTools?.available).toBe(false);
+    expect(features.subagentDelegation?.status).toBe("unknown");
+    expect(features.subagentDelegation?.available).toBe(false);
+  });
+});
+
+describe("capabilities tool — subagent delegation", () => {
+  it("labels delegation as unobservable and client-reported without running a probe", async () => {
+    const { client } = await connect({ capabilities: {} });
+
+    const result = await client.callTool({ name: "capabilities", arguments: {} });
+    const feature = featuresOf(result).subagentDelegation;
+    const text = textOf(result);
+
+    expect(feature).toMatchObject({
+      status: "unknown",
+      available: false,
+    });
+    expect(feature?.message).toContain("Unknown. Standard MCP does not expose subagent execution");
+    expect(feature?.message).toContain("client-reported");
+    expect(feature?.message).not.toMatch(/\b(passed|verified)\b/i);
+    expect(text).toContain(
+      "Subagent delegation: Unknown. Standard MCP does not expose subagent execution.",
+    );
+    expect(text).toContain("use_agent");
+    expect(text).toContain("native-subagent or inline-parent");
   });
 });
 
