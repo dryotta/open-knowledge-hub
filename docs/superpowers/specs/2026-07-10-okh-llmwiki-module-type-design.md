@@ -1,5 +1,8 @@
 # OKH — `llmwiki` Module Type (Karpathy "LLM Wiki" pattern)
 
+> **Historical note:** Standalone skill references in this record were superseded by
+> common MCP instruction resources and module-scoped skills.
+
 **Status:** Draft design (under review, rev. 2)
 **Date:** 2026-07-10
 **Relates to:** `2026-07-07-okh-module-system-redesign-design.md` (reserved `llmwiki` as a future built-in type "with no architectural change"), `2026-07-09-okh-ingest-skill-design.md` (shared `ingest` front-door), `docs/adr/0004-containers-of-typed-modules.md`
@@ -292,8 +295,8 @@ the `write` skill (Karpathy's compounding).
 
 Proposed: **`initialize`, `write`, `lint`**. `write` vs `learn` (used by knowledge;
 reusing it would blur the restraint-vs-coverage distinction) vs `file`/`ingest`
-(`ingest` clashes with the shared skill name). No new `wiki-writer` skill —
-authoring reuses the shared `okf-writer` (resolved).
+(`ingest` names common routing guidance). No new `wiki-writer` skill — authoring
+reuses the canonical OKF writer instruction resource.
 
 ---
 

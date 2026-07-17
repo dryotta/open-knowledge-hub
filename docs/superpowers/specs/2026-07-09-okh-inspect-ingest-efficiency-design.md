@@ -1,5 +1,8 @@
 # OKH — `inspect` visibility + ingest efficiency
 
+> **Historical note:** Early standalone skill APIs in this record were removed.
+> Inspect now nests every runnable skill beneath its concrete module.
+
 **Status:** Approved design (pre-implementation)
 **Date:** 2026-07-09
 **Branch:** `feat/inspect-ingest-efficiency`

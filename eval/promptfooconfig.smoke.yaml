@@ -1,4 +1,4 @@
-# Fast local tier: representative read, write, routing, custom-module, shared-skill,
+# Fast local tier: representative read, write, routing, custom-module, common-guidance,
 # and multi-turn coverage. `npm run eval:smoke` uses one judge vote by default.
 description: OKH E2E smoke eval (Copilot CLI)
 prompts:
@@ -11,6 +11,6 @@ scenarios:
   - file://scenarios/remember/todo.yaml
   - file://scenarios/context/login-task.yaml
   - file://scenarios/ask/answerable.yaml
-  - file://scenarios/run/shared-grilling.yaml
+  - file://scenarios/help/grilling.yaml
   - file://scenarios/inspect/custom-module.yaml
   - file://scenarios/onboard/cold-start-phrase.yaml

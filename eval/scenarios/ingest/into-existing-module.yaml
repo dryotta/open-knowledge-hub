@@ -6,8 +6,7 @@
     - vars:
         env: health
         prompt: |
-          hub, use the shared "ingest" skill to ingest ./lab-results.txt into my
-          existing Health module.
+          hub, ingest ./lab-results.txt into my existing Health module.
         turns:
           - id: routing-confirmed
             after: start
@@ -15,7 +14,7 @@
               The routing plan and candidates look correct. Proceed with ingestion.
         terminal:
           after: routing-confirmed
-          requiredTools: [run, sync]
+          requiredTools: [help, run, sync]
   tests:
     - description: Ingest - existing scoped module - path source, no re-initialize
       assert:
@@ -24,9 +23,8 @@
           config:
             ordered: true
             expect:
-              - name: run
+              - name: help
                 turn: 1
-                arguments: { skill: ingest }
               - name: run
                 turn: 2
                 arguments: { container: health-hub, module: health, skill: learn }
@@ -36,6 +34,8 @@
             forbid:
               - name: run
                 arguments: { skill: initialize }
+              - name: run
+                arguments: { skill: ingest }
               - name: run
                 turn: 1
                 arguments: { container: health-hub, module: health, skill: learn }

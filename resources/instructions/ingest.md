@@ -1,6 +1,12 @@
 ---
-name: ingest
+title: Ingest source documents
 description: Turn source documents (PDFs, docs, images, URLs, or pasted content) into cited candidate knowledge and route each to the target module's own skill for scope-gating and writing.
+keywords:
+  - ingest
+  - ingestion
+  - source document
+  - import document
+  - pdf
 ---
 
 # Ingest source documents
@@ -11,8 +17,9 @@ own skill** (`learn` for knowledge, `remember` for memory, `write` for llmwiki),
 scope gate and the actual writing. You extract and reason; the target skill decides what earns a
 place and writes it.
 
-OKH runs no model and never reads files — extraction is **your** job, and OKH **cannot see chat
-attachments**. Run these stages in order.
+OKH runs no model and does not extract arbitrary source files — extraction is **your**
+job, and OKH **cannot see chat attachments**. Its resources can read files only inside
+registered modules. Run these stages in order.
 
 ## Stage 1 — Locate the sources (explicitly)
 

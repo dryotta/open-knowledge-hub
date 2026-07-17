@@ -32,7 +32,8 @@ what belongs here.
 ## Sources
 
 <!-- Optional retention policy. Default: do not keep copies. To retain a copy of each ingested
-source, set Retain copies: yes and adjust Folder/Bucketing. The `ingest` skill honors this. -->
+source, set Retain copies: yes and adjust Folder/Bucketing. The instructions at
+okh://instructions/ingest.md honor this. -->
 
 Retain copies: no
 

@@ -54,6 +54,10 @@ describe("prompt builders", () => {
     expect(text).toMatch(/issued at login and verified on each request[\s\S]{0,100}not that\s+issuance causes verification/i);
     expect(text).toMatch(/do not add generic benefits/i);
     expect(text).toMatch(/do not specialize a generic source\s+term/i);
+    expect(text).toMatch(/preserve grammatical roles/i);
+    expect(text).toMatch(/does not mean that tokens are signed at login/i);
+    expect(text).toMatch(/do not replace `correlated with` with `when`/i);
+    expect(text).toMatch(/prefer minimally edited source sentences/i);
     expect(text).toMatch(/exact path relative to the module root/i);
     expect(text).toMatch(/never add an assumed directory/i);
     expect(text).toMatch(/never attach a source citation\s+to a detail that source does not contain/i);
@@ -74,6 +78,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/verify every citation against\s+the provided module and item paths/i);
     expect(text).toMatch(/for a facts-only request[\s\S]{0,120}end\s+after the last fact/i);
     expect(text).toMatch(/remove cross-source comparisons, coverage notes, and missing-topic summaries/i);
+    expect(text).toMatch(/subject, verb, timing, or evidentiary qualifier changed/i);
   });
   it("context uses the context discipline", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
@@ -82,8 +87,12 @@ describe("prompt builders", () => {
     const text = await buildContext(targets, "Debug CSV import");
     expect(text).toMatch(/caller's original request is authoritative/i);
     expect(text).toMatch(/only user-stated details define scope/i);
-    expect(text).toMatch(/never create a bullet\s+for an excluded item/i);
-    expect(text).toMatch(/gap summary[\s\S]{0,120}must not name or cite[\s\S]{0,80}rejected item/i);
+    expect(text).toMatch(/never create a bullet\s+for\s+an excluded item/i);
+    expect(text).toMatch(/module-type coverage is not a goal/i);
+    expect(text).toMatch(/do not emit empty\s+module headings/i);
+    expect(text).toMatch(/apply a final rejection gate/i);
+    expect(text).toMatch(/useful only if another problem occurs/i);
+    expect(text).toMatch(/gap\s+summary[\s\S]{0,200}must not name or cite[\s\S]{0,80}rejected item/i);
     expect(text).toMatch(/never select.{0,160}(filename|recency)/is);
     expect(text).toMatch(/do not\s+open clearly irrelevant candidates merely to confirm their rejection/i);
     expect(text).toMatch(/do not select a debugging skill[\s\S]{0,100}unless the task includes a failure to debug/i);
@@ -109,12 +118,14 @@ describe("prompt builders", () => {
     // Confirmation is only for setup (folders/containers/modules), not ordinary sync
     expect(text).not.toMatch(/never.*sync.*without.*explicit confirmation/i);
   });
-  it("buildInstructions is slim: wake phrase + call inspect first + onboard, no routing gates", async () => {
+  it("buildInstructions is slim and routes common guidance through help", async () => {
     const text = await buildInstructions({ wakePhrase: "sam" });
     expect(text).toContain("sam");
     expect(text).toMatch(/inspect/);
     expect(text).toMatch(/onboard/i);
-    // Routing discipline now lives in the inspect hub-map footer, not the init instructions.
+    expect(text).toContain('help { question: "ingest" }');
+    expect(text).toContain('help { question: "grilling" }');
+    // Routing discipline lives in server instructions and help, not a separate legacy gate block.
     expect(text).not.toContain("Routing gates");
     expect(text).not.toContain('skill: "learn"');
     expect(text).not.toContain('skill: "remember"');
@@ -137,7 +148,7 @@ describe("prompt builders", () => {
     const target: ResolvedContainer = targets[0]!;
     const mod: ResolvedModule = target.modules[1]!;
     const skill: Skill = { name: "remember", description: "Record an observation", body: "Append-only timestamped entries.", source: "vendored" };
-    const text = await buildRun(skill, "Observed X", target, mod);
+    const text = await buildRun(skill, target, mod, "Observed X");
     expect(text).toContain("remember");
     expect(text).toContain("Append-only timestamped entries.");
     expect(text).toContain("mem");
@@ -145,14 +156,6 @@ describe("prompt builders", () => {
     expect(text).toContain("Observed X");
     expect(text).toMatch(/for each changed container/i);
     expect(text).toMatch(/immediately call\s+`sync \{ container \}`/i);
-  });
-  it("buildRun without a target renders a module-less shared skill", async () => {
-    const skill: Skill = { name: "okf-writer", description: "Author a bundle", body: "Write cited concepts.", source: "shared", dir: "/x" };
-    const text = await buildRun(skill, "Draft the auth pack");
-    expect(text).toContain("okf-writer");
-    expect(text).toContain("Write cited concepts.");
-    expect(text).toContain("Draft the auth pack");
-    expect(text).not.toContain("**Module:**");
   });
   it("buildRun with shared sync renders branch not [object Object]", async () => {
     const sharedTarget: ResolvedContainer = {
@@ -163,7 +166,7 @@ describe("prompt builders", () => {
     };
     const mod = sharedTarget.modules[0]!;
     const skill: Skill = { name: "remember", description: "Record", body: "Append.", source: "vendored" };
-    const text = await buildRun(skill, undefined, sharedTarget, mod);
+    const text = await buildRun(skill, sharedTarget, mod);
     expect(text).toContain("shared");
     expect(text).toContain("user/alice/hub");
     expect(text).not.toContain("[object Object]");

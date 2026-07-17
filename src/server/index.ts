@@ -4,6 +4,7 @@ import { ContainerService } from "../container/service.js";
 import { loadPreferencesSync } from "../preferences.js";
 import { buildInstructions } from "../prompts/index.js";
 import { TodoService } from "../todos/service.js";
+import { registerResources } from "../resources/index.js";
 import { registerTools } from "./tools.js";
 
 export interface BuildServerOptions {
@@ -24,11 +25,13 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Mcp
     { name: "open-knowledge-hub", version: "0.2.0" },
     { instructions: await buildInstructions(prefs as unknown as Record<string, unknown>) },
   );
+  const resources = await registerResources(server, service);
   await registerTools(
     server,
     service,
     paths,
     todoService,
+    resources,
     {
       ...(options.capabilityProbeTimeoutMs !== undefined ? { capabilityProbeTimeoutMs: options.capabilityProbeTimeoutMs } : {}),
       ...(options.todoWebUrl !== undefined ? { todoWebUrl: options.todoWebUrl } : {}),

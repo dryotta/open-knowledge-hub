@@ -1,22 +1,28 @@
-# run — dispatch a module-less shared skill (grilling) through the generic runner.
+# help — discover common grilling instructions through MCP resources.
 - config:
     - vars:
         env: empty
         prompt: |
-          hub, use the shared "grilling" skill to question me one decision at a time
-          about this OAuth login plan: support GitHub OAuth, keep access and refresh
-          tokens in encrypted server-side sessions, validate state on the callback,
-          rotate the session after login, and expire idle sessions after 24 hours.
+          hub, help me stress-test this OAuth login plan one decision at a time:
+          support GitHub OAuth, keep access and refresh tokens in encrypted server-side
+          sessions, validate state on the callback, rotate the session after login,
+          and expire idle sessions after 24 hours.
   tests:
-    - description: Run - shared grilling skill - module-less run returns grilling discipline
+    - description: Help - grilling guidance - resource-backed discipline asks one decision
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts
           config:
             expect:
+              - name: help
+            forbid:
               - name: run
                 arguments: { skill: grilling }
-            forbid: [add_container, add_module, sync, config, todos]
+              - add_container
+              - add_module
+              - sync
+              - config
+              - todos
         - type: javascript
           value: file://assertions/grilling-response.ts
         - type: javascript

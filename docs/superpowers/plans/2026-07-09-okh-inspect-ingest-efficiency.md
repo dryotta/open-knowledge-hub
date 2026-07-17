@@ -1,5 +1,8 @@
 # OKH inspect visibility + ingest efficiency — Implementation Plan
 
+> **Historical note:** Early standalone skill APIs in this record were removed.
+> Inspect now nests every runnable skill beneath its concrete module.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `inspect` reveal modules-per-container and each module's scope contract, clarify the ingest/learn disciplines, and add a live eval for ingesting a path into an already-scoped module.

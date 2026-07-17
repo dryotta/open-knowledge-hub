@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { opendir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { OkhError } from "../errors.js";
 import { parseFrontmatter, stringField } from "../util/frontmatter.js";
@@ -14,6 +14,8 @@ export interface Skill {
   dir?: string;
   /** POSIX path to SKILL.md, relative to the skill root represented by `source`. */
   path?: string;
+  /** MCP resources that must be read when applying this skill. */
+  resourceUris?: string[];
 }
 
 /** Module-local skill roots scanned, in precedence order: on a name collision an
@@ -44,6 +46,11 @@ export interface SkillRootScan {
 }
 
 const SKILL_TREE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+const SKILL_RESOURCE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+export const MAX_SKILL_DECLARED_RESOURCES = 64;
+export const MAX_SKILL_RESOURCE_FILES = 128;
+export const MAX_SKILL_RESOURCE_ENTRIES = 4_096;
+export const MAX_SKILL_RESOURCE_DEPTH = 16;
 
 function isNotFound(err: unknown): boolean {
   return (
@@ -67,6 +74,37 @@ function skillFromText(
   const { data, body } = parseFrontmatter(text);
   const name = stringField(data, "name")?.trim();
   if (!name) return undefined;
+  const rawResources = data["resources"];
+  let resourceUris: string[] | undefined;
+  if (rawResources !== undefined) {
+    if (
+      !Array.isArray(rawResources)
+      || rawResources.some((value) => typeof value !== "string" || value.trim().length === 0)
+    ) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Skill "${name}" frontmatter resources must be an array of non-empty URI strings.`,
+      );
+    }
+    resourceUris = rawResources.map((value) => value.trim());
+    if (resourceUris.length > MAX_SKILL_DECLARED_RESOURCES) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Skill "${name}" declares ${resourceUris.length} resources;`
+        + ` the maximum is ${MAX_SKILL_DECLARED_RESOURCES}.`,
+      );
+    }
+    for (const uri of resourceUris) {
+      try {
+        new URL(uri);
+      } catch {
+        throw new OkhError(
+          "INVALID_MANIFEST",
+          `Skill "${name}" has invalid resource URI "${uri}".`,
+        );
+      }
+    }
+  }
   return {
     name,
     description: stringField(data, "description")?.trim() ?? "",
@@ -74,6 +112,7 @@ function skillFromText(
     source,
     dir,
     ...(path ? { path } : {}),
+    ...(resourceUris?.length ? { resourceUris } : {}),
   };
 }
 
@@ -115,7 +154,13 @@ export async function scanSkillsInRoot(root: string, source: string): Promise<Sk
           issues.push(`${path}: cannot read file`);
           return;
         }
-        const skill = skillFromText(text, dir, source, path);
+        let skill: Skill | undefined;
+        try {
+          skill = skillFromText(text, dir, source, path);
+        } catch (error) {
+          issues.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+          return;
+        }
         if (!skill) {
           issues.push(`${path}: missing non-empty frontmatter name`);
           return;
@@ -248,4 +293,65 @@ export function mergeSkills(vendored: Skill[], local: Skill[]): Skill[] {
       (a.path ?? "").localeCompare(b.path ?? "") ||
       a.source.localeCompare(b.source),
   );
+}
+
+/** Absolute paths of a skill's sibling files, excluding SKILL.md and common cache/build noise. */
+export async function skillResourcePaths(skill: Skill): Promise<string[]> {
+  const rootDir = skill.dir;
+  if (!rootDir) return [];
+  const out: string[] = [];
+  let visitedEntries = 0;
+
+  function limitError(message: string): OkhError {
+    return new OkhError(
+      "INVALID_MANIFEST",
+      `Resources for skill "${skill.name}" ${message}.`,
+    );
+  }
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    let directory;
+    try {
+      directory = await opendir(dir);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") {
+        throw new OkhError(
+          "NOT_FOUND",
+          `Resources for skill "${skill.name}" are no longer available.`,
+        );
+      }
+      if (code === "EACCES" || code === "EPERM") {
+        throw new OkhError(
+          "INVALID_MANIFEST",
+          `Resources for skill "${skill.name}" cannot be read.`,
+        );
+      }
+      throw error;
+    }
+    for await (const entry of directory) {
+      visitedEntries += 1;
+      if (visitedEntries > MAX_SKILL_RESOURCE_ENTRIES) {
+        throw limitError(`exceed ${MAX_SKILL_RESOURCE_ENTRIES} entries`);
+      }
+      if (entry.name.startsWith(".")) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (SKILL_RESOURCE_SKIP_DIRS.has(entry.name)) continue;
+        if (depth >= MAX_SKILL_RESOURCE_DEPTH) {
+          throw limitError(`exceed depth ${MAX_SKILL_RESOURCE_DEPTH}`);
+        }
+        await walk(full, depth + 1);
+      } else if (entry.isFile()) {
+        if (dir === rootDir && entry.name === "SKILL.md") continue;
+        if (out.length >= MAX_SKILL_RESOURCE_FILES) {
+          throw limitError(`contain more than ${MAX_SKILL_RESOURCE_FILES} files`);
+        }
+        out.push(full);
+      }
+    }
+  }
+
+  await walk(rootDir, 0);
+  return out.sort();
 }

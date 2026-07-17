@@ -1,5 +1,8 @@
 # OKH Prompt Templates + Tools-Only Surface — Implementation Plan
 
+> **Historical note:** Standalone skill APIs shown in old code examples were removed.
+> Current `run` calls always identify a container, module, and skill.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move all MCP-emitted text into `resources/prompts/` templates rendered by a namespaced `{{namespace:path}}` engine, and stop exposing the flows as MCP prompts (tools-only).
@@ -428,7 +431,7 @@ In `src/prompts/meta.ts`, change the module doc comment that says each flow is "
  * Single source of truth for the flows (`ask`, `context`, `onboard`, `run`).
  * Each flow is exposed as a tool. Flows never act on their own — they return
  * discipline/instructions for the client agent to follow. `run` resolves a
- * module skill (container+module) or, with neither, a module-less shared skill.
+ * module skill identified by container, module, and skill.
  */
 ```
 In `src/server/tools.ts`, change the `registerFlowTools` doc comment (currently "The cognitive flows, exposed as tools for clients without prompt support. …") to:

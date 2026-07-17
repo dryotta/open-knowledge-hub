@@ -29,7 +29,7 @@ scenarios:
   - file://scenarios/onboard/existing-folder.yaml
   - file://scenarios/learn/trivial-fact.yaml
   - file://scenarios/run/nested-skill.yaml
-  - file://scenarios/run/shared-grilling.yaml
+  - file://scenarios/help/grilling.yaml
   - file://scenarios/onboard/explain.yaml
   - file://scenarios/onboard/custom-name.yaml
   - file://scenarios/todos/show.yaml

@@ -1,6 +1,13 @@
 ---
-name: grilling
+title: Grilling
 description: Grill the user relentlessly about a plan, design, or scope decision — one question at a time — until you reach a shared understanding. Use to stress-test before building or to negotiate scope.
+keywords:
+  - grill
+  - grilling
+  - stress-test
+  - stress test
+  - decision interview
+  - scope interview
 ---
 
 # Grilling

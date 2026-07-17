@@ -1,3 +1,12 @@
+---
+title: OKF format
+description: Quick reference for authoring conformant Open Knowledge Format bundles.
+keywords:
+  - okf format
+  - okf conformance
+  - concept frontmatter
+---
+
 # OKF Format (quick reference)
 
 A condensed reference for authoring [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)

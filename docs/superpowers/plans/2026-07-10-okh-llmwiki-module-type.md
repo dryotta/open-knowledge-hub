@@ -1,5 +1,8 @@
 # llmwiki Module Type — Implementation Plan
 
+> **Historical note:** Standalone skill APIs referenced in early tasks were removed.
+> Common authoring and ingest guidance now comes from MCP instruction resources.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a native `llmwiki` built-in module type — a scope-bounded, OKF-backed living wiki (Karpathy "LLM Wiki" pattern) with a deterministic wiki-health loader and `initialize`/`write`/`lint` vendored skills.
@@ -942,7 +945,8 @@ git commit -m "feat(llmwiki): vendored initialize/write/lint skills
 - Modify: `resources/tool-meta/add_module.md`
 - Test: `test/run.test.ts`
 
-- [ ] **Step 1: Write the failing test** — extend the ingest shared-skill test in `test/run.test.ts` (the `resolveSharedSkill returns the ingest body` case) with a routing assertion:
+- [ ] **Step 1: Write the failing test** — extend ingest-guidance coverage with an
+  llmwiki routing assertion:
 
 ```typescript
     expect(s.body).toMatch(/llmwiki/);

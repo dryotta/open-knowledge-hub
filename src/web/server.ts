@@ -1,10 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { z } from "zod";
 import type { ContainerService, ResolvedModule } from "../container/service.js";
 import { isOkhError } from "../errors.js";
+import { isPathWithin, normalizeModuleRelativePath } from "../modules/pathSafety.js";
 import type { TodoService } from "../todos/service.js";
 import type { TodoMutationInput, TodoQuery } from "../todos/types.js";
 import type {
@@ -180,26 +181,11 @@ function requireQuery(url: URL, name: string): string {
 }
 
 function normalizeRelativePath(value: string, allowEmpty: boolean): string {
-  const normalized = value.replace(/\\/gu, "/");
-  if (normalized.length === 0 && allowEmpty) return "";
-  if (
-    normalized.length === 0
-    || normalized.startsWith("/")
-    || /^[A-Za-z]:/u.test(normalized)
-    || isAbsolute(value)
-  ) {
-    throw new WebHttpError(400, "INVALID_PATH", "The requested path must be relative to the module.");
+  const normalized = normalizeModuleRelativePath(value, allowEmpty);
+  if (normalized === undefined) {
+    throw new WebHttpError(400, "INVALID_PATH", "The requested path must be a safe module-relative path.");
   }
-  const segments = normalized.split("/");
-  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
-    throw new WebHttpError(400, "INVALID_PATH", "The requested path contains an invalid segment.");
-  }
-  return segments.join("/");
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate);
-  return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
+  return normalized;
 }
 
 async function resolveModule(service: ContainerService, container: string, module: string): Promise<ResolvedModule> {
@@ -230,7 +216,7 @@ async function resolveModulePath(
     }
     throw error;
   }
-  if (!isWithin(moduleRoot, candidateReal)) {
+  if (!isPathWithin(moduleRoot, candidateReal)) {
     throw new WebHttpError(400, "INVALID_PATH", "The requested path escapes the module.");
   }
   return { normalized, realPath: candidateReal };

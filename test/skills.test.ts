@@ -4,9 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   discoverModuleSkills,
+  MAX_SKILL_DECLARED_RESOURCES,
+  MAX_SKILL_RESOURCE_DEPTH,
+  MAX_SKILL_RESOURCE_FILES,
   mergeSkills,
   MODULE_SKILL_ROOTS,
   readSkill,
+  skillResourcePaths,
   skillRootsForType,
   validateModuleSkills,
   type Skill,
@@ -63,9 +67,81 @@ describe("module skills", () => {
     try {
       const dir = join(mod, "grill");
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, "SKILL.md"), "---\nname: grill\ndescription: d\n---\n\nBody.\n");
+      await writeFile(
+        join(dir, "SKILL.md"),
+        "---\nname: grill\ndescription: d\nresources:\n  - okh://instructions/grilling.md\n---\n\nBody.\n",
+      );
       const s = await readSkill(dir, "vendored");
       expect(s?.dir).toBe(dir);
+      expect(s?.resourceUris).toEqual(["okh://instructions/grilling.md"]);
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects skills with an excessive number of declared resources", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      const resources = Array.from(
+        { length: MAX_SKILL_DECLARED_RESOURCES + 1 },
+        (_, index) => `  - okh://docs/example-${index}.md`,
+      ).join("\n");
+      await writeFile(
+        join(mod, "SKILL.md"),
+        `---\nname: excessive\ndescription: d\nresources:\n${resources}\n---\nBody.\n`,
+      );
+
+      await expect(readSkill(mod, "test")).rejects.toThrow(
+        `the maximum is ${MAX_SKILL_DECLARED_RESOURCES}`,
+      );
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects skill sibling trees with too many files", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      await Promise.all(
+        Array.from({ length: MAX_SKILL_RESOURCE_FILES + 1 }, (_, index) =>
+          writeFile(join(mod, `resource-${index}.md`), "x")),
+      );
+      const subject: Skill = {
+        name: "large",
+        description: "d",
+        body: "Body.",
+        source: "test",
+        dir: mod,
+      };
+
+      await expect(skillResourcePaths(subject)).rejects.toThrow(
+        `more than ${MAX_SKILL_RESOURCE_FILES} files`,
+      );
+    } finally {
+      await rm(mod, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects skill sibling trees that exceed the depth budget", async () => {
+    const mod = await mkdtemp(join(tmpdir(), "okh-sk-"));
+    try {
+      let nested = mod;
+      for (let depth = 0; depth <= MAX_SKILL_RESOURCE_DEPTH; depth += 1) {
+        nested = join(nested, `level-${depth}`);
+      }
+      await mkdir(nested, { recursive: true });
+      await writeFile(join(nested, "resource.md"), "x");
+      const subject: Skill = {
+        name: "deep",
+        description: "d",
+        body: "Body.",
+        source: "test",
+        dir: mod,
+      };
+
+      await expect(skillResourcePaths(subject)).rejects.toThrow(
+        `exceed depth ${MAX_SKILL_RESOURCE_DEPTH}`,
+      );
     } finally {
       await rm(mod, { recursive: true, force: true });
     }

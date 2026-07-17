@@ -1,6 +1,10 @@
 # OKH — `resources/` Restructure (prompts + module-type + shared skills)
 
-**Status:** Approved design (pre-implementation)
+> **Partially superseded historical design:** The standalone skill model described
+> below was removed. Every runnable skill now belongs to a module; common guidance is
+> exposed through `okh://instructions/`.
+
+**Status:** Superseded
 **Date:** 2026-07-09
 **Relates to:** `2026-07-07-okh-module-system-redesign-design.md` (completes the skill migration it began)
 

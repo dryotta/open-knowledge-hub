@@ -1,5 +1,8 @@
 # OKH — Prompt Templates + Tools-Only Surface
 
+> **Historical note:** Standalone skill APIs in this record were later removed.
+> Current `run` calls always target a concrete module.
+
 **Status:** Approved design (pre-implementation)
 **Date:** 2026-07-09
 **Branch:** `feat/resources-restructure` (extends the resources restructure)
@@ -275,4 +278,4 @@ the larger-change completion gate.
 
 - Template conditionals/loops (kept in code as pre-rendered `var:` strings).
 - Additional resolver namespaces (`env:`, `date:`, …) — trivial to add later.
-- Any change to operational tools, module-types, or shared skills.
+- Any change to operational tools, module types, or module-scoped skills.

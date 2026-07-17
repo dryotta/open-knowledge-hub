@@ -55,6 +55,10 @@ Instruct the sub-agent to:
    issuance causes verification. Do not add generic benefits, rationale, examples, or likely
    implementation details that the source does not state. Do not specialize a generic source
    term: if the source says `tokens`, do not rewrite it as `access tokens`.
+   Preserve grammatical roles as well as vocabulary: `signed session tokens are issued at
+   login` does not mean that tokens are signed at login. Keep evidentiary relationship phrases
+   verbatim. In particular, do not replace `correlated with` with `when`, `under`, `because`,
+   `due to`, or an unqualified conjunction.
    Use each source's exact path relative to the module root. Never add an assumed directory
    such as `concepts/` when the source path does not contain it. Never attach a source citation
    to a detail that source does not contain; state shared facts and source-specific additions
@@ -69,6 +73,8 @@ Instruct the sub-agent to:
    evidentiary, or scope classification that the cited text does not state.
 3. **Return a self-contained answer**, not the source docs. The answer must stand on its own so
    the main context never needs the bundle. Keep it tight — distilled prose, not pasted sections.
+   For a facts-only answer, prefer minimally edited source sentences over a paraphrase that could
+   shift the subject, action, qualifier, or evidentiary strength.
 4. **Honor the caller's output boundary before assessing scope.** Explicit user constraints
    override the default gap elaboration. If the user asks for only stated facts or forbids
    absent details, omit coverage, gap, and next-step sections unless the user explicitly asks
@@ -103,6 +109,8 @@ path to the exact `<container>/<module>/<item>` identifier. Structure the permit
 
 For a facts-only request, return only the cited facts in the requested grouping and end
 after the last fact. Remove cross-source comparisons, coverage notes, and missing-topic summaries.
+Before returning, compare each fact sentence with its cited source and repair or delete any
+sentence whose subject, verb, timing, or evidentiary qualifier changed.
 
 If a follow-up question arises, ask again rather than holding the bundle open in
 context — each ask is a fresh, cheap fork.

@@ -1,16 +1,18 @@
 ---
 name: write
 description: Integrate new material into this llmwiki — author OKF pages, touch every affected page, maintain cross-links, and update the index and log.
+resources:
+  - okh://instructions/grilling.md
+  - okh://instructions/okf/writer.md
 ---
 
 # Write to an llmwiki module
 
 Fold new material into this wiki as OKF concept pages, keeping the graph connected and the index
-current. A single source or insight typically **touches several pages** — that is expected. Author
-all pages with the global **okf-writer** skill (`run { skill: "okf-writer" }`) for OKF format and
-citation rules — invoke it with only `skill` and `input`, omitting `container` and `module` because
-it is a global skill. The `input` must contain: target path, declared type, source context, and
-affected cross-links. Run these stages in order.
+current. A single source or insight typically **touches several pages** — that is expected.
+Read and apply the [OKF writer instructions](okh://instructions/okf/writer.md) for OKF format
+and citation rules. Keep the active module target; the authoring context must contain its target
+path, declared type, source context, and affected cross-links. Run these stages in order.
 
 ## Stage 1 — Load the scope contract
 
@@ -26,9 +28,10 @@ Unlike a knowledge module's default-NO gate, a wiki **welcomes breadth within it
 Decide:
 
 - **In scope** → proceed.
-- **Out of scope** → do not silently expand scope. Run the global **grilling** skill to propose the
-  *smallest* scope change that would admit it and get the user's explicit agreement, then re-judge.
-  If the user declines, leave it out and say why.
+- **Out of scope** → do not silently expand scope. Read and apply the
+  [grilling instructions](okh://instructions/grilling.md) to propose the *smallest* scope change
+  that would admit it and get the user's explicit agreement, then re-judge. If the user declines,
+  leave it out and say why.
 
 ## Stage 3 — Integrate (touch every affected page)
 

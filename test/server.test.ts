@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -71,7 +71,7 @@ function normalizedWhitespace(text: string | undefined): string {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 12 tools and no prompts", async () => {
+  it("exposes exactly the 14 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([
@@ -82,8 +82,10 @@ describe("MCP server surface", () => {
       "config",
       "context",
       "dream",
+      "help",
       "inspect",
       "onboard",
+      "read_resource",
       "run",
       "sync",
       "todos",
@@ -99,6 +101,16 @@ describe("MCP server surface", () => {
     const config = tools.find((t) => t.name === "config")!;
     expect(config.description).toContain("Known keys:");
     expect(config.description).not.toContain("{{");
+    const help = tools.find((t) => t.name === "help")!;
+    expect(help.description).toContain('question: "ingest"');
+    expect(help.description).toContain('question: "grilling"');
+    const run = tools.find((t) => t.name === "run")!;
+    expect(run.description).toMatch(/ingestion is the exception/i);
+    expect(run.description).toMatch(/only after the user confirms/i);
+    const readResource = tools.find((t) => t.name === "read_resource")!;
+    expect(readResource.description).toContain("bounded protocol-native");
+    expect(readResource.description).toContain("nextOffset");
+    expect(readResource.description).toContain("only `okh://` URIs");
   });
 
   it("add_module without create returns the workflow (no mutation)", async () => {
@@ -265,6 +277,9 @@ describe("MCP server surface", () => {
     const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations ?? {}]));
     expect(byName.inspect!.readOnlyHint).toBe(true);
     expect(byName.ask!.readOnlyHint).toBe(true);
+    expect(byName.help!.readOnlyHint).toBe(true);
+    expect(byName.read_resource!.readOnlyHint).toBe(true);
+    expect(byName.read_resource!.openWorldHint).toBe(false);
     expect(byName.add_container!.openWorldHint).toBe(true);
     expect(byName.add_module!.openWorldHint).toBe(true);
     expect(byName.sync!.openWorldHint).toBe(true);
@@ -597,15 +612,30 @@ describe("MCP server surface", () => {
 
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
     await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "aa-empty", type: "recipes", description: "empty recipes", create: true } });
+    const localSkill = join(dir, "kb", ".okh", "skills", "digest");
+    await mkdir(localSkill, { recursive: true });
+    await writeFile(
+      join(localSkill, "SKILL.md"),
+      "---\nname: digest\ndescription: Summarize this module\n---\nDigest it.\n",
+    );
     const res = await client.callTool({ name: "inspect", arguments: {} });
-    // No-arg inspect renders the hub map: container line + module (labeled by type) +
-    // the built-in-skills-by-type block, each module's runnable skills, and the Guardrails footer.
+    // No-arg inspect renders every runnable skill only beneath its concrete module.
     expect(textOf(res)).toContain("hub  [local]");
     expect(textOf(res)).toMatch(/- kb {2}\(module type: knowledge\) {2}0 items/);
-    expect(textOf(res)).toContain("Built-in skills");
-    expect(textOf(res)).toContain("built-in skills: initialize, learn");
-    // The Examples block shows the module-scoped run shape with real container/module names.
-    expect(textOf(res)).toContain("Examples:");
+    expect(textOf(res)).toContain("runnable skills:");
+    expect(textOf(res)).toContain("digest — Summarize this module [module local: .okh/skills/digest/SKILL.md]");
+    expect(textOf(res)).toMatch(/initialize.*\[module type\]/);
+    expect(textOf(res)).toMatch(/learn.*\[module type\]/);
+    expect(textOf(res).match(/^# .+$/gm)).toEqual([
+      "# Hub",
+      "# Run a module skill",
+      "# Module skills",
+      "# Guardrails",
+    ]);
+    expect(textOf(res)).not.toContain("okh://instructions/");
+    // The example shows the module-scoped run shape with real container/module names.
+    expect(textOf(res)).toContain("Example:");
     expect(textOf(res)).toMatch(/run \{ container: "hub", module: "kb", skill: "\w+" \}/);
     expect(textOf(res)).toContain("Guardrails");
 
@@ -715,6 +745,15 @@ describe("MCP server surface", () => {
     expect(text).toContain("User prefers dark mode");
     expect(text).toContain("mem");
     expect(text).toMatch(/append|timestamp/i);
+  });
+
+  it("run requires an explicit container and module", async () => {
+    const { client } = await connect();
+    const res = await client.callTool({
+      name: "run",
+      arguments: { skill: "grilling" },
+    });
+    expect(isErrorResult(res)).toBe(true);
   });
 
   it("dream tool returns the consolidation discipline pointing at resolved modules", async () => {

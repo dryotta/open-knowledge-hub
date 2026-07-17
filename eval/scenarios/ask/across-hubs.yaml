@@ -34,6 +34,7 @@
         - type: javascript
           value: file://assertions/judge.ts
           config:
+            graderModel: gpt-5.6-sol
             criteria:
               - id: no-fabrication
                 text: >-
@@ -43,11 +44,15 @@
                   refresh tokens rotate on use; (3) if the response draws on memory evidence,
                   kb-hub memory reports refresh failures correlated with client clock drift greater
                   than 60 seconds, and identifies the February regression as the same root-cause
-                  family as the January auth spike. A bare coverage label without named absent topics
-                  and clearly labeled synthesis or inference drawn from the listed facts are allowed.
+                  family as the January auth spike. Those two memory classifications are stated
+                  explicitly in the fixture; do not reject them as inferred causal claims when they
+                  are scoped to the February regression and cite the memory source. A bare coverage
+                  label without named absent topics and clearly labeled synthesis or inference drawn
+                  from the listed facts are allowed.
                   The user's constraint forbids enumerating absent-topic gaps. Unsupported specific algorithms, timeout
                   values, or implementation details not present in any fixture remain disallowed even
-                  when labeled as inference/synthesis. None of the source facts classifies the
-                  implementation statements as causal or correlational; the answer may say that neither
+                  when labeled as inference/synthesis. The knowledge-module statements about token
+                  issuance and request-time verification do not classify the relationship between
+                  those two mechanisms as causal or correlational; the answer may say that neither
                   relationship is established but must not assign either classification to them.
                   A citation to nonexistent `concepts/auth.md` is also a fabrication.

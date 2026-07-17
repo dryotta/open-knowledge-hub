@@ -1,5 +1,9 @@
 # OKH `resources/` Restructure Implementation Plan
 
+> **Partially superseded historical plan:** The prompt and module-type layout remains,
+> but the standalone skill model described below was removed. Every runnable skill now
+> belongs to a module; common guidance is exposed through `okh://instructions/`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reorganize `resources/` into `prompts/` (flow bodies), `shared/skills/` (runnable-standalone skills), and `module-types/` (per-type skills); reclaim four orphaned OKF docs; add module-less `run { skill }` for shared skills.

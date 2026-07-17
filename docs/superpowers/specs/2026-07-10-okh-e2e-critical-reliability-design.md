@@ -97,7 +97,7 @@ Add a deterministic memory assertion that requires:
 
 Strengthen the skill:
 
-- shared `grilling` must be invoked as a real shared skill, not emulated;
+- grilling guidance must be loaded from its canonical instruction resource;
 - after scope agreement, Stage 2 edits happen immediately;
 - describing future steps is not completion;
 - after edits, follow the global write policy: summarize the diff, obtain explicit confirmation,
