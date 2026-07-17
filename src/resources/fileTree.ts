@@ -23,9 +23,16 @@ export interface FileTreeResourceEntry {
   name: string;
   title: string;
   description: string;
+  keywords: readonly string[];
   text: string;
   size: number;
   annotations: Annotations;
+}
+
+export interface FileTreeSearchOptions {
+  limit?: number;
+  fallback?: boolean;
+  fields?: "all" | "keywords";
 }
 
 function titleFromBody(body: string, path: string): string {
@@ -41,6 +48,44 @@ function descriptionFromBody(body: string): string {
   const singleLine = paragraph.replace(/\s+/gu, " ");
   return singleLine.length > 240 ? `${singleLine.slice(0, 237)}...` : singleLine;
 }
+
+const SEARCH_STOPWORDS = new Set([
+  "about",
+  "and",
+  "are",
+  "can",
+  "could",
+  "does",
+  "explain",
+  "for",
+  "from",
+  "have",
+  "help",
+  "how",
+  "into",
+  "please",
+  "should",
+  "show",
+  "that",
+  "the",
+  "their",
+  "there",
+  "this",
+  "use",
+  "using",
+  "was",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "with",
+  "would",
+  "you",
+  "your",
+]);
 
 async function markdownPaths(root: string): Promise<string[]> {
   const paths: string[] = [];
@@ -67,7 +112,7 @@ function searchTokens(query: string): string[] {
     query
       .toLowerCase()
       .split(/[^a-z0-9]+/u)
-      .filter((token) => token.length >= 3),
+      .filter((token) => token.length >= 3 && !SEARCH_STOPWORDS.has(token)),
   )];
 }
 
@@ -98,12 +143,25 @@ export class FileTreeResourceProvider implements ResourceProvider {
       const title = stringField(data, "title")?.trim() || titleFromBody(text, path);
       const description =
         stringField(data, "description")?.trim() || descriptionFromBody(text);
+      const rawKeywords = data["keywords"];
+      if (
+        rawKeywords !== undefined
+        && (
+          !Array.isArray(rawKeywords)
+          || rawKeywords.some((keyword) => typeof keyword !== "string" || keyword.trim().length === 0)
+        )
+      ) {
+        throw new Error(`Resource "${path}" frontmatter keywords must be non-empty strings.`);
+      }
+      const keywords = (rawKeywords as string[] | undefined)?.map((keyword) =>
+        keyword.trim().toLowerCase()) ?? [];
       return {
         path,
         uri: fileTreeUri(config.uriPrefix, path),
         name: `${config.id}/${path}`,
         title,
         description,
+        keywords,
         text,
         size: Buffer.byteLength(text),
         annotations: {
@@ -156,14 +214,35 @@ export class FileTreeResourceProvider implements ResourceProvider {
     };
   }
 
-  search(query: string | undefined, limit = 4, fallback = true): FileTreeResourceEntry[] {
+  async resolveLink(uri: string): Promise<ResourceLink | undefined> {
+    const entry = this.get(uri);
+    return entry ? this.link(entry) : undefined;
+  }
+
+  search(
+    query: string | undefined,
+    options: FileTreeSearchOptions = {},
+  ): FileTreeResourceEntry[] {
+    const {
+      limit = 4,
+      fallback = true,
+      fields = "all",
+    } = options;
     if (!query?.trim()) {
       const index = this.entries.find((entry) => entry.path === "index.md");
       return fallback ? (index ? [index] : this.entries.slice(0, 1)) : [];
     }
+    const normalizedQuery = query.toLowerCase();
     const tokens = searchTokens(query);
     const ranked = this.entries
       .map((entry) => {
+        if (fields === "keywords") {
+          const score = entry.keywords.reduce(
+            (total, keyword) => total + (normalizedQuery.includes(keyword) ? 10 : 0),
+            0,
+          );
+          return { entry, score };
+        }
         const path = entry.path.toLowerCase();
         const title = entry.title.toLowerCase();
         const description = entry.description.toLowerCase();

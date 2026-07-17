@@ -402,7 +402,11 @@ export async function registerTools(
         if (Object.keys(args.set).length === 0) {
           return fail("config { set } must include at least one key.");
         }
-        const manifest = await service.setModuleConfig(container, module, args.set);
+        const update = await service.setModuleConfigWithChanges(container, module, args.set);
+        const { manifest } = update;
+        if (update.descriptionChanged) {
+          await server.sendResourceListChanged();
+        }
         const changed = Object.keys(args.set);
         return ok(
           `Updated ${changed.join(", ")} for module "${module}" in container "${container}".\n\n${formatModuleConfig(container, module, manifest)}`,

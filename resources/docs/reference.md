@@ -44,7 +44,9 @@ Templates:
 Container and module instances are enumerated by `resources/list`. File leaves are
 discovered progressively from a module resource and read through the file template.
 The server advertises `listChanged`; it does not advertise resource subscriptions.
-One module file read is capped at 16 MiB.
+One module file read is capped at 16 MiB. Module index resources are bounded and
+mark truncated file listings explicitly; known file URIs remain directly readable
+when they fit the file-read cap.
 
 ## Built-in module types and skills
 
@@ -96,8 +98,11 @@ Skill discipline...
 ```
 
 `name` is required and unique in the effective module set. `description` is used
-for routing. `resources` is an optional array of absolute resource URIs returned as
-links by `run`. A skill leaf's sibling files are also returned as module-file links.
+for routing. `resources` is an optional array of URIs that a registered provider can
+resolve and read; `run` rejects unsupported or unavailable dependencies. A skill
+leaf's sibling files are also returned as module-file links. A skill may declare up
+to 64 resource URIs; local resource discovery is capped at 128 files, 4,096 visited
+entries, and 16 directory levels. Exceeding a limit rejects `run`.
 
 ## Configuration and variables
 

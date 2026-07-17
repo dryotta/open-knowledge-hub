@@ -9,7 +9,7 @@ import type {
 } from "../container/service.js";
 import { OkhError } from "../errors.js";
 import { skillResourcePaths, type Skill } from "../modules/skills.js";
-import { FileTreeResourceProvider, type FileTreeResourceEntry } from "./fileTree.js";
+import { FileTreeResourceProvider } from "./fileTree.js";
 import { ContainerResourceProvider } from "./hub.js";
 import { mimeTypeForPath } from "./moduleFiles.js";
 import type { ResourceProvider } from "./types.js";
@@ -41,21 +41,22 @@ export class OkhResourceRegistry {
     const docs = this.documentation.search(question)
       .map((entry) => this.documentation.link(entry));
     const common = question?.trim()
-      ? this.instructions.search(question, 2, false)
+      ? this.instructions.search(question, {
+        limit: 2,
+        fallback: false,
+        fields: "keywords",
+      })
         .map((entry) => this.instructions.link(entry))
       : this.instructions.search(undefined)
         .map((entry) => this.instructions.link(entry));
     return [...new Map([...docs, ...common].map((link) => [link.uri, link])).values()];
   }
 
-  private bundledEntry(uri: string): {
-    provider: FileTreeResourceProvider;
-    entry: FileTreeResourceEntry;
-  } | undefined {
-    const docs = this.documentation.get(uri);
-    if (docs) return { provider: this.documentation, entry: docs };
-    const instructions = this.instructions.get(uri);
-    if (instructions) return { provider: this.instructions, entry: instructions };
+  private async resolveLink(uri: string): Promise<ResourceLink | undefined> {
+    for (const provider of this.providers) {
+      const link = await provider.resolveLink?.(uri);
+      if (link) return link;
+    }
     return undefined;
   }
 
@@ -66,23 +67,14 @@ export class OkhResourceRegistry {
   ): Promise<ResourceLink[]> {
     const links: ResourceLink[] = [];
     for (const uri of skill.resourceUris ?? []) {
-      const bundled = this.bundledEntry(uri);
-      if (!bundled) {
-        if (uri.startsWith("okh://")) {
-          throw new OkhError(
-            "INVALID_MANIFEST",
-            `Skill "${skill.name}" references unknown resource "${uri}".`,
-          );
-        }
-        links.push({
-          type: "resource_link",
-          uri,
-          name: uri,
-          description: `Resource required by the "${skill.name}" skill.`,
-        });
-        continue;
+      const link = await this.resolveLink(uri);
+      if (!link) {
+        throw new OkhError(
+          "INVALID_MANIFEST",
+          `Skill "${skill.name}" references a resource that this server cannot read: "${uri}".`,
+        );
       }
-      links.push(bundled.provider.link(bundled.entry));
+      links.push(link);
     }
 
     for (const absolutePath of await skillResourcePaths(skill)) {
@@ -93,13 +85,24 @@ export class OkhResourceRegistry {
           `Bundled skill "${skill.name}" must reference shared guidance through frontmatter resources.`,
         );
       }
+      const uri = moduleFileUri(target.name, module.path, relativePath);
+      const link = await this.resolveLink(uri);
+      if (!link) {
+        throw new OkhError(
+          "INVALID_MANIFEST",
+          `Bundled file "${relativePath}" for skill "${skill.name}" cannot be read as an MCP resource.`,
+        );
+      }
       links.push({
-        type: "resource_link",
-        uri: moduleFileUri(target.name, module.path, relativePath),
+        ...link,
         name: relativePath,
         description: `Bundled file for the "${skill.name}" skill.`,
         mimeType: mimeTypeForPath(relativePath),
-        annotations: { audience: ["assistant"], priority: 0.7 },
+        annotations: {
+          ...link.annotations,
+          audience: ["assistant"],
+          priority: 0.7,
+        },
       });
     }
 

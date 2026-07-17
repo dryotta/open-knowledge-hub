@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { opendir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { OkhError } from "../errors.js";
 import { parseFrontmatter, stringField } from "../util/frontmatter.js";
@@ -47,6 +47,10 @@ export interface SkillRootScan {
 
 const SKILL_TREE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
 const SKILL_RESOURCE_SKIP_DIRS = new Set(["node_modules", "__pycache__", ".venv"]);
+export const MAX_SKILL_DECLARED_RESOURCES = 64;
+export const MAX_SKILL_RESOURCE_FILES = 128;
+export const MAX_SKILL_RESOURCE_ENTRIES = 4_096;
+export const MAX_SKILL_RESOURCE_DEPTH = 16;
 
 function isNotFound(err: unknown): boolean {
   return (
@@ -83,6 +87,13 @@ function skillFromText(
       );
     }
     resourceUris = rawResources.map((value) => value.trim());
+    if (resourceUris.length > MAX_SKILL_DECLARED_RESOURCES) {
+      throw new OkhError(
+        "INVALID_MANIFEST",
+        `Skill "${name}" declares ${resourceUris.length} resources;`
+        + ` the maximum is ${MAX_SKILL_DECLARED_RESOURCES}.`,
+      );
+    }
     for (const uri of resourceUris) {
       try {
         new URL(uri);
@@ -289,11 +300,19 @@ export async function skillResourcePaths(skill: Skill): Promise<string[]> {
   const rootDir = skill.dir;
   if (!rootDir) return [];
   const out: string[] = [];
+  let visitedEntries = 0;
 
-  async function walk(dir: string): Promise<void> {
-    let entries;
+  function limitError(message: string): OkhError {
+    return new OkhError(
+      "INVALID_MANIFEST",
+      `Resources for skill "${skill.name}" ${message}.`,
+    );
+  }
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    let directory;
     try {
-      entries = await readdir(dir, { withFileTypes: true });
+      directory = await opendir(dir);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "ENOTDIR") {
@@ -310,19 +329,29 @@ export async function skillResourcePaths(skill: Skill): Promise<string[]> {
       }
       throw error;
     }
-    for (const entry of entries) {
+    for await (const entry of directory) {
+      visitedEntries += 1;
+      if (visitedEntries > MAX_SKILL_RESOURCE_ENTRIES) {
+        throw limitError(`exceed ${MAX_SKILL_RESOURCE_ENTRIES} entries`);
+      }
       if (entry.name.startsWith(".")) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (SKILL_RESOURCE_SKIP_DIRS.has(entry.name)) continue;
-        await walk(full);
+        if (depth >= MAX_SKILL_RESOURCE_DEPTH) {
+          throw limitError(`exceed depth ${MAX_SKILL_RESOURCE_DEPTH}`);
+        }
+        await walk(full, depth + 1);
       } else if (entry.isFile()) {
         if (dir === rootDir && entry.name === "SKILL.md") continue;
+        if (out.length >= MAX_SKILL_RESOURCE_FILES) {
+          throw limitError(`contain more than ${MAX_SKILL_RESOURCE_FILES} files`);
+        }
         out.push(full);
       }
     }
   }
 
-  await walk(rootDir);
+  await walk(rootDir, 0);
   return out.sort();
 }

@@ -121,6 +121,11 @@ export type AddContainerOutcome =
 
 export type ModuleAction = "create-folder" | "scaffold";
 
+export interface ModuleConfigUpdate {
+  manifest: ModuleManifest;
+  descriptionChanged: boolean;
+}
+
 export interface AddModulePlan {
   kind: "module";
   actions: ModuleAction[];
@@ -767,7 +772,20 @@ export class ContainerService {
    * manifest. Legacy fields (e.g. `name`) are dropped as a side effect of the
    * rewrite through the schema.
    */
-  setModuleConfig(container: string, module: string, patch: Record<string, unknown>): Promise<ModuleManifest> {
+  async setModuleConfig(
+    container: string,
+    module: string,
+    patch: Record<string, unknown>,
+  ): Promise<ModuleManifest> {
+    return (await this.setModuleConfigWithChanges(container, module, patch)).manifest;
+  }
+
+  /** Apply a manifest patch and report metadata changes from the same mutex transaction. */
+  setModuleConfigWithChanges(
+    container: string,
+    module: string,
+    patch: Record<string, unknown>,
+  ): Promise<ModuleConfigUpdate> {
     return this.mutex.run(async () => {
       if (Object.keys(patch).length === 0) {
         throw new OkhError("INVALID_ARGUMENT", "config { set } must include at least one key.");
@@ -805,7 +823,10 @@ export class ContainerService {
       if (Object.keys(cfg).length > 0) next.config = cfg;
       else delete next.config;
       await saveModuleManifest(moduleRoot, next);
-      return next;
+      return {
+        manifest: next,
+        descriptionChanged: manifest.description !== next.description,
+      };
     });
   }
 

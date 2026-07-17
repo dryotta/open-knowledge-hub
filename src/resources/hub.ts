@@ -1,4 +1,4 @@
-import type { Resource } from "@modelcontextprotocol/sdk/types.js";
+import type { Resource, ResourceLink } from "@modelcontextprotocol/sdk/types.js";
 import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type {
@@ -8,7 +8,12 @@ import type {
 } from "../container/service.js";
 import { isOkhError } from "../errors.js";
 import { formatSyncDescriptor } from "../util/syncFormat.js";
-import { listModuleFiles, readModuleFile } from "./moduleFiles.js";
+import {
+  listModuleFiles,
+  MAX_RESOURCE_FILE_BYTES,
+  moduleFileMetadata,
+  readModuleFile,
+} from "./moduleFiles.js";
 import type { ResourceProvider } from "./types.js";
 import {
   CONTAINER_URI_TEMPLATE,
@@ -19,6 +24,7 @@ import {
   decodeTemplateValue,
   moduleFileUri,
   moduleUri,
+  parseContainerResourceUri,
 } from "./uris.js";
 
 const RESOURCE_NOT_FOUND = -32002;
@@ -26,6 +32,9 @@ const COMMON_ANNOTATIONS = {
   audience: ["user", "assistant"] as Array<"user" | "assistant">,
 };
 const INDEX_OVERVIEW_TYPES = new Set(["knowledge", "llmwiki", "skills"]);
+export const MAX_MODULE_OVERVIEW_BYTES = 256 * 1024;
+export const MAX_MODULE_RESOURCE_BYTES = 512 * 1024;
+const MAX_MODULE_DESCRIPTION_BYTES = 4 * 1024;
 
 function notFound(uri: URL): McpError {
   return new McpError(RESOURCE_NOT_FOUND, `Resource not found: ${uri.toString()}`);
@@ -51,6 +60,36 @@ function markdownLabel(value: string): string {
 
 function resourceLink(label: string, uri: string): string {
   return `[${markdownLabel(label)}](<${uri}>)`;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value) <= maxBytes) return value;
+  const suffix = maxBytes >= 3 ? "..." : ".".repeat(maxBytes);
+  const contentLimit = maxBytes - Buffer.byteLength(suffix);
+  let bytes = 0;
+  let truncated = "";
+  for (const character of value) {
+    const width = Buffer.byteLength(character);
+    if (bytes + width > contentLimit) break;
+    truncated += character;
+    bytes += width;
+  }
+  return `${truncated}${suffix}`;
+}
+
+function containersResource(): Resource {
+  return {
+    uri: CONTAINERS_URI,
+    name: "containers",
+    title: "Containers",
+    description: "Browse registered containers and their modules.",
+    mimeType: "text/markdown",
+    annotations: { ...COMMON_ANNOTATIONS, priority: 1 },
+  };
+}
+
+function toResourceLink(resource: Resource): ResourceLink {
+  return { type: "resource_link", ...resource };
 }
 
 function containerResource(container: ResolvedContainer): Resource {
@@ -157,23 +196,54 @@ async function renderModule(
   container: ResolvedContainer,
   module: ResolvedModule,
 ): Promise<string> {
-  const files = await listModuleFiles(module.absPath);
+  const listing = await listModuleFiles(module.absPath);
+  const { files } = listing;
   const overviewCandidates = INDEX_OVERVIEW_TYPES.has(module.type)
     ? ["index.md", "README.md"]
     : ["README.md", "index.md"];
-  const overviewPath = overviewCandidates.find((path) => files.includes(path));
   let overview = "_No overview file._";
-  if (overviewPath) {
+  for (const overviewPath of overviewCandidates) {
     const overviewUri = moduleFileUri(container.name, module.path, overviewPath);
-    const payload = await readModuleFile(module.absPath, overviewPath, overviewUri);
-    overview = payload.text?.trim() || "_Overview file is empty._";
+    try {
+      const metadata = await moduleFileMetadata(module.absPath, overviewPath, overviewUri);
+      if (metadata.size > MAX_MODULE_OVERVIEW_BYTES) {
+        overview = metadata.size <= MAX_RESOURCE_FILE_BYTES
+          ? `_Overview omitted because it exceeds ${MAX_MODULE_OVERVIEW_BYTES} bytes;`
+            + ` read [${overviewPath}](<${overviewUri}>) directly._`
+          : `_Overview omitted because it exceeds both the ${MAX_MODULE_OVERVIEW_BYTES}-byte`
+            + " overview limit and the direct resource-read limit._";
+      } else {
+        const payload = await readModuleFile(
+          module.absPath,
+          overviewPath,
+          overviewUri,
+          MAX_MODULE_OVERVIEW_BYTES,
+        );
+        overview = payload.text === undefined
+          ? `_Overview omitted because ${overviewPath} is not valid UTF-8; read it directly._`
+          : payload.text.trim() || "_Overview file is empty._";
+      }
+      break;
+    } catch (error) {
+      if (error instanceof McpError && error.code === RESOURCE_NOT_FOUND) continue;
+      if (error instanceof McpError && error.code === -32602) {
+        overview = `_Overview omitted because it exceeded ${MAX_MODULE_OVERVIEW_BYTES} bytes while being read._`;
+        break;
+      }
+      if (error instanceof McpError && error.code === -32603) {
+        overview = `_Overview file ${overviewPath} cannot be read._`;
+        break;
+      }
+      throw error;
+    }
   }
+  const description = truncateUtf8(module.description || "(none)", MAX_MODULE_DESCRIPTION_BYTES);
   const lines = [
     `# Module: ${markdownLabel(module.path)}`,
     "",
     `- Container: ${resourceLink(container.name, containerUri(container.name))}`,
     `- Type: ${module.type}`,
-    `- Description: ${module.description || "(none)"}`,
+    `- Description: ${description}`,
     "",
     "## Overview",
     "",
@@ -182,14 +252,46 @@ async function renderModule(
     "## Files",
     "",
   ];
+  const fileSectionStart = lines.length;
+  let renderedBytes = Buffer.byteLength(`${lines.join("\n")}\n`);
+  let outputTruncated = listing.truncated;
   if (files.length === 0) {
-    lines.push("_No visible files._");
+    const line = "_No visible files._";
+    lines.push(line);
+    renderedBytes += Buffer.byteLength(`${line}\n`);
   } else {
     for (const path of files) {
-      lines.push(`- ${resourceLink(path, moduleFileUri(container.name, module.path, path))}`);
+      const line = `- ${resourceLink(path, moduleFileUri(container.name, module.path, path))}`;
+      const lineBytes = Buffer.byteLength(`${line}\n`);
+      if (renderedBytes + lineBytes > MAX_MODULE_RESOURCE_BYTES) {
+        outputTruncated = true;
+        break;
+      }
+      lines.push(line);
+      renderedBytes += lineBytes;
     }
   }
-  return `${lines.join("\n")}\n`;
+  if (outputTruncated) {
+    const marker =
+      `_File list truncated to keep this resource below ${MAX_MODULE_RESOURCE_BYTES} bytes;`
+      + " read known file URIs directly._";
+    const markerBytes = Buffer.byteLength(`${marker}\n`);
+    while (
+      renderedBytes + markerBytes > MAX_MODULE_RESOURCE_BYTES
+      && lines.length > fileSectionStart
+    ) {
+      renderedBytes -= Buffer.byteLength(`${lines.pop()!}\n`);
+    }
+    lines.push(marker);
+  }
+  const rendered = `${lines.join("\n")}\n`;
+  if (Buffer.byteLength(rendered) <= MAX_MODULE_RESOURCE_BYTES) return rendered;
+
+  const marker = "\n\n_Resource truncated to the module response limit._\n";
+  return `${truncateUtf8(
+    rendered,
+    MAX_MODULE_RESOURCE_BYTES - Buffer.byteLength(marker),
+  )}${marker}`;
 }
 
 export class ContainerResourceProvider implements ResourceProvider {
@@ -197,15 +299,70 @@ export class ContainerResourceProvider implements ResourceProvider {
 
   constructor(private readonly service: ContainerService) {}
 
+  async resolveLink(uriText: string): Promise<ResourceLink | undefined> {
+    const location = parseContainerResourceUri(uriText);
+    if (!location) return undefined;
+    if (location.kind === "root") return toResourceLink(containersResource());
+
+    const uri = new URL(uriText);
+    try {
+      if (location.kind === "container") {
+        return toResourceLink(
+          containerResource(await resolveContainer(this.service, uri, location.container)),
+        );
+      }
+
+      const { container, module } = await resolveModule(
+        this.service,
+        uri,
+        location.container,
+        location.module,
+      );
+      if (location.kind === "module") {
+        return toResourceLink(moduleResource(container, module));
+      }
+
+      const metadata = await moduleFileMetadata(module.absPath, location.path, uriText);
+      if (metadata.size > MAX_RESOURCE_FILE_BYTES) return undefined;
+      return {
+        type: "resource_link",
+        uri: uriText,
+        name: `file/${location.container}/${location.module}/${location.path}`,
+        title: location.path,
+        description: `File in module "${location.module}" of container "${location.container}".`,
+        mimeType: metadata.mimeType,
+        size: metadata.size,
+        annotations: {
+          ...COMMON_ANNOTATIONS,
+          priority: 0.6,
+          lastModified: metadata.lastModified,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof McpError
+        && (
+          error.code === RESOURCE_NOT_FOUND
+          || error.code === -32602
+          || error.code === -32603
+        )
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
   async register(server: McpServer): Promise<void> {
+    const root = containersResource();
     server.registerResource(
-      "containers",
-      CONTAINERS_URI,
+      root.name,
+      root.uri,
       {
-        title: "Containers",
-        description: "Browse registered containers and their modules.",
-        mimeType: "text/markdown",
-        annotations: { ...COMMON_ANNOTATIONS, priority: 1 },
+        title: root.title,
+        description: root.description,
+        mimeType: root.mimeType,
+        annotations: root.annotations,
       },
       async (uri) => ({
         contents: [{
@@ -314,7 +471,10 @@ export class ContainerResourceProvider implements ResourceProvider {
               const target = (await this.service.resolveTargets(containerName, moduleName))[0];
               const module = target?.modules.find((candidate) => candidate.path === moduleName);
               if (!module) return [];
-              return (await listModuleFiles(module.absPath))
+              return (await listModuleFiles(module.absPath, {
+                maxFiles: 500,
+                maxEntries: 5_000,
+              })).files
                 .filter((path) => path.startsWith(value))
                 .slice(0, 100);
             } catch (error) {

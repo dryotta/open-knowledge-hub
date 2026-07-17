@@ -1,6 +1,10 @@
 ---
 title: OKF format
 description: Quick reference for authoring conformant Open Knowledge Format bundles.
+keywords:
+  - okf format
+  - okf conformance
+  - concept frontmatter
 ---
 
 # OKF Format (quick reference)

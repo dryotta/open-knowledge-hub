@@ -1,6 +1,12 @@
 ---
 title: OKF writer
 description: Author an Open Knowledge Format (OKF) bundle from gathered findings, with every claim grounded in cited sources. Use when a skill needs to write knowledge as a portable markdown bundle.
+keywords:
+  - okf writer
+  - okf bundle
+  - knowledge bundle
+  - knowledge pack
+  - concept authoring
 ---
 
 # OKF Writer

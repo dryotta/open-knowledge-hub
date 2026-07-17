@@ -1,6 +1,12 @@
 ---
 title: Ingest source documents
 description: Turn source documents (PDFs, docs, images, URLs, or pasted content) into cited candidate knowledge and route each to the target module's own skill for scope-gating and writing.
+keywords:
+  - ingest
+  - ingestion
+  - source document
+  - import document
+  - pdf
 ---
 
 # Ingest source documents

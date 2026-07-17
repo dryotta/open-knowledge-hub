@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -11,7 +11,14 @@ import { ContainerService } from "../src/container/service.js";
 import { resolvePaths } from "../src/config.js";
 import { TodoService } from "../src/todos/service.js";
 import { moduleFileUri, moduleUri } from "../src/resources/uris.js";
-import { MAX_RESOURCE_FILE_BYTES } from "../src/resources/moduleFiles.js";
+import {
+  MAX_MODULE_INDEX_FILES,
+  MAX_RESOURCE_FILE_BYTES,
+} from "../src/resources/moduleFiles.js";
+import {
+  MAX_MODULE_OVERVIEW_BYTES,
+  MAX_MODULE_RESOURCE_BYTES,
+} from "../src/resources/hub.js";
 
 const cleanups: string[] = [];
 const clients: Client[] = [];
@@ -168,6 +175,63 @@ describe("MCP resources", () => {
     expect(uris).toContain(moduleUri("hub", "notes"));
   });
 
+  it("notifies clients when module resource metadata changes", async () => {
+    const { client } = await connectWithKnowledgeModule();
+    let notified!: () => void;
+    const notification = new Promise<void>((resolve) => {
+      notified = resolve;
+    });
+    client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+      notified();
+    });
+
+    await client.callTool({
+      name: "config",
+      arguments: {
+        container: "hub",
+        module: "kb",
+        set: { description: "Updated knowledge description" },
+      },
+    });
+    await notification;
+
+    const listed = await client.listResources();
+    expect(listed.resources.find((resource) => resource.uri === moduleUri("hub", "kb")))
+      .toMatchObject({ description: "Updated knowledge description" });
+  });
+
+  it("notifies for the final state of concurrent module description changes", async () => {
+    const { client } = await connectWithKnowledgeModule();
+    let notifications = 0;
+    client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+      notifications += 1;
+    });
+
+    await Promise.all([
+      client.callTool({
+        name: "config",
+        arguments: {
+          container: "hub",
+          module: "kb",
+          set: { description: "Temporary description" },
+        },
+      }),
+      client.callTool({
+        name: "config",
+        arguments: {
+          container: "hub",
+          module: "kb",
+          set: { description: "Team knowledge" },
+        },
+      }),
+    ]);
+
+    expect(notifications).toBe(2);
+    const listed = await client.listResources();
+    expect(listed.resources.find((resource) => resource.uri === moduleUri("hub", "kb")))
+      .toMatchObject({ description: "Team knowledge" });
+  });
+
   it("rejects traversal, absolute paths, NUL bytes, and hidden control files without leaking paths", async () => {
     const { client, root } = await connectWithKnowledgeModule();
 
@@ -205,16 +269,55 @@ describe("MCP resources", () => {
     ).rejects.toThrow(/Resource not found/);
   });
 
-  it("applies the module-file size limit to module overviews", async () => {
+  it("omits oversized module overviews without failing the module resource", async () => {
     const { client, root } = await connectWithKnowledgeModule();
     await writeFile(
       join(root, "kb", "index.md"),
       Buffer.alloc(MAX_RESOURCE_FILE_BYTES + 1, "a"),
     );
 
+    const moduleIndex = await client.readResource({ uri: moduleUri("hub", "kb") });
+    const text = "text" in moduleIndex.contents[0] ? moduleIndex.contents[0].text : "";
+    expect(text).toContain("Overview omitted");
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(MAX_MODULE_RESOURCE_BYTES);
     await expect(
-      client.readResource({ uri: moduleUri("hub", "kb") }),
+      client.readResource({ uri: moduleFileUri("hub", "kb", "index.md") }),
     ).rejects.toThrow(/maximum readable size/);
+  });
+
+  it("omits malformed UTF-8 overviews without expanding the module response", async () => {
+    const { client, root } = await connectWithKnowledgeModule();
+    await writeFile(
+      join(root, "kb", "index.md"),
+      Buffer.alloc(MAX_MODULE_OVERVIEW_BYTES, 0xff),
+    );
+
+    const moduleIndex = await client.readResource({ uri: moduleUri("hub", "kb") });
+    const text = "text" in moduleIndex.contents[0] ? moduleIndex.contents[0].text : "";
+    expect(text).toContain("not valid UTF-8");
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(MAX_MODULE_RESOURCE_BYTES);
+  });
+
+  it("loads the overview independently while bounding a large module file list", async () => {
+    const { client, root } = await connectWithKnowledgeModule();
+    await rm(join(root, "kb", "index.md"));
+    const bulk = join(root, "kb", "bulk");
+    await mkdir(bulk);
+    for (let start = 0; start < MAX_MODULE_INDEX_FILES; start += 100) {
+      await Promise.all(
+        Array.from({ length: 100 }, (_, offset) => {
+          const index = start + offset;
+          return writeFile(join(bulk, `file-${index.toString().padStart(4, "0")}.txt`), "x");
+        }),
+      );
+    }
+    await writeFile(join(root, "kb", "index.md"), "# Late overview\n");
+
+    const resource = await client.readResource({ uri: moduleUri("hub", "kb") });
+    const text = "text" in resource.contents[0] ? resource.contents[0].text : "";
+    expect(text).toContain("Late overview");
+    expect(text).toContain("File list truncated");
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(MAX_MODULE_RESOURCE_BYTES);
   });
 
   it("returns documentation and common instruction links from help", async () => {
@@ -231,13 +334,32 @@ describe("MCP resources", () => {
     expect(links).toContain("okh://instructions/ingest.md");
   });
 
-  it("links common and local skill resources from run", async () => {
+  it("does not attach unrelated common instructions to generic help questions", async () => {
+    const { client } = await connectWithKnowledgeModule();
+    for (const question of [
+      "How do I configure the wake phrase?",
+      "Where is the web UI?",
+      "Where is the user interface?",
+      "How do I change user settings?",
+    ]) {
+      const result = await client.callTool({ name: "help", arguments: { question } });
+      const links = result.content
+        .filter((item) => item.type === "resource_link")
+        .map((item) => item.type === "resource_link" ? item.uri : "");
+      expect(links.some((uri) => uri.startsWith("okh://docs/"))).toBe(true);
+      expect(links.some((uri) => uri.startsWith("okh://instructions/"))).toBe(false);
+    }
+  });
+
+  it("links common, dynamic, and local skill resources from run", async () => {
     const { client, root } = await connectWithKnowledgeModule();
     const localSkillDir = join(root, "kb", ".okh", "skills", "custom");
+    const moduleDependency = moduleUri("hub", "kb");
+    const fileDependency = moduleFileUri("hub", "kb", "concepts/auth.md");
     await mkdir(localSkillDir, { recursive: true });
     await writeFile(
       join(localSkillDir, "SKILL.md"),
-      "---\nname: custom\ndescription: Local custom discipline\n---\nRead [the rubric](rubric.md).\n",
+      `---\nname: custom\ndescription: Local custom discipline\nresources:\n  - ${moduleDependency}\n  - ${fileDependency}\n---\nRead [the rubric](rubric.md).\n`,
     );
     await writeFile(join(localSkillDir, "rubric.md"), "# Rubric\n\nBe precise.\n");
 
@@ -261,9 +383,86 @@ describe("MCP resources", () => {
     const localUri = moduleFileUri("hub", "kb", ".okh/skills/custom/rubric.md");
     expect(custom.content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "resource_link", uri: localUri }),
+      expect.objectContaining({ type: "resource_link", uri: moduleDependency }),
+      expect.objectContaining({ type: "resource_link", uri: fileDependency }),
     ]));
 
     const rubric = await client.readResource({ uri: localUri });
     expect("text" in rubric.contents[0] ? rubric.contents[0].text : "").toContain("Be precise.");
+  });
+
+  it("rejects skill dependencies the server cannot read", async () => {
+    const { client, root } = await connectWithKnowledgeModule();
+    const skillDir = join(root, "kb", ".okh", "skills", "external");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\nname: external\ndescription: Unsupported external dependency\nresources:\n  - https://example.com/guide.md\n---\nDo not run.\n",
+    );
+
+    const result = await client.callTool({
+      name: "run",
+      arguments: { container: "hub", module: "kb", skill: "external" },
+    });
+    expect(result).toMatchObject({ isError: true });
+    expect(result.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("this server cannot read"),
+      }),
+    ]));
+    expect(result.content).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "resource_link",
+        uri: "https://example.com/guide.md",
+      }),
+    ]));
+  });
+
+  it("rejects oversized local skill sibling resources", async () => {
+    const { client, root } = await connectWithKnowledgeModule();
+    const skillDir = join(root, "kb", ".okh", "skills", "oversized");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\nname: oversized\ndescription: Oversized local dependency\n---\nRead guide.bin.\n",
+    );
+    const file = await open(join(skillDir, "guide.bin"), "w");
+    await file.truncate(MAX_RESOURCE_FILE_BYTES + 1);
+    await file.close();
+
+    const result = await client.callTool({
+      name: "run",
+      arguments: { container: "hub", module: "kb", skill: "oversized" },
+    });
+    expect(result).toMatchObject({ isError: true });
+    expect(result.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("cannot be read as an MCP resource"),
+      }),
+    ]));
+    expect(result.content.some((item) => item.type === "resource_link")).toBe(false);
+  });
+
+  it("does not link local skill sibling files that cannot be opened", async () => {
+    if (process.platform === "win32" || process.getuid?.() === 0) return;
+    const { client, root } = await connectWithKnowledgeModule();
+    const skillDir = join(root, "kb", ".okh", "skills", "denied");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\nname: denied\ndescription: Denied local dependency\n---\nRead private.md.\n",
+    );
+    const privatePath = join(skillDir, "private.md");
+    await writeFile(privatePath, "# Private\n");
+    await chmod(privatePath, 0);
+
+    const result = await client.callTool({
+      name: "run",
+      arguments: { container: "hub", module: "kb", skill: "denied" },
+    });
+    expect(result).toMatchObject({ isError: true });
+    expect(result.content.some((item) => item.type === "resource_link")).toBe(false);
   });
 });
