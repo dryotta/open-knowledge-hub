@@ -1,4 +1,8 @@
-import type { CallToolResult, ResourceLink } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  CallToolResult,
+  EmbeddedResource,
+  ResourceLink,
+} from "@modelcontextprotocol/sdk/types.js";
 import { isOkhError } from "../errors.js";
 import type { RenderContext } from "../prompts/templates.js";
 import { describeShape, loadToolMeta } from "./toolMeta.js";
@@ -13,9 +17,10 @@ export function ok(
   text: string,
   structured?: Record<string, unknown>,
   resourceLinks: ResourceLink[] = [],
+  embeddedResources: EmbeddedResource[] = [],
 ): CallToolResult {
   return {
-    content: [{ type: "text", text }, ...resourceLinks],
+    content: [{ type: "text", text }, ...embeddedResources, ...resourceLinks],
     ...(structured ? { structuredContent: structured } : {}),
   };
 }

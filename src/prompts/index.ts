@@ -5,6 +5,23 @@ import { formatSyncDescriptor } from "../util/syncFormat.js";
 
 const NONE = "(none provided — clarify with the user)";
 
+export interface ResourceStatus {
+  uri: string;
+  embedded: boolean;
+}
+
+function renderResourceStatuses(
+  resources: readonly ResourceStatus[],
+  empty: string,
+): string {
+  if (resources.length === 0) return empty;
+  return resources.map(({ uri, embedded }) =>
+    embedded
+      ? `- \`${uri}\` — embedded in this tool result`
+      : `- \`${uri}\` — call \`read_resource { uri: ${JSON.stringify(uri)} }\` before continuing`,
+  ).join("\n");
+}
+
 /** Render the target containers -> modules -> absolute paths as a markdown list. */
 function renderTargets(targets: ResolvedContainer[]): string {
   if (targets.length === 0) return "_No containers are registered. Use the `add_container` tool first._";
@@ -47,6 +64,7 @@ export function buildRun(
   target: ResolvedContainer,
   module: ResolvedModule,
   input?: string,
+  requiredResources: readonly ResourceStatus[] = [],
 ): Promise<string> {
   const targetBlock =
     `# Target\n`
@@ -57,15 +75,25 @@ export function buildRun(
       skill: { name: skill.name, description: skill.description, body: skill.body },
       input: input ?? NONE,
       target: targetBlock,
+      resources: renderResourceStatuses(
+        requiredResources,
+        "_This skill declares no required MCP resources._",
+      ),
     },
   });
 }
 
-export function buildHelp(question: string | undefined, resourceUris: string[]): Promise<string> {
+export function buildHelp(
+  question: string | undefined,
+  resources: readonly ResourceStatus[],
+): Promise<string> {
   return renderTemplate("help", {
     vars: {
       question: question?.trim() || "Explain how to use Open Knowledge Hub effectively.",
-      resources: resourceUris.map((uri) => `- \`${uri}\``).join("\n"),
+      resources: renderResourceStatuses(
+        resources,
+        "_No matching canonical resources were selected._",
+      ),
     },
   });
 }

@@ -73,7 +73,7 @@ exec -> git/gh -> registry -> container -> modules
 ```
 
 - `src/resources/` owns MCP resource providers, URI construction, MIME handling,
-  safe module reads, and help/resource-link catalogs.
+  safe module reads, bounded embedded-resource selection, and the model-read adapter.
 - `resources/docs/` is canonical current documentation.
 - `resources/instructions/` contains reusable, non-runnable guidance.
 - `resources/module-types/` contains module loaders' scaffolds and built-in skills.

@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { chmod, mkdir, mkdtemp, open, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ResourceListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  ResourceListChangedNotificationSchema,
+  type CallToolResult,
+} from "@modelcontextprotocol/sdk/types.js";
 import { buildServer } from "../src/server/index.js";
 import { ContainerService } from "../src/container/service.js";
 import { resolvePaths } from "../src/config.js";
@@ -19,10 +22,39 @@ import {
   MAX_MODULE_OVERVIEW_BYTES,
   MAX_MODULE_RESOURCE_BYTES,
 } from "../src/resources/hub.js";
+import {
+  embedResourceLinks,
+  MAX_EMBEDDED_RESOURCE_BYTES,
+} from "../src/resources/embedding.js";
 
 const cleanups: string[] = [];
 const clients: Client[] = [];
 const servers: McpServer[] = [];
+
+function toolContent(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): CallToolResult["content"] {
+  return "content" in result ? (result as CallToolResult).content : [];
+}
+
+function embeddedText(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): string {
+  return toolContent(result)
+    .filter((item) => item.type === "resource" && "text" in item.resource)
+    .map((item) => item.type === "resource" && "text" in item.resource
+      ? item.resource.text
+      : "")
+    .join("\n");
+}
+
+function embeddedUris(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): string[] {
+  return toolContent(result)
+    .filter((item) => item.type === "resource")
+    .map((item) => item.type === "resource" ? item.resource.uri : "");
+}
 
 async function tempDir(prefix: string): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), prefix));
@@ -72,6 +104,29 @@ afterEach(async () => {
 });
 
 describe("MCP resources", () => {
+  it("defers known oversized embeddings without invoking their read callbacks", async () => {
+    const read = vi.fn(async () => ({
+      contents: [{
+        uri: "okh://docs/oversized.md",
+        mimeType: "text/markdown",
+        text: "must not be read",
+      }],
+    }));
+    const selected = await embedResourceLinks(
+      [{
+        type: "resource_link",
+        uri: "okh://docs/oversized.md",
+        name: "oversized",
+        size: MAX_EMBEDDED_RESOURCE_BYTES + 1,
+      }],
+      read,
+    );
+
+    expect(read).not.toHaveBeenCalled();
+    expect(selected.embeddedResources).toEqual([]);
+    expect(selected.deferredUris).toEqual(["okh://docs/oversized.md"]);
+  });
+
   it("lists direct resources and dynamic templates without flattening module files", async () => {
     const { client } = await connectWithKnowledgeModule();
     expect(client.getServerCapabilities()?.resources).toMatchObject({ listChanged: true });
@@ -124,6 +179,117 @@ describe("MCP resources", () => {
       mimeType: "application/octet-stream",
       blob: Buffer.from([0, 255, 16, 32]).toString("base64"),
     });
+  });
+
+  it("adapts text and binary resources into bounded embedded tool results", async () => {
+    const { client } = await connectWithKnowledgeModule();
+    const textUri = moduleFileUri("hub", "kb", "concepts/auth.md");
+    const text = await client.callTool({
+      name: "read_resource",
+      arguments: { uri: textUri },
+    });
+    expect(toolContent(text)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "resource",
+        resource: expect.objectContaining({
+          uri: textUri,
+          mimeType: "text/markdown",
+          text: expect.stringContaining("Use passkeys."),
+        }),
+      }),
+    ]));
+    expect((text as CallToolResult).structuredContent).toMatchObject({
+      uri: textUri,
+      contentIndex: 0,
+      contentCount: 1,
+      offset: 0,
+      totalBytes: expect.any(Number),
+    });
+
+    const binaryUri = moduleFileUri("hub", "kb", "logo.bin");
+    const binary = await client.callTool({
+      name: "read_resource",
+      arguments: { uri: binaryUri },
+    });
+    expect(toolContent(binary)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "resource",
+        resource: expect.objectContaining({
+          uri: binaryUri,
+          mimeType: "application/octet-stream",
+          blob: Buffer.from([0, 255, 16, 32]).toString("base64"),
+        }),
+      }),
+    ]));
+  });
+
+  it("continues large UTF-8 resources from nextOffset without splitting characters", async () => {
+    const { client, root } = await connectWithKnowledgeModule();
+    const original = "é日本".repeat(1_000);
+    const path = "concepts/unicode.md";
+    await writeFile(join(root, "kb", "concepts", "unicode.md"), original);
+    const uri = moduleFileUri("hub", "kb", path);
+    let offset = 0;
+    let reconstructed = "";
+
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const result = await client.callTool({
+        name: "read_resource",
+        arguments: { uri, offset, maxBytes: 257 },
+      });
+      const block = toolContent(result).find((item) => item.type === "resource");
+      expect(block?.type).toBe("resource");
+      if (!block || block.type !== "resource" || !("text" in block.resource)) break;
+      expect(Buffer.byteLength(block.resource.text)).toBeLessThanOrEqual(257);
+      reconstructed += block.resource.text;
+
+      const structured = (result as CallToolResult).structuredContent as
+        | { nextOffset?: number }
+        | undefined;
+      if (structured?.nextOffset === undefined) break;
+      expect(structured.nextOffset).toBeGreaterThan(offset);
+      offset = structured.nextOffset;
+    }
+    expect(reconstructed).toBe(original);
+
+    const invalidBoundary = await client.callTool({
+      name: "read_resource",
+      arguments: { uri, offset: 1, maxBytes: 256 },
+    });
+    expect(invalidBoundary).toMatchObject({ isError: true });
+    expect(toolContent(invalidBoundary)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("UTF-8 character boundary"),
+      }),
+    ]));
+  });
+
+  it("rejects unsupported and unknown read_resource URIs", async () => {
+    const { client } = await connectWithKnowledgeModule();
+    const unsupported = await client.callTool({
+      name: "read_resource",
+      arguments: { uri: "https://example.com/guide.md" },
+    });
+    expect(unsupported).toMatchObject({ isError: true });
+    expect(toolContent(unsupported)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("only accepts okh:// URIs"),
+      }),
+    ]));
+
+    const missing = await client.callTool({
+      name: "read_resource",
+      arguments: { uri: "okh://docs/missing.md" },
+    });
+    expect(missing).toMatchObject({ isError: true });
+    expect(toolContent(missing)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("Resource not found"),
+      }),
+    ]));
   });
 
   it("emits valid links for punctuation, Unicode, percent signs, and nested paths", async () => {
@@ -332,6 +498,13 @@ describe("MCP resources", () => {
 
     expect(links.some((uri) => uri.startsWith("okh://docs/"))).toBe(true);
     expect(links).toContain("okh://instructions/ingest.md");
+    const text = result.content
+      .filter((item) => item.type === "text")
+      .map((item) => item.type === "text" ? item.text : "")
+      .join("\n");
+    expect(embeddedText(result)).toContain("## Stage 5 — Confirm the routing plan");
+    expect(text).toContain("embedded in this tool result");
+    expect(text).toMatch(/never open an `okh:\/\/`\s+URI with filesystem or web tools/u);
   });
 
   it("does not attach unrelated common instructions to generic help questions", async () => {
@@ -348,7 +521,25 @@ describe("MCP resources", () => {
         .map((item) => item.type === "resource_link" ? item.uri : "");
       expect(links.some((uri) => uri.startsWith("okh://docs/"))).toBe(true);
       expect(links.some((uri) => uri.startsWith("okh://instructions/"))).toBe(false);
+      expect(embeddedText(result)).not.toContain("# Grilling");
     }
+  });
+
+  it("includes selected common instruction content directly in help", async () => {
+    const { client } = await connectWithKnowledgeModule();
+    const result = await client.callTool({
+      name: "help",
+      arguments: { question: "Stress-test this plan one decision at a time" },
+    });
+    const text = result.content
+      .filter((item) => item.type === "text")
+      .map((item) => item.type === "text" ? item.text : "")
+      .join("\n");
+
+    expect(embeddedText(result)).toContain("# Grilling");
+    expect(embeddedText(result)).toContain("Ask questions **one decision at a time**");
+    expect(embeddedText(result)).toContain("provide your recommended answer");
+    expect(text).toMatch(/never open an `okh:\/\/`\s+URI with filesystem or web tools/u);
   });
 
   it("links common, dynamic, and local skill resources from run", async () => {
@@ -375,6 +566,11 @@ describe("MCP resources", () => {
       "okh://instructions/ingest.md",
       "okh://instructions/okf/writer.md",
     ]));
+    expect(embeddedUris(initialize)).toEqual(expect.arrayContaining([
+      "okh://instructions/grilling.md",
+      "okh://instructions/ingest.md",
+      "okh://instructions/okf/writer.md",
+    ]));
 
     const custom = await client.callTool({
       name: "run",
@@ -386,9 +582,65 @@ describe("MCP resources", () => {
       expect.objectContaining({ type: "resource_link", uri: moduleDependency }),
       expect.objectContaining({ type: "resource_link", uri: fileDependency }),
     ]));
+    expect(embeddedUris(custom)).toEqual(expect.arrayContaining([
+      moduleDependency,
+      fileDependency,
+    ]));
+    expect(embeddedUris(custom)).not.toContain(localUri);
 
     const rubric = await client.readResource({ uri: localUri });
     expect("text" in rubric.contents[0] ? rubric.contents[0].text : "").toContain("Be precise.");
+  });
+
+  it("defers oversized required skill context to read_resource", async () => {
+    const { client, root } = await connectWithKnowledgeModule();
+    const skillDir = join(root, "kb", ".okh", "skills", "large-context");
+    const dependencyPath = "concepts/large-context.md";
+    const dependencyUri = moduleFileUri("hub", "kb", dependencyPath);
+    await writeFile(
+      join(root, "kb", "concepts", "large-context.md"),
+      "x".repeat(MAX_EMBEDDED_RESOURCE_BYTES + 1),
+    );
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      `---\nname: large-context\ndescription: Needs large context\nresources:\n  - ${dependencyUri}\n---\nApply the dependency.\n`,
+    );
+
+    const result = await client.callTool({
+      name: "run",
+      arguments: { container: "hub", module: "kb", skill: "large-context" },
+    });
+    expect(result).not.toMatchObject({ isError: true });
+    expect(result.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "resource_link", uri: dependencyUri }),
+    ]));
+    expect(embeddedUris(result)).not.toContain(dependencyUri);
+    const prompt = toolContent(result)
+      .filter((item) => item.type === "text")
+      .map((item) => item.type === "text" ? item.text : "")
+      .join("\n");
+    expect(prompt).toContain(
+      `read_resource { uri: ${JSON.stringify(dependencyUri)} }`,
+    );
+    expect((result as CallToolResult).structuredContent).toMatchObject({
+      deferredRequiredUris: [dependencyUri],
+    });
+
+    const chunk = await client.callTool({
+      name: "read_resource",
+      arguments: { uri: dependencyUri, maxBytes: 1_024 },
+    });
+    expect(toolContent(chunk)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "resource",
+        resource: expect.objectContaining({ uri: dependencyUri }),
+      }),
+    ]));
+    expect((chunk as CallToolResult).structuredContent).toMatchObject({
+      nextOffset: 1_024,
+      totalBytes: MAX_EMBEDDED_RESOURCE_BYTES + 1,
+    });
   });
 
   it("rejects skill dependencies the server cannot read", async () => {

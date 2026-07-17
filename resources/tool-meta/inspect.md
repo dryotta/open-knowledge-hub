@@ -9,4 +9,5 @@ module's complete runnable skill set nested beneath it, followed by the routing
 gates. Skills bundled with the module type and skills defined locally in the module
 are labeled by origin; a local skill overrides a same-named module-type skill. With
 `container`: that container's status and modules. With `container` + `module`: the
-module's items, overview, skills, and health.
+module's items, overview, skills, and health. Common guidance is accessed through
+`help`, not listed as a global instruction section in the inspect output.

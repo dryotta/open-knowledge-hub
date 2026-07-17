@@ -17,10 +17,11 @@ description: Complete current reference for OKH tools, resources, module types, 
 | `todos` | operation plus filters/mutation fields | List, preview, create, or update memory-module todos. |
 | `ask` | `container?`, `module?`, `question?` | Return discipline for answering from modules. |
 | `context` | `container?`, `task?` | Return discipline for selecting a working set. |
-| `run` | `container`, `module`, `skill`, `input?` | Return one module skill and its resource links. |
+| `run` | `container`, `module`, `skill`, `input?` | Return one module skill, links, and bounded embedded required resources. |
 | `onboard` | none | Return first-run setup guidance. |
 | `dream` | `container?`, `module?` | Return description-consolidation guidance. |
-| `help` | `question?` | Search canonical docs/common instructions and return relevant resource links. |
+| `help` | `question?` | Search canonical docs/common instructions and return bounded embedded matches plus links. |
+| `read_resource` | `uri`, `contentIndex?`, `offset?`, `maxBytes?` | Read one bounded chunk from an `okh://` resource as embedded content. |
 | `capabilities` | none | Probe roots, sampling, form elicitation, and MCP Apps support. |
 
 All cognitive tools return guidance for the client agent; they do not run an LLM.
@@ -48,6 +49,13 @@ One module file read is capped at 16 MiB. Module index resources are bounded and
 mark truncated file listings explicitly; known file URIs remain directly readable
 when they fit the file-read cap.
 
+Resources are application-driven. A full MCP host reads them with `resources/read`.
+For a model on a tool-only host, `read_resource` returns one selected content item in
+chunks of 256-49,152 source bytes. Its structured result reports `contentIndex`,
+`offset`, `totalBytes`, and `nextOffset`. `help` and `run` proactively embed immediately
+required text up to 24 KiB per resource and 64 KiB per tool result; larger requirements
+remain linked and are marked for `read_resource`.
+
 ## Built-in module types and skills
 
 | Module type | Loader | Built-in skills |
@@ -66,6 +74,8 @@ Common instructions live at:
 - `okh://instructions/okf/format.md`
 
 Module-type skills consume these resources through their declared dependencies.
+`run` embeds declared requirements within the context budget and keeps every dependency
+available as a canonical link.
 
 ## Module manifest
 
@@ -99,10 +109,11 @@ Skill discipline...
 
 `name` is required and unique in the effective module set. `description` is used
 for routing. `resources` is an optional array of URIs that a registered provider can
-resolve and read; `run` rejects unsupported or unavailable dependencies. A skill
-leaf's sibling files are also returned as module-file links. A skill may declare up
-to 64 resource URIs; local resource discovery is capped at 128 files, 4,096 visited
-entries, and 16 directory levels. Exceeding a limit rejects `run`.
+resolve and read; `run` rejects unsupported or unavailable dependencies. Declared
+dependencies are embedded when bounded and otherwise deferred to `read_resource`. A
+skill leaf's sibling files are returned as on-demand module-file links. A skill may
+declare up to 64 resource URIs; local resource discovery is capped at 128 files, 4,096
+visited entries, and 16 directory levels. Exceeding a limit rejects `run`.
 
 ## Configuration and variables
 

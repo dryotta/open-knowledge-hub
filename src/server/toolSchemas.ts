@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  MAX_READ_RESOURCE_CHUNK_BYTES,
+  MIN_READ_RESOURCE_CHUNK_BYTES,
+} from "../resources/embedding.js";
 
 const container = z.string().optional();
 const moduleArg = z.string().optional();
@@ -35,6 +39,16 @@ export const toolShapes = {
   },
   onboard: {},
   help: { question: z.string().optional() },
+  read_resource: {
+    uri: z.string().min(1).max(8_192),
+    contentIndex: z.number().int().nonnegative().optional(),
+    offset: z.number().int().nonnegative().optional(),
+    maxBytes: z.number()
+      .int()
+      .min(MIN_READ_RESOURCE_CHUNK_BYTES)
+      .max(MAX_READ_RESOURCE_CHUNK_BYTES)
+      .optional(),
+  },
   ask: { container, module: moduleArg, question: z.string().optional() },
   capabilities: {},
   context: { container, task: z.string().optional() },

@@ -55,8 +55,10 @@ must be unique within one module but may repeat in another module because every
 `run` identifies `{ container, module, skill }`.
 
 Built-in skills declare reusable dependencies with a `resources` array in
-frontmatter. `run` returns those dependencies as `resource_link` content. Sibling
-files of a local skill are linked through the module-file resource template.
+frontmatter. `run` returns those dependencies as `resource_link` content and embeds
+the required content when it fits the bounded context budget. Oversized requirements
+are explicitly deferred to `read_resource`. Sibling files of a local skill are linked
+through the module-file resource template for on-demand reads.
 
 ## Routing
 
@@ -71,8 +73,8 @@ specific module required to run it; there is no independent skill catalog.
 - Read, list, or filter todos: call `todos` directly.
 - Answer from stored content: call `ask`.
 - Assemble a task-specific working set: call `context`.
-- Ingest source documents: read `okh://instructions/ingest.md`, confirm its
-  routing plan, then run the target module's writing skill.
+- Ingest source documents: call `help { question: "ingest" }`, apply its embedded
+  instructions, confirm the routing plan, then run the target module's writing skill.
 - Explain OKH: call `help`.
 
 After writes, call `sync` for each changed container. In `shared` mode, `sync`

@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type {
   AddContainerPlan,
@@ -39,6 +40,7 @@ import {
 import { formatSyncDescriptor } from "../util/syncFormat.js";
 import { loadPromptFile } from "../prompts/templates.js";
 import type { OkhResourceRegistry } from "../resources/index.js";
+import { chunkResourceResult } from "../resources/embedding.js";
 
 /** Render the no-arg hub map with every runnable skill nested under its module. */
 function formatHub(r: HubMap): string {
@@ -409,14 +411,78 @@ export async function registerTools(
   );
 
   server.registerTool(
+    "read_resource",
+    {
+      ...(await toolReg("read_resource")),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    handler(async (args: {
+      uri: string;
+      contentIndex?: number;
+      offset?: number;
+      maxBytes?: number;
+    }) => {
+      if (isBlank(args.uri)) return fail("uri cannot be empty.");
+      let result;
+      try {
+        result = await resources.read(args.uri);
+      } catch (error) {
+        if (error instanceof McpError) return fail(error.message);
+        throw error;
+      }
+      const chunk = chunkResourceResult(result, {
+        ...(args.contentIndex !== undefined ? { contentIndex: args.contentIndex } : {}),
+        ...(args.offset !== undefined ? { offset: args.offset } : {}),
+        ...(args.maxBytes !== undefined ? { maxBytes: args.maxBytes } : {}),
+      });
+      const end = chunk.offset + chunk.returnedBytes;
+      const continuation = chunk.nextOffset !== undefined
+        ? ` Continue with read_resource { uri: ${JSON.stringify(args.uri)},`
+          + ` contentIndex: ${chunk.contentIndex}, offset: ${chunk.nextOffset} }.`
+        : " End of content.";
+      return ok(
+        `Read ${JSON.stringify(args.uri)} content ${chunk.contentIndex + 1}`
+        + `/${chunk.contentCount}, bytes [${chunk.offset}, ${end})`
+        + ` of ${chunk.totalBytes}.${continuation}`,
+        {
+          uri: args.uri,
+          contentIndex: chunk.contentIndex,
+          contentCount: chunk.contentCount,
+          offset: chunk.offset,
+          returnedBytes: chunk.returnedBytes,
+          totalBytes: chunk.totalBytes,
+          ...(chunk.nextOffset !== undefined ? { nextOffset: chunk.nextOffset } : {}),
+          ...(chunk.mimeType ? { mimeType: chunk.mimeType } : {}),
+        },
+        [],
+        [chunk.embeddedResource],
+      );
+    }),
+  );
+
+  server.registerTool(
     "help",
     { ...(await toolReg("help")), annotations: { readOnlyHint: true, openWorldHint: false } },
     handler(async (args: { question?: string }) => {
-      const links = resources.helpLinks(args.question);
+      const selected = await resources.helpResources(args.question);
+      const embedded = new Set(selected.embeddedUris);
       return ok(
-        await buildHelp(args.question, links.map((link) => link.uri)),
-        { resources: links.map(({ uri, name, title, description }) => ({ uri, name, title, description })) },
-        links,
+        await buildHelp(args.question, selected.links.map(({ uri }) => ({
+          uri,
+          embedded: embedded.has(uri),
+        }))),
+        {
+          resources: selected.links.map(({ uri, name, title, description }) => ({
+            uri,
+            name,
+            title,
+            description,
+            embedded: embedded.has(uri),
+          })),
+          deferredUris: selected.deferredUris,
+        },
+        selected.links,
+        selected.embeddedResources,
       );
     }),
   );
@@ -487,10 +553,30 @@ async function registerFlowTools(
       const target = targets[0];
       const mod = target?.modules.find((m) => m.path === args.module);
       if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
+      const selected = await resources.skillResources(skill, target, mod);
+      const required = new Set(selected.requiredUris);
+      const embedded = new Set(selected.embeddedUris);
       return ok(
-        await buildRun(skill, target, mod, args.input),
-        undefined,
-        await resources.skillLinks(skill, target, mod),
+        await buildRun(
+          skill,
+          target,
+          mod,
+          args.input,
+          selected.requiredUris.map((uri) => ({ uri, embedded: embedded.has(uri) })),
+        ),
+        {
+          resources: selected.links.map(({ uri, name, title, description }) => ({
+            uri,
+            name,
+            title,
+            description,
+            required: required.has(uri),
+            embedded: embedded.has(uri),
+          })),
+          deferredRequiredUris: selected.deferredUris,
+        },
+        selected.links,
+        selected.embeddedResources,
       );
     }),
   );

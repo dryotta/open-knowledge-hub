@@ -27,8 +27,10 @@ that were added while paraphrasing the `Task` line; only user-stated details def
    for an implementation task unless the task includes a failure to debug. Never put
    a conditional item in the selected working set merely because it could help "if"
    a different problem appears later; omit it until that problem is part of the task.
-3. Select every item the task needs across ALL module types — knowledge alone is
-   rarely enough:
+3. Evaluate candidates across every module type, then select only the items the
+   task needs now. Module-type coverage is not a goal: selecting zero items from
+   a type is correct when none directly applies.
+   Consider:
    - knowledge concepts that inform the task,
    - skills whose procedure applies to the task, including skills that launch/run
      CLI tools — match the task to a skill by what it does, not just its name,
@@ -39,9 +41,10 @@ that were added while paraphrasing the `Task` line; only user-stated details def
    it matters. Prefer paths/links over pasted content. Cite the complete listed
    item path, including its filename and extension; a module or directory path is
    not an item citation.
-   Include only module types with at least one selected item. Never create a bullet
-   for an excluded item, even to label it irrelevant or not applicable. A concise
-   gap summary may say that no relevant item exists, but must not name or cite the
+   Include only module types with at least one selected item. Do not emit empty
+   module headings or "no items selected" placeholders. Never create a bullet for
+   an excluded item, even to label it irrelevant or not applicable. A concise gap
+   summary may say that no relevant item exists, but must not name or cite the
    rejected item.
 5. Surface gaps: what the task needs that no module provides. Name only information
    required by the stated task; do not invent concrete libraries, algorithms, or
@@ -53,5 +56,8 @@ that were added while paraphrasing the `Task` line; only user-stated details def
 
 Output a concise brief the agent can act on — not a transcript of file contents.
 Include the applicable skills by path, not just knowledge concepts.
+Before sending it, apply a final rejection gate: delete any selected-item bullet
+whose rationale describes the item as optional, conditional, merely available,
+not needed, not applicable, or useful only if another problem occurs.
 
 </discipline>

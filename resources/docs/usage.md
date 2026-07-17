@@ -10,7 +10,11 @@ The default wake phrase is `hub`. Change it with
 
 ## Browse resources
 
-MCP clients can browse:
+Resources are application-driven in MCP. Full clients can browse with
+`resources/list` and `resources/read`; agents on tool-only hosts call
+`read_resource { uri }`. Do not pass `okh://` URIs to filesystem or web tools.
+
+Start from:
 
 - `okh://containers` - containers
 - `okh://containers/{container}` - one container's modules
@@ -18,8 +22,10 @@ MCP clients can browse:
 - `okh://docs/index.md` - canonical product documentation
 - `okh://instructions/index.md` - reusable built-in guidance
 
-Module file links are percent-encoded URIs returned by the module resource. Reading
-one returns text with its MIME type or a base64 blob for binary content.
+Module file links are percent-encoded URIs returned by the module resource.
+`read_resource` returns at most 48 KiB of source content as a protocol-native embedded
+resource. Continue large content with the returned `nextOffset`; select another content
+item with `contentIndex`.
 
 ## Common requests
 
@@ -36,7 +42,8 @@ one returns text with its MIME type or a base64 blob for binary content.
 | Explain OKH | `hub, how should I organize several skill collections?` |
 
 The agent routes module work through `run { container, module, skill, input? }`.
-`run` supplies discipline and resource links; it does not edit by itself.
+`run` supplies discipline, resource links, and bounded embedded copies of declared
+required resources. It does not edit by itself.
 
 ## Add containers and modules
 
@@ -53,11 +60,11 @@ Say:
 
 > hub, ingest these lab PDFs into my Health module.
 
-Provide readable chat content, explicit file paths, or URLs. The agent reads
-`okh://instructions/ingest.md`, extracts cited candidates, checks the target
-module's scope and source-retention policy, and presents a routing plan. It must
-wait for a later confirmation before copying sources, running the target skill,
-editing, or syncing.
+Provide readable chat content, explicit file paths, or URLs. The agent calls
+`help { question: "ingest" }`, applies the embedded ingest instructions, extracts cited
+candidates, checks the target module's scope and source-retention policy, and presents
+a routing plan. It must wait for a later confirmation before copying sources, running
+the target skill, editing, or syncing.
 
 The confirmed ingest plan continues through the target module's `learn`, `remember`,
 or `write` skill, with common guidance supplied through MCP resources.

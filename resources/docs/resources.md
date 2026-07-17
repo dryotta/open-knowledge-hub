@@ -18,10 +18,13 @@ OKH initially registers three provider families:
 3. `instructions` - reusable guidance linked by module-type skills.
 
 Each provider implements the small `ResourceProvider` contract in
-`src/resources/types.ts`: an `id`, `register(server)`, and optionally
-`resolveLink(uri)` when its resources may be declared as skill dependencies. The
-composition root is `src/resources/index.ts`; add future providers there without
-coupling them to tool registration.
+`src/resources/types.ts`: an `id`, `register(server)`, bounded
+`read(uri, { maxBytes? })`, and optionally `resolveLink(uri)` when its resources may be
+declared as skill dependencies. The same provider read powers both protocol
+`resources/read` and the model-controlled adapter. Providers must reject a bounded read
+before returning content over `maxBytes`. The composition root is
+`src/resources/index.ts`; add future providers there without coupling them to tool
+registration.
 
 ## URI contract
 
@@ -54,6 +57,36 @@ and sync send list-changed notifications. Subscriptions are not advertised: SDK
 v1.29.0's high-level `McpServer` does not implement subscribe/unsubscribe or updated
 notifications.
 
+## Client compatibility and model access
+
+MCP resources are application-driven: registering a resource does not guarantee that a
+host exposes `resources/read` to its model. A `resource_link` gives a capable client a
+URI to fetch; it does not contain the resource body and is not an instruction to use a
+filesystem or web fetcher.
+
+GitHub Copilot CLI currently exposes custom MCP tools to its model but does not make
+custom MCP resource reads model-callable. Live link-only probes on CLI `1.0.71` and
+`1.0.72-0` issued `tools/list` and `tools/call` but no `resources/list` or
+`resources/read`; the same tool result worked when the resource was embedded. GitHub
+tracks model-facing support in
+[copilot-cli#1803](https://github.com/github/copilot-cli/issues/1803) and
+[copilot-cli#1518](https://github.com/github/copilot-cli/issues/1518). The experimental
+`session.mcp.resources.*` Copilot SDK RPCs let a host integration read resources; they
+are not model tools.
+
+OKH therefore keeps resources canonical and adds two protocol-native compatibility
+paths:
+
+- `read_resource` is a read-only model tool over the same provider registry. It returns
+  one embedded resource chunk, capped at 48 KiB of source bytes. `contentIndex`,
+  `offset`, and `nextOffset` provide deterministic continuation without returning an
+  unbounded tool result.
+- `help` and `run` embed immediately required resources directly in their tool results,
+  capped at 24 KiB per resource and 64 KiB in total. They still return canonical links;
+  anything over budget is explicitly marked for `read_resource`. Selection is
+  sequential: known sizes are checked before reads, every unknown-size read receives
+  only the remaining budget, and no deferred payload is retained.
+
 ## Read safety
 
 - Every URI must match a registered fixed resource or template.
@@ -69,6 +102,9 @@ notifications.
 - Reads are bounded while reading the open handle. Content above 16 MiB, including
   a file that grows past the limit during a read, fails explicitly because MCP
   resource reads are not streamed.
+- Model-controlled `read_resource` responses are independently chunked to at most
+  48 KiB of source bytes, so the native 16 MiB read ceiling cannot become one giant
+  model context injection.
 - Module indexes visit at most 10,000 directory entries, descend at most 32 levels,
   link at most 1,000 files, probe root overview files independently, omit overview
   bodies above 256 KiB, and cap the final rendered resource at 512 KiB.
@@ -80,14 +116,16 @@ notifications.
 `help` performs deterministic lexical selection over documentation. Common
 instructions require an explicit activation keyword declared in their frontmatter,
 so generic help questions do not activate unrelated behavior. Matches are returned
-as `resource_link` content. `run` returns:
+as bounded embedded resources and `resource_link` content. `run` returns:
 
-- readable provider resources declared in skill frontmatter; and
+- readable provider resources declared in skill frontmatter, embedded when bounded;
+  and
 - sibling files of a local skill, mapped into the target module's file template.
 
 Unsupported or unavailable dependency URIs are rejected instead of being emitted as
-unreadable resource links. This avoids absolute path strings and lets capable hosts
-choose when to load context.
+unreadable resource links. Oversized declared dependencies remain canonical links and
+are identified as deferred; the skill discipline requires `read_resource` before
+acting. Sibling files are optional on-demand references rather than eager context.
 
 Skill aggregation is also bounded. One skill may declare at most 64 provider
 resources. Local sibling discovery visits at most 4,096 entries, descends at most 16
@@ -96,7 +134,9 @@ rather than returning an incomplete discipline.
 
 ## Adding a provider
 
-1. Implement `ResourceProvider` in `src/resources/`.
+1. Implement `ResourceProvider` in `src/resources/`, including
+   `read(uri, { maxBytes? })` over the same logic used by protocol registration.
+   Honor `maxBytes` before returning a payload.
 2. Define a collision-free `okh://` authority or path family.
 3. Validate URI variables inside each read callback.
 4. Choose fixed resources for small stable sets and templates for parameterized data.
@@ -121,6 +161,9 @@ Normative protocol behavior and current SDK details were checked against:
 - [MCP server concepts](https://modelcontextprotocol.io/docs/learn/server-concepts#resources)
 - [`McpServer` v1.29.0 source](https://github.com/modelcontextprotocol/typescript-sdk/blob/v1.29.0/src/server/mcp.ts)
 - [Official everything-server resource examples](https://github.com/modelcontextprotocol/servers/tree/main/src/everything/resources)
+- [GitHub Copilot CLI MCP configuration](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers)
+- [Copilot CLI model-facing resource request](https://github.com/github/copilot-cli/issues/1803)
+- [Copilot SDK resource-read RPC types](https://github.com/github/copilot-sdk)
 
 Key compatibility finding: the high-level SDK registers resources and
 `listChanged`, but its built-in list handler neither consumes cursors nor emits

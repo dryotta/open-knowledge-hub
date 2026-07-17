@@ -1,4 +1,8 @@
-import type { Resource, ResourceLink } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  ReadResourceResult,
+  Resource,
+  ResourceLink,
+} from "@modelcontextprotocol/sdk/types.js";
 import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type {
@@ -14,14 +18,16 @@ import {
   moduleFileMetadata,
   readModuleFile,
 } from "./moduleFiles.js";
-import type { ResourceProvider } from "./types.js";
+import type {
+  ResourceProvider,
+  ResourceReadOptions,
+} from "./types.js";
 import {
   CONTAINER_URI_TEMPLATE,
   CONTAINERS_URI,
   MODULE_FILE_URI_TEMPLATE,
   MODULE_URI_TEMPLATE,
   containerUri,
-  decodeTemplateValue,
   moduleFileUri,
   moduleUri,
   parseContainerResourceUri,
@@ -75,6 +81,27 @@ function truncateUtf8(value: string, maxBytes: number): string {
     bytes += width;
   }
   return `${truncated}${suffix}`;
+}
+
+function enforceReadLimit(
+  result: ReadResourceResult,
+  maxBytes: number | undefined,
+): ReadResourceResult {
+  if (maxBytes === undefined) return result;
+  const size = result.contents.reduce(
+    (total, content) => total + Buffer.byteLength(
+      "text" in content ? content.text : content.blob,
+      "text" in content ? "utf8" : "ascii",
+    ),
+    0,
+  );
+  if (size > maxBytes) {
+    throw new McpError(
+      -32602,
+      `Resource is ${size} bytes; the maximum readable size is ${maxBytes} bytes.`,
+    );
+  }
+  return result;
 }
 
 function containersResource(): Resource {
@@ -299,6 +326,72 @@ export class ContainerResourceProvider implements ResourceProvider {
 
   constructor(private readonly service: ContainerService) {}
 
+  async read(
+    uriText: string,
+    options: ResourceReadOptions = {},
+  ): Promise<ReadResourceResult | undefined> {
+    const location = parseContainerResourceUri(uriText);
+    if (!location) return undefined;
+
+    const uri = new URL(uriText);
+    if (location.kind === "root") {
+      return enforceReadLimit({
+        contents: [{
+          uri: uriText,
+          mimeType: "text/markdown",
+          text: renderContainerIndex(await this.service.resolveTargets()),
+        }],
+      }, options.maxBytes);
+    }
+
+    if (location.kind === "container") {
+      const container = await resolveContainer(this.service, uri, location.container);
+      return enforceReadLimit({
+        contents: [{
+          uri: uriText,
+          mimeType: "text/markdown",
+          text: renderContainer(container),
+        }],
+      }, options.maxBytes);
+    }
+
+    const { container, module } = await resolveModule(
+      this.service,
+      uri,
+      location.container,
+      location.module,
+    );
+    if (location.kind === "module") {
+      return enforceReadLimit({
+        contents: [{
+          uri: uriText,
+          mimeType: "text/markdown",
+          text: await renderModule(container, module),
+        }],
+      }, options.maxBytes);
+    }
+
+    const payload = await readModuleFile(
+      module.absPath,
+      location.path,
+      uriText,
+      options.maxBytes,
+    );
+    return enforceReadLimit({
+      contents: [{
+        uri: uriText,
+        mimeType: payload.mimeType,
+        ...(payload.text !== undefined ? { text: payload.text } : { blob: payload.blob! }),
+      }],
+    }, options.maxBytes);
+  }
+
+  private async requireRead(uri: URL): Promise<ReadResourceResult> {
+    const result = await this.read(uri.toString());
+    if (!result) throw notFound(uri);
+    return result;
+  }
+
   async resolveLink(uriText: string): Promise<ResourceLink | undefined> {
     const location = parseContainerResourceUri(uriText);
     if (!location) return undefined;
@@ -364,14 +457,7 @@ export class ContainerResourceProvider implements ResourceProvider {
         mimeType: root.mimeType,
         annotations: root.annotations,
       },
-      async (uri) => ({
-        contents: [{
-          uri: uri.toString(),
-          mimeType: "text/markdown",
-          text: renderContainerIndex(await this.service.resolveTargets()),
-          annotations: { ...COMMON_ANNOTATIONS, priority: 1 },
-        }],
-      }),
+      async (uri) => this.requireRead(uri),
     );
 
     server.registerResource(
@@ -392,18 +478,7 @@ export class ContainerResourceProvider implements ResourceProvider {
         mimeType: "text/markdown",
         annotations: { ...COMMON_ANNOTATIONS, priority: 0.8 },
       },
-      async (uri, variables) => {
-        const name = decodeTemplateValue(variables["container"], uri);
-        const container = await resolveContainer(this.service, uri, name);
-        return {
-          contents: [{
-            uri: uri.toString(),
-            mimeType: "text/markdown",
-            text: renderContainer(container),
-            annotations: { ...COMMON_ANNOTATIONS, priority: 0.8 },
-          }],
-        };
-      },
+      async (uri) => this.requireRead(uri),
     );
 
     server.registerResource(
@@ -438,24 +513,7 @@ export class ContainerResourceProvider implements ResourceProvider {
         mimeType: "text/markdown",
         annotations: { ...COMMON_ANNOTATIONS, priority: 0.7 },
       },
-      async (uri, variables) => {
-        const containerName = decodeTemplateValue(variables["container"], uri);
-        const moduleName = decodeTemplateValue(variables["module"], uri);
-        const { container, module } = await resolveModule(
-          this.service,
-          uri,
-          containerName,
-          moduleName,
-        );
-        return {
-          contents: [{
-            uri: uri.toString(),
-            mimeType: "text/markdown",
-            text: await renderModule(container, module),
-            annotations: { ...COMMON_ANNOTATIONS, priority: 0.7 },
-          }],
-        };
-      },
+      async (uri) => this.requireRead(uri),
     );
 
     server.registerResource(
@@ -490,25 +548,7 @@ export class ContainerResourceProvider implements ResourceProvider {
         mimeType: "application/octet-stream",
         annotations: { ...COMMON_ANNOTATIONS, priority: 0.6 },
       },
-      async (uri, variables) => {
-        const containerName = decodeTemplateValue(variables["container"], uri);
-        const moduleName = decodeTemplateValue(variables["module"], uri);
-        const path = decodeTemplateValue(variables["path"], uri);
-        const { module } = await resolveModule(this.service, uri, containerName, moduleName);
-        const payload = await readModuleFile(module.absPath, path, uri.toString());
-        return {
-          contents: [{
-            uri: uri.toString(),
-            mimeType: payload.mimeType,
-            ...(payload.text !== undefined ? { text: payload.text } : { blob: payload.blob! }),
-            annotations: {
-              ...COMMON_ANNOTATIONS,
-              priority: 0.6,
-              lastModified: payload.lastModified,
-            },
-          }],
-        };
-      },
+      async (uri) => this.requireRead(uri),
     );
   }
 }

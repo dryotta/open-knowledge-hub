@@ -2,11 +2,16 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
   Annotations,
+  ReadResourceResult,
   ResourceLink,
 } from "@modelcontextprotocol/sdk/types.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseFrontmatter, stringField } from "../util/frontmatter.js";
-import type { ResourceProvider } from "./types.js";
+import type {
+  ResourceProvider,
+  ResourceReadOptions,
+} from "./types.js";
 import { fileTreeUri } from "./uris.js";
 
 export interface FileTreeResourceConfig {
@@ -186,16 +191,38 @@ export class FileTreeResourceProvider implements ResourceProvider {
           size: entry.size,
           annotations: entry.annotations,
         },
-        async (uri) => ({
-          contents: [{
-            uri: uri.toString(),
-            mimeType: "text/markdown",
-            text: entry.text,
-            annotations: entry.annotations,
-          }],
-        }),
+        async (uri) => this.readEntry(entry, uri.toString()),
       );
     }
+  }
+
+  private readEntry(entry: FileTreeResourceEntry, uri: string): ReadResourceResult {
+    return {
+      contents: [{
+        uri,
+        mimeType: "text/markdown",
+        text: entry.text,
+      }],
+    };
+  }
+
+  async read(
+    uri: string,
+    options: ResourceReadOptions = {},
+  ): Promise<ReadResourceResult | undefined> {
+    const entry = this.get(uri);
+    if (
+      entry
+      && options.maxBytes !== undefined
+      && entry.size > options.maxBytes
+    ) {
+      throw new McpError(
+        -32602,
+        `Resource is ${entry.size} bytes; the maximum readable size is`
+        + ` ${options.maxBytes} bytes.`,
+      );
+    }
+    return entry ? this.readEntry(entry, uri) : undefined;
   }
 
   get(uri: string): FileTreeResourceEntry | undefined {
@@ -210,6 +237,7 @@ export class FileTreeResourceProvider implements ResourceProvider {
       title: entry.title,
       description: entry.description,
       mimeType: "text/markdown",
+      size: entry.size,
       annotations: entry.annotations,
     };
   }

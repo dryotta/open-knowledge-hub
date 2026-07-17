@@ -1,6 +1,9 @@
 import { fileURLToPath } from "node:url";
 import { isAbsolute, relative } from "node:path";
-import type { ResourceLink } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  ReadResourceResult,
+  ResourceLink,
+} from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type {
   ContainerService,
@@ -11,8 +14,15 @@ import { OkhError } from "../errors.js";
 import { skillResourcePaths, type Skill } from "../modules/skills.js";
 import { FileTreeResourceProvider } from "./fileTree.js";
 import { ContainerResourceProvider } from "./hub.js";
+import {
+  embedResourceLinks,
+  type EmbeddedResourceSelection,
+} from "./embedding.js";
 import { mimeTypeForPath } from "./moduleFiles.js";
-import type { ResourceProvider } from "./types.js";
+import type {
+  ResourceProvider,
+  ResourceReadOptions,
+} from "./types.js";
 import {
   DOCS_URI_PREFIX,
   INSTRUCTIONS_URI_PREFIX,
@@ -21,6 +31,14 @@ import {
 
 const DOCS_ROOT = new URL("../../resources/docs/", import.meta.url);
 const INSTRUCTIONS_ROOT = new URL("../../resources/instructions/", import.meta.url);
+
+export interface ResourceSelection extends EmbeddedResourceSelection {
+  links: ResourceLink[];
+}
+
+export interface SkillResourceSelection extends ResourceSelection {
+  requiredUris: string[];
+}
 
 export class OkhResourceRegistry {
   readonly providers: readonly ResourceProvider[];
@@ -37,7 +55,40 @@ export class OkhResourceRegistry {
     for (const provider of this.providers) await provider.register(server);
   }
 
-  helpLinks(question?: string): ResourceLink[] {
+  async read(
+    uri: string,
+    options: ResourceReadOptions = {},
+  ): Promise<ReadResourceResult> {
+    let parsed: URL;
+    try {
+      parsed = new URL(uri);
+    } catch {
+      throw new OkhError("INVALID_ARGUMENT", `Invalid resource URI: "${uri}".`);
+    }
+    if (parsed.protocol !== "okh:") {
+      throw new OkhError(
+        "INVALID_ARGUMENT",
+        `read_resource only accepts okh:// URIs, received "${uri}".`,
+      );
+    }
+
+    for (const provider of this.providers) {
+      const result = await provider.read(uri, options);
+      if (result) return result;
+    }
+    throw new OkhError("NOT_FOUND", `Resource not found: ${uri}`);
+  }
+
+  private async embedLinks(
+    links: readonly ResourceLink[],
+  ): Promise<EmbeddedResourceSelection> {
+    return embedResourceLinks(
+      links,
+      async (uri, maxBytes) => this.read(uri, { maxBytes }),
+    );
+  }
+
+  async helpResources(question?: string): Promise<ResourceSelection> {
     const docs = this.documentation.search(question)
       .map((entry) => this.documentation.link(entry));
     const common = question?.trim()
@@ -49,7 +100,10 @@ export class OkhResourceRegistry {
         .map((entry) => this.instructions.link(entry))
       : this.instructions.search(undefined)
         .map((entry) => this.instructions.link(entry));
-    return [...new Map([...docs, ...common].map((link) => [link.uri, link])).values()];
+    const links = [
+      ...new Map([...common, ...docs].map((link) => [link.uri, link])).values(),
+    ];
+    return { links, ...await this.embedLinks(links) };
   }
 
   private async resolveLink(uri: string): Promise<ResourceLink | undefined> {
@@ -60,12 +114,13 @@ export class OkhResourceRegistry {
     return undefined;
   }
 
-  async skillLinks(
+  async skillResources(
     skill: Skill,
     target: ResolvedContainer,
     module: ResolvedModule,
-  ): Promise<ResourceLink[]> {
+  ): Promise<SkillResourceSelection> {
     const links: ResourceLink[] = [];
+    const requiredLinks: ResourceLink[] = [];
     for (const uri of skill.resourceUris ?? []) {
       const link = await this.resolveLink(uri);
       if (!link) {
@@ -75,6 +130,7 @@ export class OkhResourceRegistry {
         );
       }
       links.push(link);
+      requiredLinks.push(link);
     }
 
     for (const absolutePath of await skillResourcePaths(skill)) {
@@ -106,7 +162,17 @@ export class OkhResourceRegistry {
       });
     }
 
-    return [...new Map(links.map((link) => [link.uri, link])).values()];
+    const uniqueLinks = [
+      ...new Map(links.map((link) => [link.uri, link])).values(),
+    ];
+    const uniqueRequiredLinks = [
+      ...new Map(requiredLinks.map((link) => [link.uri, link])).values(),
+    ];
+    return {
+      links: uniqueLinks,
+      requiredUris: uniqueRequiredLinks.map((link) => link.uri),
+      ...await this.embedLinks(uniqueRequiredLinks),
+    };
   }
 }
 
