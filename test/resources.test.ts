@@ -65,6 +65,7 @@ async function tempDir(prefix: string): Promise<string> {
 async function connectWithKnowledgeModule(): Promise<{
   client: Client;
   root: string;
+  service: ContainerService;
 }> {
   const root = await tempDir("okh-resource-module-");
   const home = await tempDir("okh-resource-home-");
@@ -94,7 +95,7 @@ async function connectWithKnowledgeModule(): Promise<{
   clients.push(client);
   servers.push(server);
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-  return { client, root };
+  return { client, root, service };
 }
 
 afterEach(async () => {
@@ -590,6 +591,43 @@ describe("MCP resources", () => {
 
     const rubric = await client.readResource({ uri: localUri });
     expect("text" in rubric.contents[0] ? rubric.contents[0].text : "").toContain("Be precise.");
+  });
+
+  it("embeds the canonical agent template catalog for the create skill", async () => {
+    const { client, service } = await connectWithKnowledgeModule();
+    await service.addModule({
+      container: "hub",
+      path: "team-agents",
+      name: "Team agents",
+      type: "agents",
+      description: "Focused team agents",
+      create: true,
+    });
+
+    const result = await client.callTool({
+      name: "run",
+      arguments: {
+        container: "hub",
+        module: "team-agents",
+        skill: "create",
+        input: "Create a read-only code reviewer.",
+      },
+    });
+
+    expect(result).not.toMatchObject({ isError: true });
+    expect(embeddedUris(result)).toContain("okh://docs/agent-templates.md");
+    expect(embeddedText(result)).toContain("# Agent templates");
+    expect(embeddedText(result)).toContain("`code-reviewer`");
+    expect((result as CallToolResult).structuredContent).toMatchObject({
+      resources: [
+        expect.objectContaining({
+          uri: "okh://docs/agent-templates.md",
+          required: true,
+          embedded: true,
+        }),
+      ],
+      deferredRequiredUris: [],
+    });
   });
 
   it("defers oversized required skill context to read_resource", async () => {

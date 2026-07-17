@@ -10,6 +10,7 @@ Add a built-in module type named `agents`.
 - One module holds many GitHub Copilot agent profiles.
 - Profiles keep the normal Copilot format.
 - Profiles are stateless files with no memory, logs, or runtime state.
+- A built-in `create` skill guides the client to author one ordinary profile.
 - The Hub returns a standard MCP Tool Result containing the profile and task.
 - The MCP client, not the Hub, runs the model.
 
@@ -17,6 +18,8 @@ Add a built-in module type named `agents`.
 flowchart LR
     M["agents module<br/>.github/agents/*.agent.md"] --> H["OKH MCP server"]
     H --> I["inspect<br/>find agents"]
+    H --> A["run(create)<br/>author profile"]
+    A --> M
     H --> U["use_agent<br/>load profile + task"]
     U --> C["MCP client"]
     C -->|preferred| S["Subagent"]
@@ -47,6 +50,7 @@ Copilot YAML frontmatter plus Markdown:
 ---
 name: Researcher
 description: Finds reliable sources and reports evidence
+target: vscode
 tools: [read, search, web]
 ---
 
@@ -68,8 +72,9 @@ Research the assigned question. Cite primary sources.
 `inspect(container, module)` exposes each agent ID as the item title, with its
 description and relative file path. The same ID is passed to `use_agent`.
 
-Normal loading is read-only. Scaffolding creates one ordinary
-`.github/agents/example.agent.md`.
+Normal loading is read-only. A missing `.github/agents` directory is a valid empty
+module because Git does not preserve empty directories. Local scaffolding may create
+the directory; the `create` skill creates it with the first profile when needed.
 
 > A Hub module is usually nested inside a container, so Copilot does not
 > discover it as a repository agent automatically. Portable means the same file
@@ -273,6 +278,9 @@ native delegation is unavailable.
 8. Report incompatible pre-existing `type: agents` layouts through validation;
    never move or delete their files.
 9. Update the server's exact tool-list test for `use_agent`.
+10. Add a built-in `create` skill with a research-backed, canonical template
+    catalog. The client writes the profile; the Hub continues to provide only
+    deterministic guidance, loading, and validation.
 
 ### Separate Hub-wide migration
 
@@ -302,6 +310,9 @@ change:
 - Verify client guidance covers native delegation and inline fallback.
 - Report subagent delegation as unknown and not observable through standard MCP.
 - Ensure the manual check is labeled client-reported, never passed or verified.
+- Expose `create` only on agents modules and embed its canonical template catalog.
+- Verify the skill requires least-privilege tools, stateless profiles, profile
+  validation, and container sync.
 
 The separate Hub migration tests each declared output schema against every
 success path, preserves MCP App consumers, verifies exact JSON fallbacks under

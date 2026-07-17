@@ -65,7 +65,7 @@ remain linked and are marked for `read_resource`.
 | `memory` | Recursive files and optional `README.md` | `reflect`, `remember`, `todo` |
 | `llmwiki` | OKF pages, index, log, link health | `initialize`, `write`, `lint` |
 | `skills` | Nested `SKILL.md` leaves and `index.md` | `initialize` |
-| `agents` | Direct `.github/agents/*.agent.md` and compatible `.md` profiles | None |
+| `agents` | Direct `.github/agents/*.agent.md` and compatible `.md` profiles | `create` |
 | custom | Generic recursive file listing | None; use local skills |
 
 Common instructions live at:
@@ -113,6 +113,14 @@ required. `.agent.md` is canonical and direct `.md` is accepted for VS Code
 compatibility. IDs come from the filename after removing the longest supported
 suffix and must be unique case-insensitively. Profiles are read-only definitions;
 `use_agent` creates no agent memory, run state, or log.
+
+An empty agents module may omit `.github/agents` because Git does not preserve empty
+directories. The `create` skill creates the directory with the first profile.
+
+Run `create` on an agents module to design and write one focused profile. The skill
+uses the [agent template catalog](okh://docs/agent-templates.md), applies
+least-privilege tools and explicit boundaries, then requires `inspect` validation
+and container sync.
 
 ## Skill format
 

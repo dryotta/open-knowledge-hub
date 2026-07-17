@@ -3,15 +3,12 @@ import {
   lstat,
   mkdir,
   open,
-  readFile,
   readdir,
   realpath,
   stat,
   type FileHandle,
-  writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { OkhError } from "../../errors.js";
 import { isPathWithin } from "../pathSafety.js";
@@ -22,10 +19,6 @@ export const MAX_AGENT_PROFILE_BYTES = 256 * 1024;
 export const MAX_AGENT_PROMPT_CHARS = 30_000;
 
 const AGENT_PROFILE_PARTS = [".github", "agents"] as const;
-const EXAMPLE_PROFILE_URL = new URL(
-  "../../../resources/module-types/agents/example.agent.md",
-  import.meta.url,
-);
 const FRONTMATTER_RE = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 export interface AgentProfile {
@@ -309,6 +302,26 @@ async function inspectNestedDirectory(
   }
 }
 
+async function misplacedRootProfileIssues(moduleRoot: string): Promise<AgentProfileIssue[]> {
+  let entries;
+  try {
+    entries = await readdir(moduleRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const issues: AgentProfileIssue[] = [];
+  for (const entry of entries) {
+    if (!entry.name.toLowerCase().endsWith(".agent.md")) continue;
+    issues.push({
+      path: entry.name,
+      message: entry.isFile()
+        ? `agent profiles must be located directly under ${AGENT_PROFILE_DIRECTORY}`
+        : "misplaced agent profile path must be a regular file",
+    });
+  }
+  return issues.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 async function profileDirectory(
   moduleRoot: string,
 ): Promise<{ path?: string; realPath?: string; issues: AgentProfileIssue[] }> {
@@ -347,11 +360,10 @@ async function profileDirectory(
     try {
       info = await lstat(current);
     } catch (err) {
+      if (isNotFound(err)) return { issues };
       issues.push({
         path: AGENT_PROFILE_DIRECTORY,
-        message: isNotFound(err)
-          ? `missing ${AGENT_PROFILE_DIRECTORY} directory`
-          : `${relative} cannot be inspected`,
+        message: `${relative} cannot be inspected`,
       });
       return { issues };
     }
@@ -386,9 +398,15 @@ async function profileDirectory(
 }
 
 export async function scanAgentProfiles(moduleRoot: string): Promise<AgentProfileScan> {
-  const directory = await profileDirectory(moduleRoot);
-  const issues = [...directory.issues];
-  if (!directory.path || !directory.realPath) return { profiles: [], issues };
+  const [directory, misplacedIssues] = await Promise.all([
+    profileDirectory(moduleRoot),
+    misplacedRootProfileIssues(moduleRoot),
+  ]);
+  const issues = [...directory.issues, ...misplacedIssues];
+  if (!directory.path || !directory.realPath) {
+    issues.sort((a, b) => a.path.localeCompare(b.path) || a.message.localeCompare(b.message));
+    return { profiles: [], issues };
+  }
 
   let entries;
   try {
@@ -520,11 +538,6 @@ async function validate(moduleRoot: string): Promise<string[]> {
 async function scaffold(moduleRoot: string): Promise<void> {
   const directory = join(moduleRoot, ...AGENT_PROFILE_PARTS);
   await mkdir(directory, { recursive: true });
-  const skeleton = await readFile(fileURLToPath(EXAMPLE_PROFILE_URL), "utf8");
-  await writeFile(join(directory, "example.agent.md"), skeleton, {
-    encoding: "utf8",
-    flag: "wx",
-  });
 }
 
 export const agentsLoader: Loader = {

@@ -257,11 +257,36 @@ describe("agents loader", () => {
     }));
   });
 
-  it("reports a missing standard profile directory", async () => {
+  it("treats a missing standard profile directory as an empty module", async () => {
     const root = await tempDir();
-    expect(await agentsLoader.validate!(root)).toEqual([
-      ".github/agents: missing .github/agents directory",
+    expect(await scanAgentProfiles(root)).toEqual({ profiles: [], issues: [] });
+    expect(await agentsLoader.validate!(root)).toEqual([]);
+  });
+
+  it("reports root-level legacy profiles without moving or hiding them", async () => {
+    const root = await tempDir();
+    await writeFile(
+      join(root, "legacy.agent.md"),
+      "---\ndescription: Legacy root profile\n---\nPrompt.\n",
+    );
+    await mkdir(join(root, "not-a-file.agent.md"));
+
+    const scan = await scanAgentProfiles(root);
+
+    expect(scan.profiles).toEqual([]);
+    expect(scan.issues).toEqual([
+      {
+        path: "legacy.agent.md",
+        message: "agent profiles must be located directly under .github/agents",
+      },
+      {
+        path: "not-a-file.agent.md",
+        message: "misplaced agent profile path must be a regular file",
+      },
     ]);
+    expect(await readFile(join(root, "legacy.agent.md"), "utf8")).toContain(
+      "Legacy root profile",
+    );
   });
 
   it("rejects symbolic-link profile entries", async () => {
@@ -289,19 +314,42 @@ describe("agents loader", () => {
     });
   });
 
-  it("scaffolds an ordinary Copilot profile at the standard path without overwriting", async () => {
+  it("scaffolds an empty standard profile directory without granting tools", async () => {
     const root = await tempDir();
 
     await agentsLoader.scaffold!(root);
 
-    const path = join(root, ".github", "agents", "example.agent.md");
-    const content = await readFile(path, "utf8");
-    expect(content).toMatch(/^---\r?\n/);
-    expect(content).toContain("description:");
-    expect((await scanAgentProfiles(root)).profiles.map((profile) => profile.id)).toEqual([
-      "example",
+    const directory = join(root, ".github", "agents");
+    expect(await readdir(directory)).toEqual([]);
+    expect(await scanAgentProfiles(root)).toEqual({ profiles: [], issues: [] });
+    await expect(agentsLoader.scaffold!(root)).resolves.toBeUndefined();
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("survives a Git round trip when the empty profile directory is not tracked", async () => {
+    const root = await tempDir();
+    const cloneParent = await tempDir();
+    const clone = join(cloneParent, "clone");
+    await mkdir(join(root, ".okh"), { recursive: true });
+    await writeFile(
+      join(root, ".okh", "module.yaml"),
+      "type: agents\ndescription: Empty agent library\n",
+    );
+    await agentsLoader.scaffold!(root);
+    await testRun("git", ["init", "-b", "main"], { cwd: root });
+    await testRun("git", ["add", "-A"], { cwd: root });
+    await testRun("git", ["commit", "-m", "seed empty agents module"], { cwd: root });
+    await testRun("git", ["clone", root, clone]);
+
+    expect(await scanAgentProfiles(clone)).toEqual({ profiles: [], issues: [] });
+    await writeProfile(
+      clone,
+      "reviewer.agent.md",
+      "---\ndescription: Reviews code without editing\ntools: [read, search]\n---\nReview the task.\n",
+    );
+    expect((await scanAgentProfiles(clone)).profiles.map((profile) => profile.id)).toEqual([
+      "reviewer",
     ]);
-    await expect(agentsLoader.scaffold!(root)).rejects.toMatchObject({ code: "EEXIST" });
   });
 });
 

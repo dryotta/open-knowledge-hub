@@ -96,6 +96,11 @@ An `agents` module stores ordinary GitHub Copilot profiles under
 `inspect` lists each profile ID and description. `use_agent` returns the exact
 selected profile and task without running a model or writing runtime state.
 
+To add a profile, run the module's `create` skill with the desired role and
+constraints. It selects a recipe from the
+[agent template catalog](okh://docs/agent-templates.md), writes one focused
+`.agent.md` profile, validates it with `inspect`, and synchronizes the container.
+
 The MCP client should prefer a native subagent that accepts the returned
 instructions. If unavailable, it follows the profile in the parent context for
 that task only. The client reports `native-subagent` or `inline-parent`; OKH keeps

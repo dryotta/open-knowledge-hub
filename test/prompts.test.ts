@@ -125,6 +125,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/onboard/i);
     expect(text).toContain('help { question: "ingest" }');
     expect(text).toContain('help { question: "grilling" }');
+    expect(text).toContain("create");
     expect(text).toContain("use_agent");
     expect(text).toContain("native-subagent");
     expect(text).toContain("inline-parent");

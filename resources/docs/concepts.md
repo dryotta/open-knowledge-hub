@@ -73,6 +73,7 @@ specific module required to run it; there is no independent skill catalog.
 - Read, list, or filter todos: call `todos` directly.
 - Answer from stored content: call `ask`.
 - Assemble a task-specific working set: call `context`.
+- Create a stateless Hub agent: run `create` on the target `agents` module.
 - Run a stateless Hub agent: select an ID from `inspect`, then call `use_agent`.
   Prefer the returned profile and task in a native subagent; otherwise follow them
   in the parent context and report the fallback mode.

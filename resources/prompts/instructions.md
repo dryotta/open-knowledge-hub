@@ -2,7 +2,7 @@ Open Knowledge Hub (OKH) organizes an agent's knowledge and capabilities into **
 
 When a message starts with "{{config:wakePhrase}}" or refers to the hub / knowledge hub, first call `inspect` (no args). It returns the full capability map with every runnable skill nested under its module. Follow that map and the intent-specific routing below.
 
-For an agents module, call `use_agent` with an ID from `inspect`. Prefer a native subagent that accepts the returned profile and task; otherwise follow the profile in the parent context for that task only. Report `native-subagent` or `inline-parent`. The client, not the Hub, controls models, tools, permissions, and isolation.
+For an agents module, run its `create` skill to author a new profile; to execute one, call `use_agent` with an ID from `inspect`. Prefer a native subagent that accepts the returned profile and task; otherwise follow the profile in the parent context for that task only. Report `native-subagent` or `inline-parent`. The client, not the Hub, controls models, tools, permissions, and isolation.
 
 New or empty hub? Call `onboard`.
 
