@@ -61,7 +61,8 @@ files of a local skill are linked through the module-file resource template.
 ## Routing
 
 When a user addresses the hub, call `inspect` with no arguments first. It returns
-the live container/module/skill map.
+the live container/module/skill map. Every runnable skill appears beneath the
+specific module required to run it; there is no independent skill catalog.
 
 - Learn, teach, or add durable knowledge: run `learn` on a `knowledge` module.
 - Explicitly remember an observation, reminder, commitment, or task: run

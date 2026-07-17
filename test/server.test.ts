@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -599,15 +599,30 @@ describe("MCP server surface", () => {
 
     await client.callTool({ name: "add_container", arguments: { source: dir, name: "hub", create: true } });
     await client.callTool({ name: "add_module", arguments: { container: "hub", path: "kb", type: "knowledge", description: "team kb", create: true } });
+    await client.callTool({ name: "add_module", arguments: { container: "hub", path: "aa-empty", type: "recipes", description: "empty recipes", create: true } });
+    const localSkill = join(dir, "kb", ".okh", "skills", "digest");
+    await mkdir(localSkill, { recursive: true });
+    await writeFile(
+      join(localSkill, "SKILL.md"),
+      "---\nname: digest\ndescription: Summarize this module\n---\nDigest it.\n",
+    );
     const res = await client.callTool({ name: "inspect", arguments: {} });
-    // No-arg inspect renders the hub map: container line + module (labeled by type) +
-    // the built-in-skills-by-type block, each module's runnable skills, and the Guardrails footer.
+    // No-arg inspect renders every runnable skill only beneath its concrete module.
     expect(textOf(res)).toContain("hub  [local]");
     expect(textOf(res)).toMatch(/- kb {2}\(module type: knowledge\) {2}0 items/);
-    expect(textOf(res)).toContain("Built-in skills");
-    expect(textOf(res)).toContain("built-in skills: initialize, learn");
-    // The Examples block shows the module-scoped run shape with real container/module names.
-    expect(textOf(res)).toContain("Examples:");
+    expect(textOf(res)).toContain("runnable skills:");
+    expect(textOf(res)).toContain("digest — Summarize this module [module local: .okh/skills/digest/SKILL.md]");
+    expect(textOf(res)).toMatch(/initialize.*\[module type\]/);
+    expect(textOf(res)).toMatch(/learn.*\[module type\]/);
+    expect(textOf(res).match(/^# .+$/gm)).toEqual([
+      "# Hub",
+      "# Run a module skill",
+      "# Common instructions",
+      "# Module skills",
+      "# Guardrails",
+    ]);
+    // The example shows the module-scoped run shape with real container/module names.
+    expect(textOf(res)).toContain("Example:");
     expect(textOf(res)).toMatch(/run \{ container: "hub", module: "kb", skill: "\w+" \}/);
     expect(textOf(res)).toContain("Guardrails");
 

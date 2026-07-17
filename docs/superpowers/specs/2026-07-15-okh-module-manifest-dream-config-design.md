@@ -100,8 +100,8 @@ description: Project notes # required at creation; kept routing-quality
 ## 6. Dream consolidation flow
 
 - **`dream` flow tool** (`{ container?, module? }`): a cognitive flow built from a **pure
-  prompt template** (`resources/prompts/dream.md`), exactly like `add_module`/`ask` — no
-  shared skill. It resolves the target modules via `resolveTargets(container, module)`,
+  prompt template** (`resources/prompts/dream.md`), exactly like `add_module`/`ask`.
+  It resolves the target modules via `resolveTargets(container, module)`,
   injects them into the template (each module's path, type, container, `index.md` path,
   and current description), and returns the consolidation discipline. Guard: a `module`
   without a `container` fails with a clear message ("dream needs a container when a
@@ -113,11 +113,10 @@ description: Project notes # required at creation; kept routing-quality
   via `config { container, module, set: { description } }`; (5) report what changed.
 - **Separation of concerns:** `dream` decides *what* the description should be; `config`
   set-description is the *only* thing that writes it. The tool never edits files itself.
-- **Why a template, not a shared skill:** an earlier iteration split this into a `sleep`
-  flow tool plus a `dream` shared skill. A shared skill under `resources/shared/skills/`
-  is auto-enumerated into the hub map's `globalSkills` and separately runnable via
-  `run { skill }`, giving `dream` a duplicate second entrypoint. Folding the discipline
-  into a pure prompt template (the pattern every other flow uses) keeps a single
+- **Why a template, not a module skill:** an earlier iteration split this into a
+  `sleep` flow tool plus a separately runnable `dream` discipline, giving the behavior
+  duplicate entrypoints. Folding the discipline into a pure prompt template (the
+  pattern every other flow uses) keeps a single
   entrypoint and matches `add_module`.
 
 ## 7. Surface changes

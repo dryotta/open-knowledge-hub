@@ -123,7 +123,6 @@ describe("deterministic custom, context, and ingest scenarios", () => {
     ]));
     expect(assertions.some((a) => String(a.value).endsWith("judge.ts"))).toBe(false);
     expect(sc.config[0].vars.prompt).toMatch(/\bingest\b/i);
-    expect(sc.config[0].vars.prompt).not.toMatch(/shared skill/i);
     expect(sc.config[0].vars.turns).toEqual([
       expect.objectContaining({ id: "routing-confirmed", after: "start" }),
     ]);
@@ -757,7 +756,7 @@ describe("llmwiki scenario structured tool expectations", () => {
     )).toBe(true);
   });
 
-  it("help/grilling.yaml discovers common guidance without a module-less run", async () => {
+  it("help/grilling.yaml discovers common guidance through help resources", async () => {
     const sc = await loadScenario("help/grilling.yaml");
     const cfg = getToolsCalledConfig(sc);
     expect(cfg, "tools-called config must exist").toBeDefined();

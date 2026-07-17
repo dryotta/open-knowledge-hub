@@ -181,19 +181,18 @@ export interface ContainerStatus {
 export interface SkillRef {
   name: string;
   description: string;
+  origin: "module-type" | "module-local";
+  path?: string;
+  overridesModuleType?: boolean;
 }
 
-/** One module in the hub map. Module type skills are hoisted to `HubMap.moduleTypeSkills`
- * (keyed by `type`) so they are never repeated here; only in-repo `local` skills live on
- * the module. `overrides` are local skill names that shadow a same-named module type skill.
- * Full per-skill provenance (source path) is available via the module drilldown. */
+/** One module in the hub map with its complete, runnable skill set. */
 export interface HubModule {
   path: string;
   type: string;
   description: string;
   items: number;
-  local?: SkillRef[];
-  overrides?: string[];
+  skills: SkillRef[];
 }
 
 /** One container in the hub map. */
@@ -208,14 +207,10 @@ export interface HubContainer {
   modules: HubModule[];
 }
 
-/** The full hub map returned by no-arg `inspect`: every container, module, and runnable
- * skill, factored by provenance. Module type skills are listed once per in-use type;
- * only local skills are carried per module. */
+/** The full hub map returned by no-arg `inspect`: every runnable skill belongs to a module. */
 export interface HubMap {
   kind: "hub";
   wakePhrase: string;
-  /** Skills provided by a module's type, keyed by type. Only in-use types with skills appear. */
-  moduleTypeSkills: Record<string, SkillRef[]>;
   containers: HubContainer[];
 }
 
@@ -457,16 +452,13 @@ export class ContainerService {
     return { skills: mergeSkills(vendored, local.skills), issues: local.issues };
   }
 
-  /** Build the full hub map: containers → modules, with skills factored by provenance
-   * (module type once per in-use type, local per module). */
+  /** Build the full hub map: containers → modules → runnable skills. */
   private async buildHubMap(reg: { containers: ContainerEntry[] }): Promise<HubMap> {
     const wakePhrase = (await loadPreferences(this.paths)).wakePhrase;
     const containers: HubContainer[] = [];
-    const typesInUse = new Set<string>();
     for (const c of reg.containers) {
       const st = await this.status(c.name).catch(() => undefined);
       const mods = st?.modules ?? [];
-      for (const m of mods) typesInUse.add(m.type);
       const modules = await Promise.all(mods.map((m) => this.buildHubModule(c.localPath, m)));
       containers.push({
         name: c.name,
@@ -479,20 +471,10 @@ export class ContainerService {
         modules,
       });
     }
-
-    const moduleTypeSkills: Record<string, SkillRef[]> = {};
-    for (const type of [...typesInUse].sort()) {
-      const skills = await vendoredSkills(type);
-      if (skills.length) {
-        moduleTypeSkills[type] = skills.map((s) => ({ name: s.name, description: s.description }));
-      }
-    }
-
-    return { kind: "hub", wakePhrase, moduleTypeSkills, containers };
+    return { kind: "hub", wakePhrase, containers };
   }
 
-  /** Build one hub-map module entry: carries only its in-repo `local` skills (module type
-   * skills are hoisted) and records `overrides` where a local name shadows a module type skill. */
+  /** Build one hub-map module entry with module-type and module-local skills merged. */
   private async buildHubModule(containerRoot: string, m: ModuleStatus): Promise<HubModule> {
     const moduleRoot = this.moduleRoot(containerRoot, m.path);
     const [localSet, vendored] = await Promise.all([
@@ -500,15 +482,29 @@ export class ContainerService {
       vendoredSkills(m.type),
     ]);
     const vendoredNames = new Set(vendored.map((s) => s.name));
-    const local: SkillRef[] = localSet.skills.map((s) => ({ name: s.name, description: s.description }));
-    const overrides = local.filter((s) => vendoredNames.has(s.name)).map((s) => s.name);
+    const skills: SkillRef[] = mergeSkills(vendored, localSet.skills).map((skill) => {
+      const moduleType = skill.source === "vendored";
+      const path = skill.path
+        ? moduleType || skill.source === "module-root"
+          ? skill.path
+          : `${skill.source}/${skill.path}`
+        : undefined;
+      return {
+        name: skill.name,
+        description: skill.description,
+        origin: moduleType ? "module-type" : "module-local",
+        ...(path ? { path } : {}),
+        ...(!moduleType && vendoredNames.has(skill.name)
+          ? { overridesModuleType: true }
+          : {}),
+      };
+    });
     return {
       path: m.path,
       type: m.type,
       description: m.description,
       items: m.items,
-      ...(local.length ? { local } : {}),
-      ...(overrides.length ? { overrides } : {}),
+      skills,
     };
   }
 

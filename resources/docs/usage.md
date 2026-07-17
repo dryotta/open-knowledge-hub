@@ -59,8 +59,8 @@ module's scope and source-retention policy, and presents a routing plan. It must
 wait for a later confirmation before copying sources, running the target skill,
 editing, or syncing.
 
-Ingest is common guidance, not a global skill. The confirmed plan continues through
-the target module's `learn`, `remember`, or `write` skill.
+The confirmed ingest plan continues through the target module's `learn`, `remember`,
+or `write` skill, with common guidance supplied through MCP resources.
 
 ## Skill modules
 

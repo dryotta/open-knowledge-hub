@@ -1,5 +1,8 @@
 # OKH Ingest Source Retention — Implementation Plan
 
+> **Historical note:** Standalone skill APIs referenced below were removed. Current
+> ingest guidance is an MCP instruction resource applied to a target module's skill.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a knowledge module opt in (during `initialize`) to keeping a copy of each ingested source document under `./sources/<YYYY-MM>/`, and have `ingest` honor that policy and cite the retained copy.
@@ -171,8 +174,8 @@ with:
 - [ ] **Step 4: Verify the skill still parses**
 
 Run: `npx vitest run test/run.test.ts`
-Expected: PASS (the `ingest` shared skill still resolves; frontmatter unchanged; body matches
-`/route/i` per the existing discovery test).
+Expected: PASS (the canonical ingest instruction resource still loads and retains
+its routing guidance).
 
 - [ ] **Step 5: Commit**
 

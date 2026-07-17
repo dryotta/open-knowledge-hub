@@ -1,6 +1,9 @@
 # OKH — `ingest` shared skill (document ingestion playbook)
 
-**Status:** Approved design (pre-implementation)
+> **Superseded historical design:** Current ingest guidance is an MCP instruction
+> resource linked into module-scoped work, not an independently runnable skill.
+
+**Status:** Superseded
 **Date:** 2026-07-09
 **Branch:** `main`
 **Relates to:** `docs/adr/0001-mcp-as-tools-plus-client-intelligence-over-okf.md`, the `learn` and

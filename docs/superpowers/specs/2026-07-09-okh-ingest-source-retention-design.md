@@ -1,5 +1,8 @@
 # OKH — Ingest source retention (per-module `./sources/<YYYY-MM>/`)
 
+> **Historical note:** Early standalone ingest APIs in this record were superseded by
+> common MCP instruction resources and module-scoped skills.
+
 **Status:** Approved design (pre-implementation)
 **Date:** 2026-07-09
 **Branch:** `feat/ingest-source-retention`

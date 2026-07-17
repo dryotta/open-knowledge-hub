@@ -9,7 +9,7 @@ description: Complete current reference for OKH tools, resources, module types, 
 
 | Tool | Arguments | Behavior |
 | --- | --- | --- |
-| `inspect` | `container?`, `module?` | List the hub map, a container, or one module's items, overview, skills, and health. |
+| `inspect` | `container?`, `module?` | List the hub map with skills nested under modules, a container, or one module's items, overview, skills, and health. |
 | `add_container` | `source`, `name?`, `sync?`, `backend?`, `create?` | Preview or register/clone a container. |
 | `add_module` | `container?`, `path?`, `type?`, `description?`, `config?`, `create?` | Return the module design workflow or create the agreed module. |
 | `sync` | `container?`, `message?`, `action?` | Validate and synchronize; `publish-pr` is a shared-mode action. |
@@ -65,7 +65,7 @@ Common instructions live at:
 - `okh://instructions/okf/writer.md`
 - `okh://instructions/okf/format.md`
 
-They are resources consumed by built-in skills, not module-less skills.
+Module-type skills consume these resources through their declared dependencies.
 
 ## Module manifest
 

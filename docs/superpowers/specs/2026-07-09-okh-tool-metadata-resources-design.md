@@ -34,7 +34,7 @@ tools inline in `src/server/tools.ts`).
 ### Non-goals
 
 - No change to tool argument schemas, validation, handlers, or annotations.
-- No change to the prompt templates (`resources/prompts/`) or module-type/shared skills.
+- No change to the prompt templates (`resources/prompts/`) or module-scoped skills.
 - No new dependency (reuses `yaml` via `parseFrontmatter` and the existing
   `renderString` template engine).
 

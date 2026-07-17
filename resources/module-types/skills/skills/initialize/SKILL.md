@@ -7,7 +7,7 @@ resources:
 
 # Initialize a skills module
 
-Build a cohesive, navigable skill collection. Do not default to one global skills
+Build a cohesive, navigable skill collection. Do not default to one catch-all
 module: module boundaries are part of the design.
 
 1. **Establish the contract.** Read and apply the

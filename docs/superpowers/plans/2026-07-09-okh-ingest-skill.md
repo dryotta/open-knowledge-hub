@@ -1,5 +1,9 @@
 # OKH `ingest` Shared Skill Implementation Plan
 
+> **Superseded historical plan:** Do not implement this standalone-run design.
+> Current ingest guidance is `okh://instructions/ingest.md`; it is applied before
+> running a concrete target module's skill.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a vendored, module-less `ingest` shared skill that gives the client agent a reliable playbook to turn source documents into cited candidate knowledge and route them to `learn`/`remember`.

@@ -40,29 +40,26 @@ import { formatSyncDescriptor } from "../util/syncFormat.js";
 import { loadPromptFile } from "../prompts/templates.js";
 import type { OkhResourceRegistry } from "../resources/index.js";
 
-/** Render the no-arg hub map as `#`-delimited sections: `# Hub` (wake phrase), `# Running skills`,
- * `# Built-in skills` (grouped by module type), and `# Module skills` (containers → modules with
- * each module's full runnable set —
- * built-in skills by name, descriptions living once in the Built-in skills section, contrasted with
- * local skills as name — description). The `# Guardrails` footer is appended by the handler. */
+/** Render the no-arg hub map with every runnable skill nested under its module. */
 function formatHub(r: HubMap): string {
   let moduleExample: { container: string; module: string; skill: string } | undefined;
   for (const c of r.containers) {
-    const m = c.modules[0];
-    if (!m) continue;
-    const skill = (r.moduleTypeSkills[m.type] ?? [])[0]?.name ?? m.local?.[0]?.name;
-    if (skill) {
-      moduleExample = { container: c.name, module: m.path, skill };
-      break;
+    for (const m of c.modules) {
+      const skill = m.skills[0]?.name;
+      if (skill) {
+        moduleExample = { container: c.name, module: m.path, skill };
+        break;
+      }
     }
+    if (moduleExample) break;
   }
 
   const lines: string[] = [
     "# Hub",
     `Wake phrase: "${r.wakePhrase}"`,
     "",
-    "# Running skills",
-    "Run any skill listed below with the `run` tool. Examples:",
+    "# Run a module skill",
+    "Run any skill listed beneath a module with the `run` tool. Example:",
     moduleExample
       ? `- run { container: ${JSON.stringify(moduleExample.container)}, module: ${JSON.stringify(moduleExample.module)}, skill: ${JSON.stringify(moduleExample.skill)} }`
       : "- run { container: \"<container>\", module: \"<module>\", skill: \"<skill>\" }",
@@ -71,30 +68,13 @@ function formatHub(r: HubMap): string {
   ];
 
   lines.push("# Common instructions");
-  lines.push("Reusable guidance is read through MCP resources, not run as a module-less skill.");
+  lines.push("Reusable guidance is read through MCP resources and linked by module skills.");
   lines.push("- index: okh://instructions/index.md");
   lines.push("- source ingestion: okh://instructions/ingest.md");
   lines.push("");
 
-  const types = Object.keys(r.moduleTypeSkills);
-  lines.push("# Built-in skills");
-  lines.push("Grouped by module type; any module of that type can run these.");
-  if (types.length === 0) {
-    lines.push("- (none)");
-  } else {
-    for (const type of types) {
-      lines.push(`- ${type}:`);
-      lines.push(
-        ...r.moduleTypeSkills[type]!.map(
-          (s) => `  - ${s.name}${s.description ? ` — ${s.description}` : ""}`,
-        ),
-      );
-    }
-  }
-  lines.push("");
-
   lines.push("# Module skills");
-  lines.push("Each module's runnable skills, grouped by container.");
+  lines.push("Every runnable skill is scoped to the module where it appears.");
   if (r.containers.length === 0) {
     lines.push("- (no containers registered — use add_container { source } to register one)");
   } else {
@@ -112,26 +92,18 @@ function formatHub(r: HubMap): string {
           ? " — (no description; run dream to consolidate one)"
           : ` — ${m.description!.trim()}`;
         lines.push(`  - ${m.path}  (module type: ${m.type})  ${m.items} items${desc}`);
-        // Full runnable set for the module. A local skill that overrides a same-named built-in
-        // replaces it, so drop the overridden built-in name and annotate the local one.
-        const overrides = new Set(m.overrides ?? []);
-        const builtinNames = (r.moduleTypeSkills[m.type] ?? [])
-          .map((s) => s.name)
-          .filter((name) => !overrides.has(name));
-        const local = m.local ?? [];
-        if (builtinNames.length) {
-          lines.push(`    - built-in skills: ${builtinNames.join(", ")}`);
-        }
-        if (local.length) {
-          lines.push("    - local skills:");
-          lines.push(
-            ...local.map((s) => {
-              const overridden = overrides.has(s.name) ? " (overrides built-in)" : "";
-              return `      - ${s.name}${s.description ? ` — ${s.description}` : ""}${overridden}`;
-            }),
-          );
-        }
-        if (!builtinNames.length && !local.length) {
+        if (m.skills.length) {
+          lines.push("    - runnable skills:");
+          lines.push(...m.skills.map((skill) => {
+            const origin = skill.origin === "module-type"
+              ? "module type"
+              : skill.path
+                ? `module local: ${skill.path}`
+                : "module local";
+            const overridden = skill.overridesModuleType ? " (overrides module type)" : "";
+            return `      - ${skill.name}${skill.description ? ` — ${skill.description}` : ""} [${origin}]${overridden}`;
+          }));
+        } else {
           lines.push("    - (no runnable skills)");
         }
       }
