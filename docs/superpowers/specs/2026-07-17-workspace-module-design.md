@@ -1,35 +1,50 @@
-# Minimal Workspace Collections
+# Workspace Module Design
 
 **Status:** Proposed
 **Date:** 2026-07-19
 
-## 1. The proposal in one minute
+## 1. Proposal
 
-A workspace is one reusable way of doing work. It contains many projects:
+A workspace is one reusable way of doing work. It contains any number of similar
+projects:
 
 - **Investigations** is a workspace; each investigation is a project.
 - **Presentations** is a workspace; each presentation is a project.
 
-The durable hierarchy is:
+```mermaid
+flowchart LR
+    W[Workspace<br/>workflow and guidance]
+    P1[Project<br/>one durable goal]
+    P2[Project<br/>another goal]
+    R[Run<br/>one bounded attempt]
+    A[Assignment<br/>one agent call]
 
-```text
-Workspace -> Project -> Run -> Assignment
+    W --> P1
+    W --> P2
+    P1 --> R
+    R --> A
 ```
 
-The Hub coordinates. Existing stateless agents execute in the MCP client. People manage
-projects and approve consequential steps in the web app.
+The Hub is a deterministic control plane. Existing stateless agents execute in an MCP
+client; the Hub stores coordination state, validates transitions, and exposes human
+controls in the web app. It does not run models or a background scheduler.
 
-The design follows four rules:
+The minimal v1 decisions are:
 
-1. **Use `README.md` everywhere people read or edit prose.**
-2. **Reuse `.okh/module.yaml` for workspace configuration.**
-3. **Use CloudEvents JSON for operational history.**
-4. **Store snapshots and artifacts as ordinary files.**
+| Concern | Decision |
+|---|---|
+| Workspace configuration | Reuse `.okh/module.yaml` |
+| Human-readable guidance | Use `README.md` |
+| Project history and run state | One append-only `events.json` per project |
+| Reproducible inputs | One immutable snapshot per run |
+| Durable output | One immutable result per successful run |
+| Agent quality checks | Ordinary assignments, not a review subsystem |
+| Human involvement | Interventions during a run; inspect, correct, restore, or complete afterward |
 
-There is no workspace sidecar, project YAML sidecar, state cache, assignment sidecar,
-artifact database, blob store, or lesson directory.
+There is no workspace state sidecar, project config sidecar, run journal, artifact
+manifest, candidate-version system, approval queue, database, or workflow engine.
 
-## 2. The whole file structure
+## 2. Files and authority
 
 ```text
 investigations/
@@ -39,386 +54,69 @@ investigations/
   projects/
     strategic-suppliers/
       README.md
-      project.json
+      events.json
       runs/
         2026-07-19-001/
-          run.json
           snapshot/
-          artifacts/
-            1/
-            2/
+          result/                 # present only after success
 ```
 
-Client-writable staging lives outside the container and is not shown.
+Client-writable staging lives outside the container:
 
-Only four things need explanation:
+```text
+<okh-state>/workspace-staging/<container>/<module>/<project>/<run>/
+```
 
-| Path | Purpose | Who writes it |
-|---|---|---|
-| `.okh/module.yaml` | Workspace workflow, agents, limits, and list behavior | Existing config flow / web settings |
-| `README.md` | Human-readable workspace or project content | User/agent for content; Hub for governed state |
-| `project.json` | Small project-lifetime event journal | Hub only |
-| `run.json` | One bounded run's event journal | Hub only |
+Each file has one job:
 
-`snapshot/` and `artifacts/` are content directories, not metadata systems.
+| Path | Authority |
+|---|---|
+| `.okh/module.yaml` | Lead, allowed agents, and limit overrides |
+| Workspace `README.md` | Shared guidance and acceptance rubric |
+| Project `README.md` | Current project state, goal, and optional guidance |
+| `events.json` | Project history, run coordination, idempotency, and recovery |
+| `runs/<id>/snapshot/` | Exact inputs frozen when the run starts |
+| `runs/<id>/result/` | Complete immutable output of one successful run |
 
-### Why `project.json` remains
+The project README is the canonical current projection. `events.json` explains how that
+state was reached and enables safe retry and crash recovery; it is not a second editable
+projection.
 
-A run becomes immutable when it finishes, but some actions happen later:
+One project-level journal is enough for v1. Each run event identifies its run in the
+CloudEvents `subject`. A terminal run event prohibits later events for that run, while
+the project stream remains open for future runs, lifecycle changes, and result
+restoration. Journal segmentation can be added later if measured file size requires it.
 
-- accepting or undoing an artifact version;
-- completing, reopening, archiving, or unarchiving a project;
-- recording run start/finish recovery; and
-- accepting, rejecting, or promoting a lesson.
+## 3. Workspace configuration
 
-Those events need one project-lifetime journal. Removing it would either mutate terminal
-runs or make local, non-Git projects unauditable. It is deliberately low volume.
-
-## 3. Workspace configuration and customization
-
-The existing module manifest already has a type-specific `config` map:
+The existing module manifest already has the required extension point:
 
 ```yaml
 type: workspace
-description: Evidence-based investigations with human review.
+description: Evidence-based investigations.
 config:
-  version: 1
-
-  projectKind:
-    singular: investigation
-    plural: investigations
-
-  defaultSort:
-    field: updatedAt
-    direction: desc
-
-  acceptance:
-    - id: credible-evidence
-      description: Material claims cite primary or authoritative sources.
-      required: true
-    - id: alternatives
-      description: Viable alternatives are compared consistently.
-      required: true
-    - id: decision
-      description: The conclusion states tradeoffs and unresolved risks.
-      required: true
-
   lead: coordinators/orchestrator
   agents:
     - researcher
     - research-agents/source-analyst
     - shared-hub/review-agents/evidence-checker
-
-  oversight: supervised
-
   limits:
-    maxIterations: 3
-    maxExecutionAssignments: 20
-    maxAttemptsPerAssignment: 2
-
-  learning:
-    enabled: true
-    minProjectsForWorkspacePromotion: 2
+    iterations: 3
+    assignments: 20
+    attempts: 2
 ```
 
-The manifest stays a normal OKH manifest. The workspace loader validates `config` with a
-type-specific Zod schema before listing, starting, or editing work.
+Only `lead` is required. `agents` and `limits` are optional.
 
-### Different project types without different code
+- `lead` plans, integrates corrections, and produces the final result.
+- `agents` is the allowlist of other profiles the lead may assign.
+- `limits` overrides safe defaults and remains bounded by server maxima.
 
-A presentation workspace changes configuration, not the storage model:
+When omitted, limits default to three iterations, twenty total assignments, and two
+attempts per assignment. Workspace overrides may be lower or higher but never exceed
+server maxima.
 
-```yaml
-config:
-  version: 1
-  projectKind:
-    singular: presentation
-    plural: presentations
-  defaultSort:
-    field: targetDate
-    direction: asc
-  # presentation lead, agents, criteria, oversight, limits, and learning follow
-```
-
-Types customize:
-
-- singular/plural labels;
-- default sorting;
-- lead and agent references;
-- acceptance criteria;
-- oversight and execution limits; and
-- human guidance in the workspace README.
-
-Project Markdown may add any headings useful to that workflow. An investigation might
-add `Evidence` and `Open questions`; a presentation might add `Audience`, `Narrative`,
-and `Delivery notes`. The Hub does not invent a schema for prose.
-
-V1 keeps a small universal metadata set. If a future workflow needs searchable custom
-fields, that should be a separate JSON Schema proposal backed by a demonstrated use case.
-
-## 4. One README convention
-
-### Workspace `README.md`
-
-The root README is both the GitHub-friendly overview and shared guidance:
-
-```markdown
-# Investigations
-
-Use primary evidence, distinguish facts from assumptions, and preserve unresolved
-questions.
-
-## Project conventions
-
-Investigation projects normally include Evidence, Alternatives, and Open questions.
-
-## Working guidance
-
-- Start with primary sources.
-- Record contrary evidence.
-- State uncertainty instead of inventing precision.
-```
-
-### Project `README.md`
-
-Each project has one Markdown record:
-
-```markdown
----
-title: Strategic supplier investigation
-description: Compare suppliers for the next sourcing cycle.
-status: active
-createdAt: 2026-07-19T18:30:00Z
-updatedAt: 2026-07-19T18:30:00Z
-targetDate: 2026-08-15
-tags: [sourcing, strategy]
-activeRun: null
-accepted: null
-acceptance:
-  - id: geography
-    description: Cover North America and Europe.
-    required: true
----
-
-## Goal
-
-Recommend two suppliers with evidence, risks, and open questions.
-
-## Brief
-
-Compare the shortlisted suppliers for the next sourcing cycle.
-
-## Guidance
-
-Prefer filings and direct supplier documentation over market summaries.
-```
-
-Required frontmatter:
-
-- `title`, `description`, `status`, `createdAt`, and `updatedAt`;
-- `activeRun`, either `null` or a run ID; and
-- `accepted`, either `null` or `{ run, version, treeHash }`.
-
-Optional frontmatter:
-
-- `targetDate` as `YYYY-MM-DD`;
-- normalized lowercase kebab-case `tags`;
-- additive project acceptance criteria; and
-- lifecycle timestamps `completedAt` and `archivedAt`; and
-- `archivedFrom`, whose value is `active` or `completed`.
-
-`Goal` and `Brief` are required headings. Everything else is ordinary customizable
-Markdown.
-
-The project folder name is its lowercase kebab-case ID. It is not repeated in
-frontmatter.
-
-### Editing
-
-The service reuses the current Markdown/YAML frontmatter parser and the source-preserving
-edit pattern used by todos:
-
-1. re-read the file;
-2. verify its SHA-256 ETag;
-3. patch only known fields or selected heading content;
-4. validate the result; and
-5. atomically replace the file.
-
-Unrelated Markdown is never regenerated.
-
-README frontmatter is the canonical current project state. `project.json` is its audit,
-idempotency, and multi-file transaction journal, not a second state projection.
-
-`updatedAt` is the only denormalized convenience field. If a crash leaves it behind a
-committed event, recovery repairs it.
-
-The Hub exclusively writes `status`, `createdAt`, `updatedAt`, `activeRun`, `accepted`,
-`completedAt`, `archivedAt`, and `archivedFrom`. Direct edits may change title,
-description, target date, tags, acceptance, and Markdown content after ETag validation.
-An unexplained disagreement between governed fields and the last committed project event
-blocks mutation.
-
-## 5. Projects and runs
-
-### Project lifecycle
-
-| Status | Start run | Resume run | Edit | Default list |
-|---|---|---|---|---|
-| `active` | When `activeRun` is null | Yes | Yes | Shown |
-| `completed` | Reopen first | No | Metadata only | Shown |
-| `archived` | No | No | Unarchive only | Hidden |
-
-Actions:
-
-- **Create** creates an active project with no runs.
-- **Continue** starts a new run using accepted artifacts and current guidance.
-- **Resume** continues the exact run in `activeRun`.
-- **Complete** marks a project complete after its run is terminal.
-- **Reopen** returns a completed project to active.
-- **Archive** hides and freezes a project; no active run is allowed.
-- **Unarchive** restores `archivedFrom`, defaulting to active.
-
-Dates never change status automatically.
-
-Create builds the complete project directory, including README and the initial
-`project.created` event, in a sibling temporary directory and atomically renames it.
-Retry with the same command ID returns the created project; different content conflicts.
-
-### Multiple projects
-
-One workspace may contain any number of projects. Multiple projects may run at the same
-time, but each project has at most one active run and one claimed assignment.
-
-The existing finite loader scans project README frontmatter. The workspace tool filters,
-sorts, and paginates that result. V1 targets hundreds, not millions, of projects. No
-committed index or cache is added.
-
-Supported sort fields are `targetDate`, `createdAt`, `updatedAt`, and `title`. Missing
-target dates sort last; project ID breaks ties.
-
-## 6. Standard event records
-
-`project.json` and `run.json` are CloudEvents 1.0 JSON batches:
-
-```json
-[
-  {
-    "specversion": "1.0",
-    "id": "2b7ce542-b724-43ab-9f18-4ec64337a076",
-    "source": "okh://main/investigations/projects/strategic-suppliers",
-    "type": "dev.okh.workspace.run-start.prepared",
-    "subject": "runs/2026-07-19-001",
-    "time": "2026-07-19T18:42:00.000Z",
-    "datacontenttype": "application/json",
-    "sequence": 4,
-    "okhcommandid": "9c7f6765-81db-490d-a4f0-bdf45d2cda57",
-    "data": {
-      "runId": "2026-07-19-001",
-      "expectedProjectEtag": "sha256:..."
-    }
-  }
-]
-```
-
-The standard envelope supplies ID, source, type, subject, time, content type, and data.
-OKH adds only:
-
-- contiguous `sequence`;
-- `okhcommandid` for retry correlation; and
-- event-specific `data` schemas.
-
-Event IDs use `crypto.randomUUID()`. Event and file integrity use SHA-256.
-
-Hash preimages are deterministic:
-
-- a file hash covers its exact bytes;
-- `eventHash` covers the RFC 8785 canonical JSON serialization of one CloudEvent;
-- a review hash is its review event's `eventHash`; and
-- `treeHash` covers RFC 8785 canonical JSON of the path-sorted
-  `{ path, size, sha256 }` array.
-
-### Project journal
-
-`project.json` records only project-lifetime events:
-
-- create and lifecycle transitions;
-- README transactions;
-- run start and finish;
-- accepted-version changes and undo; and
-- lesson dispositions and promotions.
-
-It remains writable for the life of the project.
-
-### Run journal
-
-`run.json` records one bounded run:
-
-- source snapshot hashes;
-- assignments, claims, attempts, and results;
-- plans, candidate versions, reviews, and corrections;
-- human decisions and limits;
-- retrospective and lesson proposals; and
-- one terminal outcome.
-
-After its terminal event, the run journal is immutable.
-
-### Atomic append
-
-Under the shared container writer, the Hub validates the current batch and ETag, copies
-prior bytes except the closing array delimiter unchanged to a sibling temporary file,
-writes a comma when the batch is non-empty, writes the new event and closing delimiter,
-flushes, and atomically renames the file.
-
-Prior event bytes are never parsed and re-emitted. Temporary files have no authority.
-Run limits and a server file-size limit keep replay bounded.
-
-## 7. Starting and finishing a run
-
-### Start
-
-1. Append `run-start.prepared` to `project.json` with the generated run ID, command ID,
-   expected project ETag, and accepted base.
-2. Create the complete run in a sibling temporary directory.
-3. Write the snapshot and first `run.json` event.
-4. Atomically rename the run directory.
-5. Patch project `activeRun` and `updatedAt`.
-6. Append `run-start.committed`.
-
-A valid prepare rolls forward during recovery. A prepare that cannot safely begin gets
-an explicit `run-start.aborted` event. Retrying returns the same committed or aborted
-result.
-
-### Finish
-
-1. Append `run-finish.prepared` to `project.json`.
-2. Append the terminal event to `run.json`.
-3. Clear project `activeRun` and update `updatedAt`.
-4. Append `run-finish.committed`.
-
-Before the terminal event, an invalid precondition may abort. After the terminal event,
-recovery always rolls forward.
-
-### Snapshot
-
-`snapshot/` stores exact, write-once copies of:
-
-- the workspace module manifest;
-- the workspace README;
-- the project README; and
-- each resolved agent profile file.
-
-The first run event records all snapshot hashes and the accepted base. Later events refer
-to hashes rather than duplicating source content.
-
-Live workspace, project, guidance, or agent edits affect future runs only.
-
-## 8. Agents and assignments
-
-Only `lead` has special semantics: it creates plans and incorporates corrections.
-`agents` is an optional flat pool. There are no configured worker, reviewer, critic, or
-retrospector roles.
-
-Agent references use one string form:
+### Agent references
 
 | Form | Resolution |
 |---|---|
@@ -426,234 +124,381 @@ Agent references use one string form:
 | `module/agent` | Agent in that module of the current container |
 | `container/module/agent` | Fully qualified agent |
 
-The final segment is the stable filename-derived agent ID, not mutable display `name`.
-An ambiguous bare reference fails with a qualification suggestion.
+The final segment is the filename-derived agent ID used by the existing agents module,
+not mutable display `name`. An ambiguous bare reference fails with qualification
+suggestions.
 
-At run start, the Hub resolves every reference to canonical `{ container, module, id }`
-identity, snapshots the exact profile, and records the configured-to-canonical
-mapping. Duplicate canonical references are rejected. `lead` is always available to the
-plan and need not be repeated in `agents`.
+At run start, every reference resolves to canonical `{ container, module, id }`
+identity. The Hub rejects missing, ambiguous, or duplicate canonical references and
+snapshots the exact profile. The lead is always allowed and need not be repeated in
+`agents`.
 
-"Configured agents" means `lead` plus every reference in the `agents` pool.
+### Customization without more schema
 
-Every client execution is an assignment:
+Workspace purpose comes from its module folder, description, README guidance, and agent
+selection. Project-specific detail uses ordinary Markdown sections. The UI consistently
+calls each item a **Project**.
 
-```text
-planning | execution | review | retrospective
+V1 deliberately has no configuration for:
+
+- project kind or UI labels;
+- sorting;
+- acceptance criteria;
+- execution mode or oversight;
+- agent roles other than lead; or
+- retrospectives and learning.
+
+Sorting is a remembered user preference. The initial sort is `updatedAt` descending;
+presentations can use `targetDate` ascending without changing workspace configuration.
+
+## 4. README contract
+
+### Workspace `README.md`
+
+The root README is both the GitHub-friendly overview and the shared instructions:
+
+```markdown
+# Investigations
+
+Use primary evidence, distinguish facts from assumptions, and preserve unresolved
+questions.
+
+## Working guidance
+
+- Start with primary sources.
+- Record contrary evidence.
+- State uncertainty instead of inventing precision.
+
+## Acceptance
+
+- Material claims cite primary or authoritative sources.
+- Viable alternatives are compared consistently.
+- The conclusion states tradeoffs and unresolved risks.
 ```
 
-Each assignment has a stable ID, kind, profile hash, result schema, attempt, claim
-generation, and request/result events.
+### Project `README.md`
 
-- Planning always uses `lead`.
-- Execution steps may use any configured agent.
-- The plan may select any configured agent for optional agent review.
-- Retrospective defaults to `lead` unless the plan selects another configured agent.
-- Only execution assignments may produce artifacts.
+```markdown
+---
+title: Strategic supplier investigation
+status: active
+archived: false
+createdAt: 2026-07-19T18:30:00Z
+updatedAt: 2026-07-19T18:30:00Z
+targetDate: 2026-08-15
+tags: [sourcing, strategy]
+activeRun: null
+result: null
+---
 
-Review is an assignment purpose, not a special kind of agent. Using a different profile
-can provide useful independent critique; using the same profile may still help through a
-fresh task context but is not an independent trust boundary. Human final approval is the
-actual trust boundary.
+## Goal
 
-The first claim creates attempt one. Retryable failure, explicit release, or pause that
-invalidates a claim consumes the attempt. Process restart alone does not.
+Recommend two suppliers with evidence, risks, and open questions.
 
-`next` returns the existing `use_agent` shape using the frozen profile:
+## Guidance
 
-- exact snapshotted profile and hash;
-- requested tools;
-- bounded task and resolved inputs;
-- expected result schema;
-- delegation instructions;
-- claim token; and
-- external staging path.
+Prefer filings and direct supplier documentation over market summaries.
 
-Large payloads use the existing MCP `resource_link` convention.
+## Acceptance
 
-### Lost claim credentials
+- Cover both North America and Europe.
+```
 
-The plaintext claim token is transient; only its hash is stored.
+Required frontmatter:
 
-- A server restart automatically permits credential recovery.
-- While the same server is alive, the web UI must authorize **Recover claim**.
-- The client completes a new staging nonce challenge.
-- The Hub rotates the token and staging generation without consuming the assignment
-  attempt.
-- Old tokens and partial output become invalid.
+- `title`;
+- `status`, either `active` or `completed`;
+- `archived`, a boolean;
+- `createdAt` and `updatedAt`;
+- `activeRun`, either `null` or a run ID; and
+- `result`, either `null` or a safe relative path such as
+  `runs/2026-07-19-001/result`.
 
-## 9. The coordination loop
+Optional frontmatter is limited to:
+
+- `targetDate` as `YYYY-MM-DD`; and
+- normalized lowercase kebab-case `tags`.
+
+The project folder name is its lowercase kebab-case ID and is not repeated in
+frontmatter. Only `## Goal` is required in the Markdown body. All other headings are
+workflow-specific.
+
+### Acceptance rubric
+
+The workspace must contain at least one top-level bullet under `## Acceptance`. A
+project may add more. Every listed criterion is required.
+
+At run start, the Hub snapshots the exact criterion text. Each run-local criterion ID is
+derived from the SHA-256 hash of canonical `{ source, ordinal, text }`; the ordered set
+also receives one hash. The lead's final integration reports evidence for every
+criterion. Unmet criteria cause another bounded iteration or a human intervention when
+limits are exhausted.
+
+Acceptance is therefore a work rubric, not a separate YAML schema or human approval
+record. The Hub validates criterion IDs, coverage, evidence references, and result
+hashes; it does not claim that an agent's semantic judgment is correct.
+
+### Source-preserving edits
+
+The Hub reuses the current Markdown/frontmatter parser and the source-preserving edit
+pattern used by todos:
+
+1. Re-read the file and verify its SHA-256 ETag.
+2. Patch only selected frontmatter fields or heading content.
+3. Validate the complete result.
+4. Atomically replace the file.
+
+The Hub owns `status`, `archived`, timestamps, `activeRun`, and `result`. A user may edit
+the title, target date, tags, goal, guidance, acceptance additions, and arbitrary
+workflow sections. Unrelated Markdown is never regenerated.
+
+## 5. Project lifecycle
+
+Project completion and archiving are separate:
 
 ```mermaid
-stateDiagram-v2
-    [*] --> waiting: start / preflight
-    waiting --> planning: capability proven / correction / resume
-    planning --> waiting: plan approval
-    planning --> executing: approved or autopilot
-    executing --> waiting: assignment gate / blocker / limit / pause
-    executing --> reviewing: artifact version assembled
-    reviewing --> planning: revise
-    reviewing --> waiting: final approval / correction
-    waiting --> retrospecting: accepted
-    retrospecting --> waiting: lesson review
-    retrospecting --> completed
-    waiting --> completed
-    planning --> failed
-    executing --> failed
-    reviewing --> failed
-    waiting --> cancelled
+flowchart LR
+    A[status: active]
+    C[status: completed]
+    H[archived: true<br/>status retained]
+
+    A -->|Complete| C
+    C -->|Reopen| A
+    A -.->|Archive| H
+    C -.->|Archive| H
+    H -.->|Unarchive| A
+    H -.->|Unarchive| C
 ```
 
-Wait reasons:
+`archived: true` hides and freezes a project without losing whether it was active or
+completed. Unarchive only clears the flag.
 
-```text
-client-capability
-plan-approval
-assignment-approval
-final-approval
-correction
-blocked
-budget-exceeded
-no-progress
-paused
-retrospective-review
+| Action | Rule |
+|---|---|
+| Create | Creates an active, unarchived project with no run or result |
+| Continue | Starts a new run when the project is active, unarchived, and has no active run |
+| Resume | Continues the exact run named by `activeRun` |
+| Complete | Marks an active, unarchived project completed when no run is active; a result is optional |
+| Reopen | Returns a completed project to active; `archived` must be false |
+| Archive | Requires no active run; retains status |
+| Unarchive | Clears `archived`; retains status |
+
+Each project has at most one active run and one claimed assignment. Multiple projects
+may run independently. Dates never change status automatically.
+
+Create builds the complete project directory, including README and the initial
+`project.created` event, in a sibling temporary directory and atomically renames it.
+That first event stores the create command ID and argument hash. If the target already
+exists, the same pair returns the existing project; a different command or arguments
+conflict.
+
+The finite workspace loader scans README frontmatter, then filters, sorts, and paginates
+in memory. Supported sort fields are `targetDate`, `createdAt`, `updatedAt`, and `title`.
+Missing target dates sort last and project ID breaks ties. V1 targets hundreds, not
+millions, of projects.
+
+## 6. Coordination loop
+
+V1 is autopilot with exception-based human control:
+
+```mermaid
+flowchart TD
+    S[Start run] --> P[Lead plans]
+    P --> W[Configured agents execute ordered assignments]
+    W --> I[Lead integrates and checks Acceptance]
+    I -->|Criteria met| U[Publish immutable result]
+    U --> D[Run succeeded]
+    I -->|More work and limits remain| P
+
+    P -->|Blocked, limit, no progress, or pause| H[Human intervention]
+    W -->|Blocked, limit, no progress, or pause| H
+    I -->|Blocked, limit, no progress, or pause| H
+    H -->|Resume or in-run guidance| P
+    H -->|Cancel| X[Run cancelled]
+
+    P -->|Unrecoverable error| F[Run failed]
+    W -->|Unrecoverable error| F
+    I -->|Unrecoverable error| F
 ```
 
-Blocked, budget, and no-progress waits support only:
+Before starting a run, the client proves that it can read and write the external staging
+area. A failed preflight creates no run.
 
-- retry when allowed;
-- structured correction;
-- review of an existing artifact version; or
-- cancellation.
+The lead produces a bounded ordered plan. Every planned task is an assignment, and each
+attempt invokes its agent:
 
-When the plan requests agent review, the version needs that review's `pass` before final
-web approval. Without agent review, the candidate goes directly to human final review
-and the UI states that no independent agent review was performed.
+- planning and final integration use `lead`;
+- work may use the lead or any configured agent;
+- a critique or fact check is an ordinary work assignment; and
+- only the final lead integration may publish the run result.
 
-All loops are bounded by workspace limits and server maxima. Client-reported token/cost
-data is display-only because it is not portable enforcement.
+There is no worker/reviewer/critic role, review phase, plan approval, per-assignment
+approval, or final approval gate.
 
-## 10. External staging and artifact versions
+The three limits have direct meanings:
 
-Client-writable files live outside the container:
+| Limit | Counts |
+|---|---|
+| `iterations` | Lead plan/integration cycles |
+| `assignments` | Logical tasks created in the run |
+| `attempts` | Attempts for one assignment |
 
-```text
-<okh-state>/workspace-staging/<container>/<module>/<project>/<run>/<claim>/
-  inputs/
-  output/
+Planning and integration count as assignments. Retrying a task increments its attempts
+but does not create another assignment, so total model calls are bounded by
+`assignments * attempts`—for example, the defaults allow at most forty calls.
+Assignments are sequential in v1. A server restart alone does not consume an attempt.
+
+When a run is blocked, makes no progress, reaches a limit, or is paused, the web app
+offers only valid actions: resume, provide in-run guidance, grant a bounded extension, or
+cancel.
+
+A successful run automatically makes its result current. The project remains active
+until a person chooses **Complete**, so one project may have several successful runs.
+
+## 7. Events and recovery
+
+`events.json` is a CloudEvents 1.0 JSON batch:
+
+```json
+[
+  {
+    "specversion": "1.0",
+    "id": "2b7ce542-b724-43ab-9f18-4ec64337a076",
+    "source": "okh://main/investigations/projects/strategic-suppliers",
+    "type": "dev.okh.workspace.run.start.prepared",
+    "subject": "runs/2026-07-19-001",
+    "time": "2026-07-19T18:42:00.000Z",
+    "datacontenttype": "application/json",
+    "sequence": 4,
+    "okhcommandid": "9c7f6765-81db-490d-a4f0-bdf45d2cda57",
+    "data": {
+      "expectedProjectEtag": "sha256:..."
+    }
+  }
+]
 ```
 
-The Hub materializes read-only inputs. The client writes only declared output.
+The standard envelope supplies identity, source, subject, time, type, content type, and
+data. OKH adds only a contiguous `sequence`, `okhcommandid` for retry correlation, and
+event-specific data schemas.
 
-On submit, the Hub validates the claim and paths, opens files without following links
-where supported, revalidates each handle, and copies exact bytes into a temporary
-artifact version.
+Run-scoped events use `runs/<run-id>` as `subject`. The successful terminal event also
+records result publication. Later lifecycle and result-restoration events are
+project-scoped and mention prior runs only in `data`, so they never append to a terminal
+run.
 
-Each complete immutable version lives at:
+The stream records:
 
-```text
-runs/<run>/artifacts/<version>/
+- project creation, edits, completion, reopening, archive, and unarchive;
+- run start, plan, assignments, attempts, waits, corrections, and terminal outcome;
+- snapshot and result hashes; and
+- result publication at successful run completion and later restoration.
+
+Prior event bytes never change. Appending copies them byte-for-byte into a sibling
+temporary file, writes the new event and closing array delimiter, flushes, and atomically
+renames the file. A server file-size limit prevents unbounded replay.
+
+### One transaction pattern
+
+Every multi-file mutation uses the same protocol:
+
+```mermaid
+sequenceDiagram
+    participant H as Hub
+    participant E as events.json
+    participant F as Files/directories
+    participant R as Project README
+
+    H->>E: append action.prepared
+    H->>F: atomic write or rename
+    H->>R: ETag-checked atomic patch
+    H->>E: append action.committed
 ```
 
-An event stores a sorted array of `{ path, size, sha256 }` and a tree hash. There is no
-manifest sidecar or blob store.
+The prepared event contains the expected preimages and exact target hashes for every
+step. Recovery replays an unfinished transaction by checking both states:
 
-The project README `accepted` value identifies the current version:
+- before an authoritative file change, it may append `action.aborted`;
+- a target hash means that step already succeeded and is skipped;
+- an expected preimage means that step is applied;
+- after any authoritative file change, remaining steps always roll forward; and
+- a conflicting hash, unsafe path, malformed event, or impossible transition blocks
+  mutation visibly.
 
-```yaml
-accepted:
-  run: 2026-07-19-001
-  version: 2
-  treeHash: sha256:...
-```
+The same pattern covers run start, successful run finish with result publication, other
+run finishes, result restoration, and lifecycle changes. Project creation is simpler
+because the whole new directory is assembled and renamed atomically.
 
-### Acceptance
+Every mutation has a command ID. Repeating the same command and arguments returns its
+recorded outcome; reusing the ID with different arguments conflicts.
 
-1. Record `acceptance.prepared` in `project.json` with expected current and target hashes.
-2. Patch project `accepted` and `updatedAt`.
-3. Append the run transition to retrospective.
-4. Record `acceptance.committed` in `project.json`.
+### Hashes
 
-Recovery compares the project journal, README, run journal, and immutable artifact tree,
-then rolls forward every missing step. A committed acceptance therefore always agrees
-with both current project state and run phase.
+- File ETags cover exact bytes with SHA-256.
+- Result tree hashes cover RFC 8785 canonical JSON of the path-sorted
+  `{ path, size, sha256 }` array.
+- Acceptance-set hashes cover the ordered run-local criterion records.
+- Snapshot events record the hash of every frozen source file.
 
-### Undo
+## 8. Runs, snapshots, and results
 
-Undo is allowed only when:
+At run start, `snapshot/` receives exact write-once copies of:
 
-- no run is active;
-- the accepted value still matches the target being undone; and
-- the previous artifact version still matches its hash.
+- the workspace module manifest;
+- the workspace README;
+- the project README; and
+- every resolved agent profile.
 
-Undo uses the same prepare/patch/commit protocol in `project.json`.
+The start transaction creates the complete run directory, sets project `activeRun`, and
+commits the snapshot hashes. Live config, guidance, or profile edits affect future runs
+only.
 
-Large binary deduplication or remote artifact storage is deferred. V1 is optimized for
-text-first investigations and presentation source material.
+Assignment work stays in external staging while the run is active. Structured results
+and output hashes are recorded in `events.json`; later assignments receive declared
+prior outputs as read-only inputs. Staging survives a server restart on the same machine
+but is not container content and never syncs.
 
-## 11. Review, correction, and learning
+When final integration succeeds, the Hub:
 
-Reviews are structured run events. Every required criterion has `pass`, `fail`, or
-`unclear`, with evidence paths and feedback. The Hub validates shape, criterion IDs,
-artifact hashes, and paths; it does not claim semantic correctness.
+1. Validates the assignment claim, declared paths, acceptance evidence, and output limits.
+2. Reads files without following links and revalidates opened handles where supported.
+3. Copies the complete output into a sibling temporary result directory.
+4. Atomically renames it to `runs/<run>/result`.
+5. Sets project `result` to that relative path and clears `activeRun`.
+6. Commits the result tree hash and terminal run event.
 
-Final acceptance binds:
+A failed or cancelled run clears `activeRun` without creating a result. The previous
+project result remains current.
 
-- artifact tree hash;
-- accepted-base hash;
-- review event/hash; and
-- effective criteria snapshot hash.
+Each successful run contributes one immutable result. Comparing or restoring a result
+uses prior successful run directories; candidate versions and artifact manifests are
+unnecessary.
 
-Corrections identify a plan, assignment, criterion, or artifact plus the issue and
-expected change. Before the first artifact version they revise the plan; afterward they
-start a new iteration.
+The successful terminal event stores the result's path-sorted file array and tree hash.
+Result comparison diffs those recorded arrays and reads selected changed text files only
+when a content diff is requested; it creates no separate manifest.
+
+Restore is allowed only with no active run and when the current result still matches the
+expected path and tree hash. The user selects a specific prior successful result, and the
+normal transaction protocol changes the README pointer to that path. Result directories
+are never mutated or deleted by restore.
 
 ### Continue versus resume
 
-- **Resume** replays the current run and continues its saved phase.
-- **Continue** creates a new run from current workspace/project/profile snapshots,
-  accepted artifacts, the last retrospective summary, and unresolved corrections.
+- **Resume** replays `events.json` and continues the run in `activeRun`.
+- **Continue** starts a new run from current snapshots, the current result, and an
+  optional human correction.
 
-Neither operation uses raw prior chat or hidden reasoning.
+Neither operation depends on prior chat history or hidden model reasoning.
 
-### Learning
+## 9. Tool and client boundary
 
-The retrospective event records outcome, practices, failures, interventions, evidence,
-and zero or more proposals.
-
-Each proposal includes:
-
-- owning project and run;
-- source project/run/event/review/artifact hashes;
-- target scope and path;
-- exact proposed change;
-- expected benefit, regression risk, and validation; and
-- base hash.
-
-Human-edited Markdown, YAML, agent, and skill files use a valid unified diff over exact
-bytes. RFC 6902 is reserved for machine-owned JSON.
-
-Nothing applies automatically:
-
-- project guidance may use evidence from one project;
-- workspace guidance/policy normally requires distinct evidence from
-  `minProjectsForWorkspacePromotion` projects;
-- a web reviewer may override with justification;
-- stale base hashes require a newly reviewed proposal; and
-- cross-module changes use the target module's skill, Hub-managed exact patch, and normal
-  sync/PR flow.
-
-Proposals live in the originating run. Later dispositions live in `project.json`, so the
-terminal run remains immutable.
-
-## 12. Tool and skill surface
-
-One deterministic tool:
+One deterministic MCP tool is sufficient:
 
 ```text
 workspace {
   operation:
-    list | create | status | start | preflight | next | submit
+    list | create | status | preflight | start | next | submit
   container
   module
   project?
@@ -664,177 +509,200 @@ workspace {
 | Operation | Purpose |
 |---|---|
 | `list` | Filter, sort, and page projects |
-| `create` | Create one project README and journal |
-| `status` | Return current project/run/review state |
-| `start` | Start one run |
+| `create` | Create one project |
+| `status` | Return current project and run state |
 | `preflight` | Prove access to external staging |
-| `next` | Claim work or return a wait/terminal result |
+| `start` | Start a new run |
+| `next` | Claim the next assignment or return an intervention/terminal result |
 | `submit` | Submit the current assignment result |
 
-Every mutation has a command ID. Same ID and arguments replay the recorded result;
-changed arguments conflict. Transient credentials are excluded.
+`next` returns a workspace-specific superset of the existing `use_agent` result shape:
+the frozen profile and bounded task plus declared inputs, expected result schema, claim
+token, and staging path. Large inputs use the existing MCP `resource_link` convention.
 
-MCP cannot satisfy human review or lifecycle gates. Those are same-origin web actions.
-`web:local` is an audit label, not verified identity.
+Only a hash of the claim token is persisted. The claim also records the server instance
+that issued it:
 
-Built-in skills:
+- after restart, the old claim is reclaimable without consuming an attempt and its token
+  cannot submit;
+- during the same server process, a human may release a lost claim, consuming an
+  attempt; and
+- stale tokens and undeclared output paths always fail.
 
-- `initialize` configures the manifest and workspace README;
-- `create` gathers one project and calls deterministic creation;
-- `coordinate` pulls and executes assignments;
-- `retrospect` produces evidence-linked lessons; and
-- `improve` prepares an approved exact change through the target workflow.
+The server never calls a model. The `coordinate` skill repeatedly calls `next`, executes
+the returned agent task in the client, and calls `submit`.
 
-## 13. Web experience
+Built-in skills remain small:
+
+- `initialize` creates the manifest and workspace README;
+- `create` gathers a goal and creates one project; and
+- `coordinate` starts or resumes coordinated work.
+
+## 10. Human and web experience
+
+There is no formal review entity. Human control is expressed through project actions and
+run interventions:
+
+```mermaid
+flowchart LR
+    WS[Workspaces]
+    WP[Workspace<br/>Projects and Settings]
+    PD[Project<br/>Overview · Activity · Result · Settings]
+    AT[Needs attention<br/>Blocked · Limit · No progress · Paused]
+    AG[Agents]
+
+    WS --> WP
+    WP --> PD
+    WS --> AT
+    WS --> AG
+    AT --> PD
+```
 
 ### Workspaces
 
-`/workspaces` lists workspace modules with description, project kind, counts, active
-runs, pending reviews, nearest target date, agent-reference validity, and sync state.
+`/workspaces` shows description, project count, active runs, attention count, nearest
+target date, agent-reference validity, and sync state.
 
-### Projects
+### Workspace detail
 
 `/workspaces/:container/:module` provides:
 
-- New investigation/presentation;
-- status, search, tag, and target-date filters;
-- configured sorting;
-- title, status, target date, updated time, and pending review; and
-- Open, Continue, Resume, Review, Reopen, or Unarchive actions.
+- **New project**;
+- status, archive, tag, target-date, and text filters;
+- user-remembered sorting;
+- Continue, Resume, Complete, Reopen, Archive, and Unarchive actions; and
+- settings for lead, allowed agents, limits, guidance, and workspace acceptance.
 
-Presentation workspaces sort by `targetDate`, place missing dates last, mark past dates,
-and never auto-complete.
+Target-date sorting places missing dates last. Past dates are highlighted but never
+change project state.
 
 ### Project detail
 
 | Tab | Content |
 |---|---|
-| Overview | Rendered project README and lifecycle controls |
-| Run | Plan, assignments, attempts, waits, and controls |
-| Artifacts | Accepted vs current version diff |
-| Review | Pending and historical decisions |
-| Learning | Retrospectives, proposals, and dispositions |
+| Overview | Goal, guidance, lifecycle, and current state |
+| Activity | Plan, assignments, attempts, waits, corrections, and run history |
+| Result | Current/prior results, diff, criterion evidence, Complete, Continue, and Restore |
 | Settings | Source-preserving README edits |
 
-### Agents and reviews
+Inspecting a result creates no durable "reviewed" state. If it is good, the user may
+complete the project. If it needs work, the user starts **Continue with correction**. If
+it should not be current, the user restores a specific prior result.
 
-`/agents` browses existing profiles and workspace references. `/reviews` aggregates
-pending decisions across workspaces and projects.
+### Needs attention and agents
 
-Agent settings select one lead and maintain the optional agent pool for future runs; they
-do not edit live profile files or active snapshots.
+**Needs attention** aggregates only active runs waiting for human action. Its panels show
+the recorded cause and valid next actions; there is no global approval/review queue.
 
-The frontend registry must support validated parameterized routes. Invalid IDs render
-not-found. Review-server restart rebinds pending decisions to the new loopback URL.
+`/agents` browses existing profiles, canonical identities, and workspace references.
+Workspace settings select one lead and maintain the optional allowlist for future runs;
+they never edit profile files or active snapshots.
 
-## 14. Safety and concurrency
+The frontend route registry must support validated parameterized routes. Invalid IDs
+render not-found. Human mutations are same-origin web actions; `web:local` is an audit
+label, not verified identity. Controls expose state and disabled reasons accessibly.
 
-### Hub-managed writes
+## 11. Safety and OKH integration
 
-One `ContainerTransactionCoordinator` serializes Hub-managed workspace, todo,
-module/config, and sync mutations by canonical container path.
+### Concurrency and recovery
 
-- It combines the existing in-process mutex pattern with an OS-backed writer capability.
-- Sync holds it through validation, staging, commit, and push.
-- Reads remain available.
-- The capability is not held while a model runs against external staging.
-- Known multi-host storage remains inspect-only; this is not a distributed lease.
+Workspace writes reuse the existing hub-wide container mutation lock rather than adding
+a workspace-specific lock. Hub-managed module, workspace, todo, and sync writes
+serialize; sync holds the lock through validation, staging, commit, and push.
 
-Direct edits made by a client following a skill are outside this lock. Later Hub writes
-and sync revalidate preimage hashes and fail visibly on conflict.
+The lock is not held while an MCP client runs an agent. A later submission revalidates
+the project ETag, run state, claim token, output paths, and hashes. Projects therefore
+execute independently, while their short durable writes may queue behind another Hub
+mutation. Per-container lock partitioning is deferred unless measured contention
+justifies it.
 
-### Recovery invariants
+Required invariants:
 
-- User-visible files use sibling temporary write, flush, and atomic rename.
-- Multi-file project changes use project prepare/commit/abort events.
-- Snapshot and artifact directories are complete before an event references them.
-- Terminal run journals reject further writes.
-- Malformed events, unsafe paths, stale ETags, conflicting command IDs, or missing hashes
-  stop visibly.
-- Accepted artifact undo is rejected while a run is active.
-
-### Sync
-
-Sync commits the whole container. Useful boundaries are project lifecycle, approved
-plan, terminal run, accepted artifact version, and promoted lesson—not every event.
-
-External staging and per-machine caches never sync. Shared-mode containers keep their
-personal branch and PR workflow.
-
-## 15. Integration with current OKH
+- user-visible files use sibling temporary write, flush, and atomic rename;
+- snapshots and results are complete before an event references them;
+- old event bytes and result directories never change;
+- a terminal run rejects later run-scoped events;
+- archived projects and completed projects cannot start work;
+- one project cannot have two active runs or two claimed assignments; and
+- invalid state stops visibly instead of being repaired heuristically.
 
 ### Reuse
 
-- Existing `.okh/module.yaml` and `config`.
-- Top-level module discovery.
-- Current finite `Loader`.
-- Markdown/YAML frontmatter utilities.
-- Source-preserving todo edit pattern.
-- Existing `agents` loader and `.agent.md`.
-- Existing `use_agent` result convention.
-- Generic module skills and cross-module sync/PR.
-- Loopback server security and MCP App patterns.
-- Container-wide sync.
+- Existing `.okh/module.yaml` and arbitrary `config`.
+- Existing module discovery and finite loader.
+- Markdown/YAML frontmatter and source-preserving edit patterns.
+- Existing agents loader, canonical identity, and `.agent.md` support.
+- Existing `use_agent` response and `resource_link` conventions.
+- Generic module skills and container sync/PR workflow.
+- Loopback web security and MCP App patterns.
 - Existing YAML, Zod, and Node crypto dependencies.
 
 ### Add
 
-- `workspace` built-in type.
-- Workspace config and project README validators.
+- The `workspace` built-in module type and validators.
 - `WorkspaceService`.
-- CloudEvents batch validation and atomic append.
-- Shared container transaction coordinator.
-- Workspaces/Agents/Reviews web features and parameterized routing.
+- CloudEvents batch validation and byte-preserving atomic append.
+- Workspace/project/attention/agent web views.
+- Safe parameterized frontend routes.
 
 ### Do not add
 
-- Another workspace/project config file.
-- Database, queue, scheduler, or workflow engine.
+- Another workspace or project config file.
+- Separate project and run journals.
+- Database, queue, scheduler, or server-side model runner.
 - Persisted collection index.
-- Blob/content-addressed artifact subsystem.
+- Candidate artifact versions or manifests.
+- Formal review, approval, or agent-role subsystem.
 - Custom agent format.
 - Project-type-specific code.
 
-## 16. Delivery
+Sync commits the whole container. Useful boundaries are project lifecycle changes and
+terminal runs, not individual assignment events. External staging and user UI
+preferences never sync.
 
-1. **Collections:** manifest config, README parsing, project lifecycle/listing, project
-   journal, and read-only web views.
-2. **Runs:** snapshots, run journal, assignments, claims, limits, external staging, and
-   resume.
-3. **Review:** artifact versions, acceptance/undo, diffs, corrections, and global review.
-4. **Learning:** retrospectives, exact-change proposals, dispositions, and promotion.
+## 12. Delivery and deferred work
 
-Deferred:
+1. **Projects:** module config, README parsing/editing, events, lifecycle, listing, and
+   read-only web pages.
+2. **Runs:** snapshots, plans, assignments, claims, limits, staging, results, recovery,
+   resume, continue, and restore.
+3. **Web controls:** workspace settings, project actions, Needs attention, result
+   comparison, agents, routing, accessibility, and sync integration.
 
+Deferred until a demonstrated need:
+
+- retrospectives and automated learning;
 - parallel assignments;
-- automatic local/Copilot SDK runner;
-- calendar/recurring projects;
-- timed claim expiry and notifications;
-- persistent external index;
-- binary deduplication/remote artifacts;
-- remote multi-host execution; and
+- automatic local or Copilot SDK runner;
+- calendar and recurring projects;
+- notifications and timed claim expiry;
+- journal segmentation and persistent external indexing;
+- binary deduplication or remote result storage;
+- remote multi-host active-run execution; and
 - web agent authoring.
 
-## 17. Essential validation
+## 13. Essential validation
 
 The implementation must prove:
 
-- workspace config and project README validation;
-- source-preserving README edits;
-- project sorting, filtering, pagination, lifecycle, and archival;
-- run start/finish recovery at every crash boundary;
+- minimal config, agent-reference, limit, and README validation;
+- source-preserving edits and ETag conflicts;
+- lifecycle and archive transitions;
+- filtering, pagination, and remembered sorting;
+- preflight before run creation;
 - exact replay after restart;
-- event schema, sequence, ETag, command replay, and terminal immutability;
-- all assignment kinds, attempts, claim recovery, and bounded loops;
-- source/profile snapshot stability;
-- external staging isolation from container sync;
-- deterministic artifact tree hashes and acceptance/undo recovery;
-- review coverage and hash-bound final approval;
-- cross-project learning evidence and stale-base rejection;
-- route safety, same-origin mutations, and accessible state-aware controls; and
-- no server-side model or background agent execution.
+- transaction recovery at every crash boundary;
+- CloudEvents schema, sequence, command replay, and terminal-run enforcement;
+- planning, assignments, retries, claim recovery, corrections, and all limits;
+- snapshot stability when source files later change;
+- staging isolation and missing-staging failure;
+- result path safety, deterministic tree hashes, publication, comparison, and restore;
+- acceptance extraction, criterion IDs, and final lead evidence coverage;
+- container write/sync serialization;
+- safe parameterized routes and accessible state-aware controls; and
+- absence of server-side model or background agent execution.
 
-## 18. Standards
+## 14. Standards and references
 
 | Concern | Convention |
 |---|---|
@@ -842,9 +710,7 @@ The implementation must prove:
 | Human-readable content | `README.md` with YAML frontmatter |
 | Agent profiles | GitHub Copilot `.agent.md` |
 | Operational history | CloudEvents 1.0 JSON batch |
-| Human-edited changes | Unified diff |
-| Machine-owned JSON changes | RFC 6902 JSON Patch |
-| Canonical JSON hashing | RFC 8785 JSON Canonicalization Scheme |
+| Canonical structured hashing | RFC 8785 JSON Canonicalization Scheme |
 | Time | ISO 8601 |
 | Integrity/concurrency | SHA-256 ETags and atomic replace |
 
@@ -852,7 +718,6 @@ References:
 
 - [CloudEvents specification](https://github.com/cloudevents/spec)
 - [CloudEvents JSON format](https://github.com/cloudevents/spec/blob/v1.0/json-format.md)
-- [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
 - [RFC 8785 JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
 - [Jekyll front matter](https://jekyllrb.com/docs/front-matter/)
 - [Hugo front matter](https://gohugo.io/content-management/front-matter/)
