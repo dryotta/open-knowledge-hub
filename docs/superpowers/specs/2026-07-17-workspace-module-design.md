@@ -55,7 +55,7 @@ Only four things need explanation:
 
 | Path | Purpose | Who writes it |
 |---|---|---|
-| `.okh/module.yaml` | Workspace workflow, team, limits, and list behavior | Existing config flow / web settings |
+| `.okh/module.yaml` | Workspace workflow, agents, limits, and list behavior | Existing config flow / web settings |
 | `README.md` | Human-readable workspace or project content | User/agent for content; Hub for governed state |
 | `project.json` | Small project-lifetime event journal | Hub only |
 | `run.json` | One bounded run's event journal | Hub only |
@@ -103,26 +103,11 @@ config:
       description: The conclusion states tradeoffs and unresolved risks.
       required: true
 
-  team:
-    members:
-      lead:
-        container: shared-hub
-        module: team-agents
-        id: orchestrator
-      researcher:
-        container: shared-hub
-        module: team-agents
-        id: research-synthesizer
-      reviewer:
-        container: shared-hub
-        module: team-agents
-        id: evidence-reviewer
-    roles:
-      coordinator: lead
-      planner: lead
-      executors: [researcher]
-      reviewer: reviewer
-      retrospector: reviewer
+  lead: coordinators/orchestrator
+  agents:
+    - researcher
+    - research-agents/source-analyst
+    - shared-hub/review-agents/evidence-checker
 
   oversight: supervised
 
@@ -152,14 +137,14 @@ config:
   defaultSort:
     field: targetDate
     direction: asc
-  # presentation team, criteria, oversight, limits, and learning follow
+  # presentation lead, agents, criteria, oversight, limits, and learning follow
 ```
 
 Types customize:
 
 - singular/plural labels;
 - default sorting;
-- agent team and role bindings;
+- lead and agent references;
 - acceptance criteria;
 - oversight and execution limits; and
 - human guidance in the workspace README.
@@ -420,7 +405,7 @@ recovery always rolls forward.
 - the workspace module manifest;
 - the workspace README;
 - the project README; and
-- each resolved `.agent.md` profile.
+- each resolved agent profile file.
 
 The first run event records all snapshot hashes and the accepted base. Later events refer
 to hashes rather than duplicating source content.
@@ -429,27 +414,47 @@ Live workspace, project, guidance, or agent edits affect future runs only.
 
 ## 8. Agents and assignments
 
-The workspace binds existing profiles to these roles:
+Only `lead` has special semantics: it creates plans and incorporates corrections.
+`agents` is an optional flat pool. There are no configured worker, reviewer, critic, or
+retrospector roles.
 
-| Role | Responsibility |
+Agent references use one string form:
+
+| Form | Resolution |
 |---|---|
-| Coordinator | Frames iterations and incorporates corrections |
-| Planner | Produces a bounded structured plan |
-| Executor | Produces declared artifact changes |
-| Reviewer | Evaluates the current artifact version against criteria |
-| Retrospector | Produces evidence-linked lessons |
+| `agent` | Unique agent with that ID in the current container |
+| `module/agent` | Agent in that module of the current container |
+| `container/module/agent` | Fully qualified agent |
+
+The final segment is the stable filename-derived agent ID, not mutable display `name`.
+An ambiguous bare reference fails with a qualification suggestion.
+
+At run start, the Hub resolves every reference to canonical `{ container, module, id }`
+identity, snapshots the exact profile, and records the configured-to-canonical
+mapping. Duplicate canonical references are rejected. `lead` is always available to the
+plan and need not be repeated in `agents`.
+
+"Configured agents" means `lead` plus every reference in the `agents` pool.
 
 Every client execution is an assignment:
 
 ```text
-coordination | planning | execution | review | retrospective
+planning | execution | review | retrospective
 ```
 
 Each assignment has a stable ID, kind, profile hash, result schema, attempt, claim
 generation, and request/result events.
 
-If coordinator and planner are the same profile, one planning assignment combines both
-responsibilities. Only execution assignments may produce artifacts.
+- Planning always uses `lead`.
+- Execution steps may use any configured agent.
+- The plan may select any configured agent for optional agent review.
+- Retrospective defaults to `lead` unless the plan selects another configured agent.
+- Only execution assignments may produce artifacts.
+
+Review is an assignment purpose, not a special kind of agent. Using a different profile
+can provide useful independent critique; using the same profile may still help through a
+fresh task context but is not an independent trust boundary. Human final approval is the
+actual trust boundary.
 
 The first claim creates attempt one. Retryable failure, explicit release, or pause that
 invalidates a claim consumes the attempt. Process restart alone does not.
@@ -521,8 +526,9 @@ Blocked, budget, and no-progress waits support only:
 - review of an existing artifact version; or
 - cancellation.
 
-Reviewing an existing version does not bypass acceptance: the version still needs a
-matching reviewer `pass` before final web approval.
+When the plan requests agent review, the version needs that review's `pass` before final
+web approval. Without agent review, the candidate goes directly to human final review
+and the UI states that no independent agent review was performed.
 
 All loops are bounded by workspace limits and server maxima. Client-reported token/cost
 data is display-only because it is not portable enforcement.
@@ -684,7 +690,7 @@ Built-in skills:
 ### Workspaces
 
 `/workspaces` lists workspace modules with description, project kind, counts, active
-runs, pending reviews, nearest target date, team validity, and sync state.
+runs, pending reviews, nearest target date, agent-reference validity, and sync state.
 
 ### Projects
 
@@ -715,8 +721,8 @@ and never auto-complete.
 `/agents` browses existing profiles and workspace references. `/reviews` aggregates
 pending decisions across workspaces and projects.
 
-Team settings bind existing profiles to future-run roles; they do not edit live profile
-files or active snapshots.
+Agent settings select one lead and maintain the optional agent pool for future runs; they
+do not edit live profile files or active snapshots.
 
 The frontend registry must support validated parameterized routes. Invalid IDs render
 not-found. Review-server restart rebinds pending decisions to the new loopback URL.
