@@ -139,6 +139,10 @@ Workspace purpose comes from its module folder, description, README guidance, an
 selection. Project-specific detail uses ordinary Markdown sections. The UI consistently
 calls each item a **Project**.
 
+The manifest `description` is also a routing hint. It should use the nouns and verbs a
+person is likely to say, such as "investigate evidence-based questions" or "create and
+refine presentations."
+
 V1 deliberately has no configuration for:
 
 - project kind or UI labels;
@@ -219,7 +223,7 @@ Optional frontmatter is limited to:
 - `targetDate` as `YYYY-MM-DD`; and
 - normalized lowercase kebab-case `tags`.
 
-The project folder name is its lowercase kebab-case ID and is not repeated in
+The project folder name is its immutable lowercase kebab-case ID and is not repeated in
 frontmatter. Only `## Goal` is required in the Markdown body. All other headings are
 workflow-specific.
 
@@ -321,8 +325,9 @@ flowchart TD
     I -->|Unrecoverable error| F
 ```
 
-Before starting a run, the client proves that it can read and write the external staging
-area. A failed preflight creates no run.
+Before starting or resuming agent execution, the client proves that it can read and
+write the external staging area. A failed preflight creates no new run and leaves an
+existing run unchanged.
 
 The lead produces a bounded ordered plan. Every planned task is an assignment, and each
 attempt invokes its agent:
@@ -349,8 +354,8 @@ but does not create another assignment, so total model calls are bounded by
 Assignments are sequential in v1. A server restart alone does not consume an attempt.
 
 When a run is blocked, makes no progress, reaches a limit, or is paused, the web app
-offers only valid actions: resume, provide in-run guidance, grant a bounded extension, or
-cancel.
+offers only valid actions: allow retry, provide in-run guidance, grant a bounded
+extension, or cancel.
 
 A successful run automatically makes its result current. The project remains active
 until a person chooses **Complete**, so one project may have several successful runs.
@@ -478,10 +483,10 @@ The successful terminal event stores the result's path-sorted file array and tre
 Result comparison diffs those recorded arrays and reads selected changed text files only
 when a content diff is requested; it creates no separate manifest.
 
-Restore is allowed only with no active run and when the current result still matches the
-expected path and tree hash. The user selects a specific prior successful result, and the
-normal transaction protocol changes the README pointer to that path. Result directories
-are never mutated or deleted by restore.
+Restore is allowed only when the project is unarchived, no run is active, and the current
+result still matches the expected path and tree hash. The user selects a specific prior
+successful result, and the normal transaction protocol changes the README pointer to
+that path. Result directories are never mutated or deleted by restore.
 
 ### Continue versus resume
 
@@ -498,7 +503,8 @@ One deterministic MCP tool is sufficient:
 ```text
 workspace {
   operation:
-    list | create | status | preflight | start | next | submit
+    list | create | status | preflight | start | next | submit | update | intervene
+  action?
   container
   module
   project?
@@ -515,6 +521,13 @@ workspace {
 | `start` | Start a new run |
 | `next` | Claim the next assignment or return an intervention/terminal result |
 | `submit` | Submit the current assignment result |
+| `update` | Complete, reopen, archive, unarchive, or restore a project |
+| `intervene` | Retry, add in-run guidance, extend a limit, or cancel a waiting run |
+
+`update.action` is `complete | reopen | archive | unarchive | restore`.
+`intervene.action` is `retry | guide | extend | cancel`. Each action accepts only the
+fields relevant to that transition and validates the current ETag and state.
+`start` accepts optional continuation-correction text.
 
 `next` returns a workspace-specific superset of the existing `use_agent` result shape:
 the frozen profile and bounded task plus declared inputs, expected result schema, claim
@@ -529,14 +542,20 @@ that issued it:
   attempt; and
 - stale tokens and undeclared output paths always fail.
 
-The server never calls a model. The `coordinate` skill repeatedly calls `next`, executes
-the returned agent task in the client, and calls `submit`.
+The server never calls a model. The `coordinate` skill checks `status` and preflights the
+current client first. If `activeRun` exists, it resumes with `next`; otherwise it calls
+`start`. It then repeatedly calls `next`, executes the returned agent task in the client,
+and calls `submit`.
 
 Built-in skills remain small:
 
 - `initialize` creates the manifest and workspace README;
+- `configure` updates lead, agents, limits, guidance, or acceptance;
 - `create` gathers a goal and creates one project; and
 - `coordinate` starts or resumes coordinated work.
+
+Project lifecycle and intervention requests call `update` or `intervene` directly after
+the client resolves the workspace and project.
 
 ## 10. Human and web experience
 
@@ -570,7 +589,7 @@ target date, agent-reference validity, and sync state.
 - **New project**;
 - status, archive, tag, target-date, and text filters;
 - user-remembered sorting;
-- Continue, Resume, Complete, Reopen, Archive, and Unarchive actions; and
+- Complete, Reopen, Archive, and Unarchive actions; and
 - settings for lead, allowed agents, limits, guidance, and workspace acceptance.
 
 Target-date sorting places missing dates last. Past dates are highlighted but never
@@ -582,12 +601,13 @@ change project state.
 |---|---|
 | Overview | Goal, guidance, lifecycle, and current state |
 | Activity | Plan, assignments, attempts, waits, corrections, and run history |
-| Result | Current/prior results, diff, criterion evidence, Complete, Continue, and Restore |
+| Result | Current/prior results, diff, criterion evidence, Complete, and Restore |
 | Settings | Source-preserving README edits |
 
 Inspecting a result creates no durable "reviewed" state. If it is good, the user may
-complete the project. If it needs work, the user starts **Continue with correction**. If
-it should not be current, the user restores a specific prior result.
+complete the project. If it needs work, the user edits project guidance or tells an MCP
+client to continue with a correction. If it should not be current, the user restores a
+specific prior result.
 
 ### Needs attention and agents
 
@@ -598,11 +618,217 @@ the recorded cause and valid next actions; there is no global approval/review qu
 Workspace settings select one lead and maintain the optional allowlist for future runs;
 they never edit profile files or active snapshots.
 
-The frontend route registry must support validated parameterized routes. Invalid IDs
-render not-found. Human mutations are same-origin web actions; `web:local` is an audit
-label, not verified identity. Controls expose state and disabled reasons accessibly.
+Runs start and resume only from an MCP client, because that client executes the agents.
+The web app has no Start, Continue, or Resume-run button.
 
-## 11. Safety and OKH integration
+The frontend route registry must support validated parameterized routes. Invalid IDs
+render not-found. Web mutations are same-origin; equivalent MCP lifecycle or
+intervention calls require an explicit user request and use the same service,
+preconditions, and command IDs. `web:local` and `mcp:user-request` are audit labels, not
+verified identities. Controls expose state and disabled reasons accessibly.
+
+## 11. Usage from an MCP client
+
+The default Hub wake phrase is `hub`; users may configure another. Workspace requests
+follow the same routing rule as existing Hub requests: when addressed, the client calls
+`inspect` first and routes through the selected module's skills and tools.
+
+### Natural-language routing contract
+
+The client resolves an explicit `container/module/project` reference directly.
+Otherwise it:
+
+1. Inspects live containers and modules.
+2. Matches a workspace by module name and description.
+3. Resolves an existing project by ID or unique title match.
+4. Asks one clarification when a workspace or project is ambiguous.
+5. Uses the user's verb to distinguish create, resume, continue, and lifecycle changes.
+
+The client never guesses between multiple matching workspaces and never creates a second
+project when the request refers to an existing one.
+
+A user may disambiguate directly:
+
+> hub, continue `Work/investigations/supplier-concentration-question` with the latest
+> filings.
+
+| User intent | Hub routing |
+|---|---|
+| "Set up an Investigations workspace" | `add_module` workflow, then workspace `initialize` |
+| "Configure Investigations to use..." | Workspace `configure` skill |
+| "Create an investigation for later" | Workspace `create` skill only |
+| "Investigate..." or "start a new presentation..." | Create a project, then `coordinate` |
+| "Resume..." | Continue the existing `activeRun` through `coordinate` |
+| "Continue... with..." | Start a new run from the current result plus correction |
+| "Reopen", "complete", "archive", "unarchive", or "restore" | `workspace` with `operation: update` |
+| "Retry", "use this guidance", "extend", or "cancel" a wait | `workspace` with `operation: intervene` |
+| "List", "find", or "show status" | `workspace` with `operation: list` or `status` |
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant C as MCP client
+    participant H as Hub
+
+    U->>C: hub, investigate supplier concentration risk
+    C->>H: inspect
+    H-->>C: Matching workspace and skills
+    C->>H: run create
+    C->>H: preflight, start
+    loop Until success or intervention
+        C->>H: next
+        H-->>C: Frozen agent assignment
+        C->>C: Execute agent
+        C->>H: submit
+    end
+    H-->>C: Current result or intervention
+    C-->>U: Outcome and next valid actions
+```
+
+### Example A: Set up and configure a workspace
+
+> hub, add an Investigations workspace to my Work container. Use the orchestrator as
+> lead, allow the researcher and evidence-checker agents, and require primary sources,
+> explicit alternatives, and unresolved risks.
+
+The client:
+
+1. Calls `inspect` to resolve the Work container and agent references.
+2. Starts the existing `add_module` workflow with `type: workspace` and a proposed
+   `investigations` path.
+3. Shows the normal add-module plan and waits for confirmation.
+4. Creates the module, then runs its `initialize` skill with the requested config,
+   guidance, and `## Acceptance` bullets.
+5. Validates the new workspace and syncs its container.
+
+The result is still only:
+
+```text
+investigations/
+  .okh/module.yaml
+  README.md
+  projects/
+```
+
+Later configuration uses the workspace skill rather than another metadata file:
+
+> hub, configure Investigations to allow the market-analyst agent and limit runs to
+> two iterations.
+
+The `configure` skill presents the exact manifest/README changes, applies them after any
+required confirmation, validates agent resolution, and syncs. The same values remain
+editable in the web Settings page.
+
+### Example B: Create a project or start new work
+
+To create a project without starting agents:
+
+> hub, create an investigation for the supplier concentration question so I can work on
+> it later. Target August 15, 2026 and tag it sourcing.
+
+The client resolves the Investigations workspace, proposes
+`supplier-concentration-question` as the immutable project ID, runs the workspace
+`create` skill, and syncs. It asks only if routing or required goal details are unclear.
+
+An imperative workflow request means create **and** start:
+
+> hub, investigate supplier concentration risk in North America and Europe and recommend
+> two resilient alternatives.
+
+The client creates a project from that goal, preflights staging, and runs `coordinate`
+until success or intervention.
+
+If a likely matching project already exists, it reports that project and asks whether to
+resume/continue it or create a distinct project.
+
+The same routing works for another workspace:
+
+> hub, start a new presentation on the Q3 roadmap for the July 30, 2026 leadership
+> meeting.
+
+The client resolves the Presentations workspace, creates a project with
+`targetDate: 2026-07-30`, then coordinates its first run. If more than one workspace
+matches "presentations," it asks which one instead of choosing silently.
+
+### Example C: Resume or continue
+
+Resume means an active run already exists:
+
+> hub, resume the supplier concentration investigation.
+
+The client resolves the project, calls `status`, preflights the current client, sees
+`activeRun`, and enters the `next`/execute/`submit` loop without calling `start` or
+creating a new snapshot.
+
+Continue means the prior run is terminal and a new run is wanted:
+
+> hub, continue the supplier concentration investigation. Add direct evidence from the
+> latest filings and make the regional tradeoffs explicit.
+
+The client verifies that no run is active, calls `start` with the correction text, and
+coordinates a new run from the current result and fresh snapshots.
+
+If the user says "continue" while a run is active, the client reports that state and asks
+whether to resume it or cancel it; it never starts a second run.
+
+If the project is completed or archived, the client reports that state and requires
+reopen or unarchive before starting.
+
+### Example D: Reopen, iterate, and handle intervention
+
+Reopening changes lifecycle state but does not start agents:
+
+> hub, reopen the supplier concentration investigation.
+
+This calls `workspace` with `operation: update` and `action: reopen`. To reopen and
+immediately do more work, the user can compose both intents:
+
+> hub, reopen the supplier concentration investigation and continue it with the latest
+> regulatory changes.
+
+The client reopens the project, then starts and coordinates a new run.
+
+If the project is also archived, the client unarchives it before reopening and reports
+both transitions.
+
+An intervention can also be handled entirely from the client:
+
+> hub, what workspace work needs attention?
+
+> hub, retry the supplier investigation with this guidance: treat distributor data as
+> provisional and document the uncertainty.
+
+The first request lists waits. The second resolves the waiting run, calls
+`workspace` with `operation: intervene` and `action: guide`, and resumes `coordinate`.
+Limit extension and cancel requests follow the same pattern. The web **Needs attention**
+view invokes the same deterministic actions.
+
+### Example E: Complete, archive, and restore
+
+> hub, mark the supplier concentration investigation complete.
+
+> hub, archive the completed supplier concentration investigation.
+
+> hub, unarchive the supplier concentration investigation.
+
+Each prompt resolves the project and calls `workspace` with the matching `update` action.
+Completion is allowed with or without a result; archive retains active/completed status.
+
+To roll back an automatically published result:
+
+> hub, show the result history for the supplier concentration investigation.
+
+> hub, restore the result from run `2026-07-19-001`.
+
+The client lists immutable successful results, resolves the requested run, and calls
+`workspace` with `operation: update` and `action: restore`. It changes only the current
+result pointer.
+
+For Git containers, client-driven configuration, creation, lifecycle, and restore
+actions sync after the completed user request. `coordinate` syncs at human waits and
+terminal outcomes, not after each assignment event.
+
+## 12. Safety and OKH integration
 
 ### Concurrency and recovery
 
@@ -641,6 +867,8 @@ Required invariants:
 
 - The `workspace` built-in module type and validators.
 - `WorkspaceService`.
+- Workspace `initialize`, `configure`, `create`, and `coordinate` skills with
+  wake-phrase routing guidance.
 - CloudEvents batch validation and byte-preserving atomic append.
 - Workspace/project/attention/agent web views.
 - Safe parameterized frontend routes.
@@ -660,10 +888,10 @@ Sync commits the whole container. Useful boundaries are project lifecycle change
 terminal runs, not individual assignment events. External staging and user UI
 preferences never sync.
 
-## 12. Delivery and deferred work
+## 13. Delivery and deferred work
 
 1. **Projects:** module config, README parsing/editing, events, lifecycle, listing, and
-   read-only web pages.
+   MCP routing/skills, and read-only web pages.
 2. **Runs:** snapshots, plans, assignments, claims, limits, staging, results, recovery,
    resume, continue, and restore.
 3. **Web controls:** workspace settings, project actions, Needs attention, result
@@ -681,19 +909,21 @@ Deferred until a demonstrated need:
 - remote multi-host active-run execution; and
 - web agent authoring.
 
-## 13. Essential validation
+## 14. Essential validation
 
 The implementation must prove:
 
 - minimal config, agent-reference, limit, and README validation;
 - source-preserving edits and ETag conflicts;
 - lifecycle and archive transitions;
+- wake-phrase routing for create, start, resume, continue, update, and intervention;
 - filtering, pagination, and remembered sorting;
 - preflight before run creation;
 - exact replay after restart;
 - transaction recovery at every crash boundary;
 - CloudEvents schema, sequence, command replay, and terminal-run enforcement;
 - planning, assignments, retries, claim recovery, corrections, and all limits;
+- client-only run initiation and the status/preflight start-versus-resume branch;
 - snapshot stability when source files later change;
 - staging isolation and missing-staging failure;
 - result path safety, deterministic tree hashes, publication, comparison, and restore;
@@ -702,7 +932,7 @@ The implementation must prove:
 - safe parameterized routes and accessible state-aware controls; and
 - absence of server-side model or background agent execution.
 
-## 14. Standards and references
+## 15. Standards and references
 
 | Concern | Convention |
 |---|---|
