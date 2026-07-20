@@ -718,6 +718,29 @@ describe("workspace eval assertions", () => {
     }, config)).pass).toBe(false);
   });
 
+  it("accepts POSIX uuidgen as a captured UUID generator", () => {
+    const commandId = "12345678-1234-4123-8123-123456789abc";
+    const generatedCreate = mkEvent({
+      server: "",
+      tool: "bash",
+      callId: "generate-create",
+      arguments: { command: "uuidgen | tr '[:upper:]' '[:lower:]'", description: "Generate UUID" },
+      result: `${commandId}\n`,
+    });
+    const create = mkEvent({
+      tool: "workspace",
+      callId: "create",
+      arguments: {
+        operation: "create",
+        container: "work-hub",
+        module: "presentations",
+        project: "example",
+        commandId,
+      },
+    });
+    expect(workspaceMutations("", ctx({ toolEvents: [generatedCreate, create] })).pass).toBe(true);
+  });
+
   it("validates generated command IDs, ETags, success, and canonical retry reuse", () => {
     const commandId = "12345678-1234-4123-8123-123456789abc";
     const startCommandId = "22345678-1234-4123-8123-123456789abc";

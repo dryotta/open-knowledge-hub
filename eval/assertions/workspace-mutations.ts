@@ -34,7 +34,7 @@ function generatorProduced(
   if (
     typeof command !== "string"
     || command.toLowerCase().includes(commandId.toLowerCase())
-    || !/\[\s*(?:system\.)?guid\s*\]\s*::\s*newguid\s*\(|\bnew-guid\b|\brandomuuid\s*\(|\buuid\s*\.\s*uuid4\s*\(/iu
+    || !/\[\s*(?:system\.)?guid\s*\]\s*::\s*newguid\s*\(|\bnew-guid\b|\brandomuuid\s*\(|\buuid\s*\.\s*uuid4\s*\(|\buuidgen\b/iu
       .test(command)
   ) return false;
   const outputIds = result?.match(UUID_TOKEN_RE) ?? [];
