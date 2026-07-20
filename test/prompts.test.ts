@@ -45,11 +45,11 @@ describe("prompt builders", () => {
       { type: "memory", path: "mem", name: "mem", description: "", absPath: "/c/hub/mem" },
     ] },
   ];
-  it("ask includes the question, the target path, and the ask discipline", async () => {
+  it("ask includes the question, the target path, and the ask instructions", async () => {
     const text = await buildAsk(targets, "How does auth work?");
     expect(text).toContain("How does auth work?");
     expect(text).toContain("/c/hub/kb");
-    expect(text).toContain('<discipline name="ask">');
+    expect(text).toContain('<instructions name="ask">');
     expect(text).toMatch(/correlation is not causation/i);
     expect(text).toMatch(/issued at login and verified on each request[\s\S]{0,100}not that\s+issuance causes verification/i);
     expect(text).toMatch(/do not add generic benefits/i);
@@ -80,10 +80,10 @@ describe("prompt builders", () => {
     expect(text).toMatch(/remove cross-source comparisons, coverage notes, and missing-topic summaries/i);
     expect(text).toMatch(/subject, verb, timing, or evidentiary qualifier changed/i);
   });
-  it("context uses the context discipline", async () => {
+  it("context uses the context instructions", async () => {
     expect(await buildContext(targets, "Ship the feature")).toMatch(/working set/i);
   });
-  it("context discipline keeps rejected candidates out of the selected working set", async () => {
+  it("context instructions keep rejected candidates out of the selected working set", async () => {
     const text = await buildContext(targets, "Debug CSV import");
     expect(text).toMatch(/caller's original request is authoritative/i);
     expect(text).toMatch(/only user-stated details define scope/i);
@@ -102,7 +102,7 @@ describe("prompt builders", () => {
     expect(text).toMatch(/complete listed\s+item path/i);
     expect(text).toMatch(/under a `## Gaps` heading/i);
   });
-  it("context discipline includes relevant nested files from custom and tool modules", async () => {
+  it("context instructions include relevant nested files from custom and tool modules", async () => {
     const text = await buildContext(targets, "Debug CSV import");
     expect(text).toMatch(/custom\/tool modules/i);
     expect(text).toMatch(/utilities and references/i);
@@ -130,7 +130,7 @@ describe("prompt builders", () => {
     expect(text).toContain("native-subagent");
     expect(text).toContain("inline-parent");
     expect(text).toMatch(/client, not the Hub/i);
-    // Routing discipline lives in server instructions and help, not a separate legacy gate block.
+    // Routing instructions live in server instructions and help, not a separate legacy gate block.
     expect(text).not.toContain("Routing gates");
     expect(text).not.toContain('skill: "learn"');
     expect(text).not.toContain('skill: "remember"');
@@ -178,11 +178,11 @@ describe("prompt builders", () => {
     // Shared sync must mention publish-pr instead of auto-publishing
     expect(text).toContain("publish-pr");
   });
-  it("buildAddModule injects containers + module types and the workflow discipline", async () => {
+  it("buildAddModule injects containers + module types and the workflow instructions", async () => {
     const text = await buildAddModule(targets, ["knowledge", "skills", "memory"]);
     expect(text).toContain("/c/hub/kb");            // injected container/module path
     expect(text).toContain("knowledge, skills, memory"); // injected module types
-    expect(text).toContain('<discipline name="add_module">');
+    expect(text).toContain('<instructions name="add_module">');
     expect(text).toContain("create: true");          // step 3 names the apply call
     expect(text).toMatch(/initialize/);              // step 4 names initialize
   });

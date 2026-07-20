@@ -21,7 +21,7 @@ contract and structure.
 ## Stage 1 — Grill the scope and structure
 
 You **must read and apply** the [grilling instructions](okh://instructions/grilling.md);
-do not emulate or summarize their discipline from memory. After agreement, perform Stage 2 in
+do not emulate or summarize their instructions from memory. After agreement, perform Stage 2 in
 this run. Reporting "next steps" without writing the contract and group indexes is not completion.
 
 Record the agreed **scope contract** in the module's root `index.md` (its skeleton lays out these

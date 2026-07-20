@@ -4,7 +4,7 @@
 # Current containers
 {{var:targets}}
 
-<discipline name="onboard">
+<instructions name="onboard">
 
 # Onboarding a new user
 
@@ -77,4 +77,4 @@ Point them at `okh://docs/usage.md` for the full list. Finally, ask them to rest
 
 Never create folders, initialize manifests, or configure containers without explicit confirmation. Ordinary content writes and todo changes are applied and synced immediately without another confirmation step.
 
-</discipline>
+</instructions>

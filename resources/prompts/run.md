@@ -7,7 +7,7 @@
 # Required MCP resources
 {{var:resources}}
 
-<discipline name="{{var:skill/name}}">
+<instructions name="{{var:skill/name}}">
 
 Apply every embedded resource in this tool result. Before carrying out the skill,
 fetch each required resource marked as deferred with `read_resource`; never open an
@@ -16,6 +16,6 @@ references that can be fetched on demand.
 
 {{var:skill/body}}
 
-</discipline>
+</instructions>
 
 {{prompt:partials/write-policy.md}}

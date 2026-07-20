@@ -52,7 +52,7 @@ function includesRecommendation(message: string): boolean {
   ));
 }
 
-/** Validates the first turn of the one-decision-at-a-time grilling discipline. */
+/** Validates the first turn of the one-decision-at-a-time grilling instructions. */
 export default function grillingResponse(_output: string, context: Ctx) {
   const message = context.providerResponse?.metadata?.finalMessage;
   if (typeof message !== "string" || message.trim().length === 0) {

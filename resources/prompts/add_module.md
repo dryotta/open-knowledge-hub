@@ -4,7 +4,7 @@
 # Built-in module types
 {{var:moduleTypes}}
 
-<discipline name="add_module">
+<instructions name="add_module">
 
 # Add a module
 
@@ -40,4 +40,4 @@ If the create response says the type ships an `initialize` skill, run it to popu
 module: `run { container, module, skill: "initialize" }`. Otherwise you're done — tell the
 user the module is ready.
 
-</discipline>
+</instructions>

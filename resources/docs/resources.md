@@ -124,13 +124,13 @@ as bounded embedded resources and `resource_link` content. `run` returns:
 
 Unsupported or unavailable dependency URIs are rejected instead of being emitted as
 unreadable resource links. Oversized declared dependencies remain canonical links and
-are identified as deferred; the skill discipline requires `read_resource` before
+are identified as deferred; the skill instructions require `read_resource` before
 acting. Sibling files are optional on-demand references rather than eager context.
 
 Skill aggregation is also bounded. One skill may declare at most 64 provider
 resources. Local sibling discovery visits at most 4,096 entries, descends at most 16
 levels, and links at most 128 files. Exceeding a budget rejects `run` explicitly
-rather than returning an incomplete discipline.
+rather than returning incomplete instructions.
 
 ## Adding a provider
 

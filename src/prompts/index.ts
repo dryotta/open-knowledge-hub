@@ -98,7 +98,7 @@ export function buildHelp(
   });
 }
 
-/** Render a "dream" consolidation run: the consolidation discipline applied to the resolved target module(s). */
+/** Render a "dream" consolidation run: the consolidation instructions applied to the resolved target module(s). */
 export async function buildDream(targets: ResolvedContainer[]): Promise<string> {
   const modules = targets.flatMap((c) => c.modules.map((module) => ({ container: c, module })));
   const list = modules.length
