@@ -17,7 +17,7 @@ flowchart LR
     P1[Project<br/>one durable goal]
     P2[Project<br/>another goal]
     R[Run<br/>one bounded attempt]
-    A[Assignment<br/>one agent call]
+    A[Agent task<br/>one bounded unit]
 
     W --> P1
     W --> P2
@@ -38,7 +38,7 @@ The minimal v1 decisions are:
 | Project history and run state | One append-only `events.json` per project |
 | Reproducible inputs | One immutable snapshot per run |
 | Durable output | One immutable result per successful run |
-| Agent quality checks | Ordinary assignments, not a review subsystem |
+| Agent quality checks | Ordinary tasks, not a review subsystem |
 | Human involvement | Interventions during a run; inspect, correct, restore, or complete afterward |
 
 There is no workspace state sidecar, project config sidecar, run journal, artifact
@@ -102,7 +102,7 @@ config:
     - shared-hub/review-agents/evidence-checker
   limits:
     iterations: 3
-    assignments: 20
+    tasks: 20
     attempts: 2
 ```
 
@@ -112,8 +112,8 @@ Only `lead` is required. `agents` and `limits` are optional.
 - `agents` is the allowlist of other profiles the lead may assign.
 - `limits` overrides safe defaults and remains bounded by server maxima.
 
-When omitted, limits default to three iterations, twenty total assignments, and two
-attempts per assignment. Workspace overrides may be lower or higher but never exceed
+When omitted, limits default to three iterations, twenty total tasks, and two attempts
+per task. Workspace overrides may be lower or higher but never exceed
 server maxima.
 
 ### Agent references
@@ -287,7 +287,7 @@ completed. Unarchive only clears the flag.
 | Archive | Requires no active run; retains status |
 | Unarchive | Clears `archived`; retains status |
 
-Each project has at most one active run and one claimed assignment. Multiple projects
+Each project has at most one active run and one claimed task. Multiple projects
 may run independently. Dates never change status automatically.
 
 Create builds the complete project directory, including README and the initial
@@ -308,7 +308,7 @@ V1 is autopilot with exception-based human control:
 ```mermaid
 flowchart TD
     S[Start run] --> P[Lead plans]
-    P --> W[Configured agents execute ordered assignments]
+    P --> W[Configured agents execute ordered tasks]
     W --> I[Lead integrates and checks Acceptance]
     I -->|Criteria met| U[Publish immutable result]
     U --> D[Run succeeded]
@@ -329,29 +329,34 @@ Before starting or resuming agent execution, the client proves that it can read 
 write the external staging area. A failed preflight creates no new run and leaves an
 existing run unchanged.
 
-The lead produces a bounded ordered plan. Every planned task is an assignment, and each
-attempt invokes its agent:
+The lead produces a bounded ordered plan. Every planned unit is an agent task, and each
+attempt invokes the agent assigned to it:
 
 - planning and final integration use `lead`;
 - work may use the lead or any configured agent;
-- a critique or fact check is an ordinary work assignment; and
+- a critique or fact check is an ordinary task; and
 - only the final lead integration may publish the run result.
 
-There is no worker/reviewer/critic role, review phase, plan approval, per-assignment
+There is no worker/reviewer/critic role, review phase, plan approval, per-task
 approval, or final approval gate.
+
+`Task` matches the existing OKH `use_agent(..., task)` contract and common agent/workflow
+terminology. A task is the run-scoped work item; assigning it selects a configured agent.
+Industry scope varies—an A2A Task can resemble an entire Run, while Temporal calls its
+retryable unit an Activity—so user-facing text says **agent task** when scope is unclear.
 
 The three limits have direct meanings:
 
 | Limit | Counts |
 |---|---|
 | `iterations` | Lead plan/integration cycles |
-| `assignments` | Logical tasks created in the run |
-| `attempts` | Attempts for one assignment |
+| `tasks` | Agent tasks created in the run |
+| `attempts` | Attempts for one task |
 
-Planning and integration count as assignments. Retrying a task increments its attempts
-but does not create another assignment, so total model calls are bounded by
-`assignments * attempts`—for example, the defaults allow at most forty calls.
-Assignments are sequential in v1. A server restart alone does not consume an attempt.
+Planning and integration count as tasks. Retrying a task increments its attempts but
+does not create another task, so total model calls are bounded by `tasks * attempts`—for
+example, the defaults allow at most forty calls. Tasks are sequential in v1. A server
+restart alone does not consume an attempt.
 
 When a run is blocked, makes no progress, reaches a limit, or is paused, the web app
 offers only valid actions: allow retry, provide in-run guidance, grant a bounded
@@ -395,7 +400,7 @@ run.
 The stream records:
 
 - project creation, edits, completion, reopening, archive, and unarchive;
-- run start, plan, assignments, attempts, waits, corrections, and terminal outcome;
+- run start, plan, tasks, attempts, waits, corrections, and terminal outcome;
 - snapshot and result hashes; and
 - result publication at successful run completion and later restoration.
 
@@ -458,14 +463,14 @@ The start transaction creates the complete run directory, sets project `activeRu
 commits the snapshot hashes. Live config, guidance, or profile edits affect future runs
 only.
 
-Assignment work stays in external staging while the run is active. Structured results
-and output hashes are recorded in `events.json`; later assignments receive declared
+Task work stays in external staging while the run is active. Structured results and
+output hashes are recorded in `events.json`; later tasks receive declared
 prior outputs as read-only inputs. Staging survives a server restart on the same machine
 but is not container content and never syncs.
 
 When final integration succeeds, the Hub:
 
-1. Validates the assignment claim, declared paths, acceptance evidence, and output limits.
+1. Validates the task claim, declared paths, acceptance evidence, and output limits.
 2. Reads files without following links and revalidates opened handles where supported.
 3. Copies the complete output into a sibling temporary result directory.
 4. Atomically renames it to `runs/<run>/result`.
@@ -519,8 +524,8 @@ workspace {
 | `status` | Return current project and run state |
 | `preflight` | Prove access to external staging |
 | `start` | Start a new run |
-| `next` | Claim the next assignment or return an intervention/terminal result |
-| `submit` | Submit the current assignment result |
+| `next` | Claim the next task or return an intervention/terminal result |
+| `submit` | Submit the current task result |
 | `update` | Complete, reopen, archive, unarchive, or restore a project |
 | `intervene` | Retry, add in-run guidance, extend a limit, or cancel a waiting run |
 
@@ -600,7 +605,7 @@ change project state.
 | Tab | Content |
 |---|---|
 | Overview | Goal, guidance, lifecycle, and current state |
-| Activity | Plan, assignments, attempts, waits, corrections, and run history |
+| Activity | Plan, tasks, attempts, waits, corrections, and run history |
 | Result | Current/prior results, diff, criterion evidence, Complete, and Restore |
 | Settings | Source-preserving README edits |
 
@@ -677,7 +682,7 @@ sequenceDiagram
     C->>H: preflight, start
     loop Until success or intervention
         C->>H: next
-        H-->>C: Frozen agent assignment
+        H-->>C: Frozen agent task
         C->>C: Execute agent
         C->>H: submit
     end
@@ -826,7 +831,7 @@ result pointer.
 
 For Git containers, client-driven configuration, creation, lifecycle, and restore
 actions sync after the completed user request. `coordinate` syncs at human waits and
-terminal outcomes, not after each assignment event.
+terminal outcomes, not after each task event.
 
 ## 12. Safety and OKH integration
 
@@ -849,7 +854,7 @@ Required invariants:
 - old event bytes and result directories never change;
 - a terminal run rejects later run-scoped events;
 - archived projects and completed projects cannot start work;
-- one project cannot have two active runs or two claimed assignments; and
+- one project cannot have two active runs or two claimed tasks; and
 - invalid state stops visibly instead of being repaired heuristically.
 
 ### Reuse
@@ -885,14 +890,14 @@ Required invariants:
 - Project-type-specific code.
 
 Sync commits the whole container. Useful boundaries are project lifecycle changes and
-terminal runs, not individual assignment events. External staging and user UI
+terminal runs, not individual task events. External staging and user UI
 preferences never sync.
 
 ## 13. Delivery and deferred work
 
 1. **Projects:** module config, README parsing/editing, events, lifecycle, listing, and
    MCP routing/skills, and read-only web pages.
-2. **Runs:** snapshots, plans, assignments, claims, limits, staging, results, recovery,
+2. **Runs:** snapshots, plans, tasks, claims, limits, staging, results, recovery,
    resume, continue, and restore.
 3. **Web controls:** workspace settings, project actions, Needs attention, result
    comparison, agents, routing, accessibility, and sync integration.
@@ -900,7 +905,7 @@ preferences never sync.
 Deferred until a demonstrated need:
 
 - retrospectives and automated learning;
-- parallel assignments;
+- parallel tasks;
 - automatic local or Copilot SDK runner;
 - calendar and recurring projects;
 - notifications and timed claim expiry;
@@ -922,7 +927,7 @@ The implementation must prove:
 - exact replay after restart;
 - transaction recovery at every crash boundary;
 - CloudEvents schema, sequence, command replay, and terminal-run enforcement;
-- planning, assignments, retries, claim recovery, corrections, and all limits;
+- planning, tasks, retries, claim recovery, corrections, and all limits;
 - client-only run initiation and the status/preflight start-versus-resume branch;
 - snapshot stability when source files later change;
 - staging isolation and missing-staging failure;
@@ -954,6 +959,9 @@ References:
 - [Anthropic, Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)
 - [OpenAI Agents SDK human-in-the-loop](https://openai.github.io/openai-agents-python/human_in_the_loop/)
 - [Microsoft AutoGen human-in-the-loop](https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html)
+- [Agent2Agent Protocol, Life of a Task](https://a2a-protocol.org/latest/topics/life-of-a-task/)
+- [AWS Step Functions, Task workflow state](https://docs.aws.amazon.com/step-functions/latest/dg/state-task.html)
+- [Temporal Activities](https://docs.temporal.io/activities)
 - [Microsoft Guidelines for Human-AI Interaction](https://www.microsoft.com/en-us/research/project/guidelines-for-human-ai-interaction/)
 - [NIST AI RMF Generative AI Profile](https://doi.org/10.6028/NIST.AI.600-1)
 
