@@ -56,6 +56,39 @@ describe("judge assertion", () => {
     expect(r.pass).toBe(true);
   });
 
+  it("can grade only filtered authoritative artifacts", async () => {
+    const container = await makeTempDir();
+    cleanups.push(container);
+    await mkdir(join(container, "presentations"), { recursive: true });
+    await writeFile(join(container, "presentations", "deck.md"), "authoritative deck", "utf8");
+    await writeFile(join(container, "presentations", "events.jsonl"), "execution metadata", "utf8");
+    let graded = "";
+    const r = await judge(
+      "noisy transcript",
+      {
+        config: {
+          artifacts: {
+            module: "presentations",
+            extensions: [".md"],
+            includeTranscript: false,
+          },
+          criteria: [{ id: "deck", text: "deck is valid" }],
+        },
+        providerResponse: { metadata: { containerPath: container } },
+      },
+      {
+        runJudgeCriteria: async (_criteria, transcript) => {
+          graded = transcript;
+          return fakeJudge([{ id: "deck", verdict: "PASS" }]).runJudgeCriteria();
+        },
+      },
+    );
+    expect(r.pass).toBe(true);
+    expect(graded).toContain("authoritative deck");
+    expect(graded).not.toContain("noisy transcript");
+    expect(graded).not.toContain("execution metadata");
+  });
+
   it("required checked criterion: det=FAIL overrides judge=PASS", async () => {
     const okhHome = await okhHomeWith("other"); // "my-notes" NOT registered → det=FAIL
     const r = await judge(

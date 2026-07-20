@@ -11,7 +11,21 @@
           - SSO setup averages three days and is the main blocker.
           - The decision is whether to fund guided onboarding or delay launch.
 
-          Include an executive recommendation, an evidence table, risks, and next steps.
+          Include an executive recommendation, an evidence table, risks, next steps, and a
+          short source-boundary note. Use this content contract:
+          - Make the recommendation conditional analysis: validate guided onboarding, fund
+            it only if validation shows it can address SSO setup while preserving the
+            September 15 target, and otherwise delay launch.
+          - Give the evidence table only `Supplied fact` and `Value` columns. Do not interpret
+            the facts in the table.
+          - Express risks only as questions about what must be validated. Express next steps
+            only as validation actions followed by the funding-or-delay decision.
+          - Do not add a year or calculate any value, percentage, ratio, difference, or
+            count. In particular, do not derive an inactive-team count.
+          - Do not characterize weekly activity as engagement, adoption, readiness, or
+            success. Do not call beta teams users or a population.
+          - Do not invent or prescribe solution scope, technologies, automation,
+            implementation, resources, costs, timelines, thresholds, or effects.
         terminal:
           after: start
           requiredTools: [inspect, run, workspace, sync]
@@ -70,10 +84,12 @@
           config:
             artifacts:
               module: presentations
+              extensions: [.md]
+              includeTranscript: false
               maxFiles: 10
               maxCharsPerFile: 8000
             criteria:
               - id: factual-fidelity
-                text: The published presentation uses only supported facts and does not add unsupported dates, revenue or market claims, product-market-fit claims, risk levels, pilot sizes, or numerical thresholds as though they were known.
+                text: Grade only the final Markdown deck. Its established factual claims exactly preserve the supplied facts without derived values or an inferred year. Clearly conditional analysis, questions about unknowns, and proposed validation actions are not factual claims and should not be penalized. The deck does not characterize activity as engagement, adoption, readiness, or success; relabel beta teams as users or a population; or prescribe effects, scope, technologies, automation, implementation, resources, costs, timelines, or thresholds.
               - id: decision-ready
                 text: The presentation gives a clear, reasoned executive recommendation with useful risks and next steps.

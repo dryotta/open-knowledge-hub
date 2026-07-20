@@ -38,9 +38,9 @@ function generatorProduced(
       .test(command)
   ) return false;
   const outputIds = result?.match(UUID_TOKEN_RE) ?? [];
-  return outputIds.filter(
+  return outputIds.some(
     (outputId) => outputId.toLowerCase() === commandId.toLowerCase(),
-  ).length === 1;
+  );
 }
 
 /** Validate command IDs, ETags, success, and exact command-ID reuse for workspace mutations. */

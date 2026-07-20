@@ -119,6 +119,9 @@ describe("workspace MCP tool", () => {
     const hub = await client.callTool({ name: "inspect", arguments: {} });
     expect(text(hub)).toContain("# Workspace project discovery");
     expect(text(hub)).toContain("Search all of them even after the first match.");
+    expect(text(hub)).toMatch(
+      /call `workspace:get` for that project before\s+deciding, acting, or refusing/u,
+    );
 
     const initialized = await client.callTool({
       name: "workspace",
@@ -186,6 +189,9 @@ describe("workspace MCP tool", () => {
       },
     });
     expect((structured(listed).projects as Array<{ id: string }>)[0]?.id).toBe("supplier-risk");
+    expect(text(listed)).toContain(
+      'call workspace with operation "get" for that project before deciding, acting, or refusing',
+    );
 
     const started = await client.callTool({
       name: "workspace",
@@ -206,6 +212,21 @@ describe("workspace MCP tool", () => {
     expect(snapshotUri).toBeDefined();
     expect(text(started)).toContain("copy an exact URI into read_resource");
     expect(text(started)).toContain(snapshotUri);
+    const activeProject = await client.callTool({
+      name: "workspace",
+      arguments: {
+        operation: "get",
+        container: "work",
+        module: "investigations",
+        project: "supplier-risk",
+      },
+    });
+    expect(text(activeProject)).toContain(
+      'Active-run hard stop: do not call workspace with operation "start", even to test the invariant.',
+    );
+    expect(text(activeProject)).toContain(
+      "first invoke an actual RFC 4122 UUID generator and use its returned value as commandId",
+    );
 
     const paused = await client.callTool({
       name: "workspace",

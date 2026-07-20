@@ -356,7 +356,24 @@ function formatResult(
   const sync = args.operation === "list" || args.operation === "get"
     ? ""
     : `\nRequired next step: before ending this request, call sync for container "${args.container}".`;
-  return summary + formatResourceLinks(links) + sync;
+  const activeRunGuard = args.operation === "get"
+    && "project" in result
+    && result.project?.activeRun
+      ? `\nActive-run hard stop: do not call workspace with operation "start", even to test the invariant.`
+        + ` Project "${result.project.id}" supports only one active run. Resume the existing run,`
+        + " or cancel it only when the user explicitly requests cancellation."
+      : "";
+  const mutationPreflight = args.operation === "get" && "project" in result && result.project
+    ? "\nMutation preflight: if the next operation changes state, first invoke an actual RFC 4122"
+      + " UUID generator and use its returned value as commandId. Never type or invent a"
+      + " UUID-shaped literal."
+    : "";
+  const discoveryGuard = args.operation === "list" && "projects" in result && result.projects.length > 0
+    ? "\nDiscovery-only summaries: after every workspace search completes and one unique match"
+      + " is selected, call workspace with operation \"get\" for that project before deciding,"
+      + " acting, or refusing. A listed activeRun forbids start but does not replace get."
+    : "";
+  return summary + formatResourceLinks(links) + discoveryGuard + activeRunGuard + mutationPreflight + sync;
 }
 
 export async function registerWorkspaceTool(

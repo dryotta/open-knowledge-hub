@@ -6,12 +6,21 @@
           hub, find the archived project `launch-readiness` wherever it lives, reopen it,
           and revise its current result in a new run. Preserve the existing material,
           add a decision matrix comparing guided onboarding with delaying launch, and
-          change the recommendation to guided onboarding. Preserve every prior result
-          and complete the revision now.
+          change the recommendation to guided onboarding as conditional analysis.
+          Treat the current result as the sole evidence source. Keep the matrix
+          evidence-safe by using only these rows:
+          - Decision path: fund guided onboarding; or delay launch.
+          - Established evidence: for both options, say that no supplied evidence
+            establishes the option's effect on SSO setup.
+          - Validation question: can guided onboarding address SSO setup while preserving
+            September 15; or what evidence would justify delaying launch?
+          Do not add resource, scope, implementation, timing-estimate, engagement,
+          adoption, market-effect, or derived-metric rows or claims. Next steps may only
+          validate the two questions and then make the funding-or-delay decision.
+          Preserve every prior result and complete the revision now.
         terminal:
           after: start
           requiredTools: [inspect, run, workspace, sync]
-          finalTool: sync
   tests:
     - description: Workspace - discover and revise an archived project without overwriting prior results
       assert:
@@ -75,10 +84,12 @@
           config:
             artifacts:
               module: presentations
+              extensions: [.md]
+              includeTranscript: false
               maxFiles: 10
               maxCharsPerFile: 8000
             criteria:
               - id: faithful-revision
-                text: The new result preserves established prior facts while adding the requested decision matrix and changing the recommendation to guided onboarding.
+                text: Grade only the new Markdown result. It preserves established prior facts while adding the requested decision matrix and changing the recommendation to guided onboarding as conditional analysis. It does not add unsupported option effects, requirements, timing, resources, implementation details, engagement, adoption, market effects, or derived metrics; unknowns and validation questions are allowed.
               - id: useful-comparison
                 text: The revision gives a coherent, decision-useful comparison between guided onboarding and delaying launch.

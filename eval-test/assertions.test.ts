@@ -15,7 +15,10 @@ import llmwikiState from "../eval/assertions/llmwiki-state.js";
 import workspaceMutations from "../eval/assertions/workspace-mutations.js";
 import workspaceResourceReads from "../eval/assertions/workspace-resource-reads.js";
 import workspaceState, {
+  checkpointPrecedesReliabilityGuidance,
   committedSequenceMatches,
+  hasSourceBoundaryLabel,
+  unsupportedPresentationNumbers,
 } from "../eval/assertions/workspace-state.js";
 import workspaceDiscovery from "../eval/assertions/workspace-discovery.js";
 import { isDeepSubset, matchesTool, matchesToolAttempt, missingTools } from "../eval/assertions/tool-events.js";
@@ -547,6 +550,68 @@ describe("workspace eval assertions", () => {
     )).toBe(false);
   });
 
+  it("rejects presentation numbers that were not supplied", () => {
+    expect(unsupportedPresentationNumbers(
+      "# Q3 launch\nSeptember 15\n42 beta teams; 36 active\nSSO averages 3 days",
+    )).toEqual([]);
+    expect(unsupportedPresentationNumbers(
+      "1. Review 36 of 42 teams (85.7%) against a 2026 launch.",
+    )).toEqual(["85.7", "2026"]);
+    expect(unsupportedPresentationNumbers(
+      "## 1. Executive Recommendation\n## 2) Evidence\n42 teams; 36 active",
+    )).toEqual([]);
+    expect(unsupportedPresentationNumbers(
+      "## 1. Executive Recommendation\n42 teams; 36 active; 85.7% weekly active",
+    )).toEqual(["85.7"]);
+    expect(unsupportedPresentationNumbers(
+      "## 1: Evidence\n## 2 Executive Recommendation\n## Slide 3\n42 teams; 36 active",
+    )).toEqual([]);
+    expect(unsupportedPresentationNumbers(
+      "## 2026 launch\n## 85 teams active",
+    )).toEqual(["2026", "85"]);
+  });
+
+  it("accepts singular, plural, and hyphenated source-boundary labels", () => {
+    expect(hasSourceBoundaryLabel("## Source Boundary")).toBe(true);
+    expect(hasSourceBoundaryLabel("## Source Boundaries")).toBe(true);
+    expect(hasSourceBoundaryLabel("Short source-boundary note")).toBe(true);
+    expect(hasSourceBoundaryLabel("Source limitations")).toBe(false);
+  });
+
+  it("requires a paused checkpoint and sync before reliability guidance", () => {
+    const pause = mkEvent({
+      turn: 1,
+      tool: "workspace",
+      arguments: {
+        operation: "report",
+        project: "checkout-rollout-choice",
+        state: "paused",
+      },
+      startSequence: 1,
+      completionSequence: 2,
+    });
+    const sync = mkEvent({
+      turn: 1,
+      tool: "sync",
+      arguments: { container: "work-hub" },
+      startSequence: 3,
+      completionSequence: 4,
+    });
+    const turns = [
+      { user: "Create the checkpoint." },
+      { user: "Prioritize reliability. Accept the extra $50,000." },
+    ];
+    expect(checkpointPrecedesReliabilityGuidance([pause, sync], turns)).toBe(true);
+    expect(checkpointPrecedesReliabilityGuidance([
+      { ...pause, turn: 2 },
+      { ...sync, turn: 2 },
+    ], turns)).toBe(false);
+    expect(checkpointPrecedesReliabilityGuidance([
+      pause,
+      { ...sync, startSequence: 1, completionSequence: 2 },
+    ], turns)).toBe(false);
+  });
+
   it("requires root/container discovery, configured searches, and the selected mutation target", () => {
     const events = sequenceEvents([
       mkEvent({
@@ -708,6 +773,15 @@ describe("workspace eval assertions", () => {
         },
         create,
         start,
+      ],
+    })).pass).toBe(true);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        {
+          ...generatedCreate,
+          result: `Generated UUID: ${commandId}\n${commandId}`,
+        },
+        create,
       ],
     })).pass).toBe(true);
     expect(workspaceMutations("", ctx({ toolEvents: [create, generatedStart, start] })).pass).toBe(false);

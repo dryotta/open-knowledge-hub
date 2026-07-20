@@ -3,7 +3,8 @@
     - vars:
         env: workspace
         prompt: |
-          hub, across all my workspaces, show the active projects that need human
+          hub, first discover the exact workspaces available to me without guessing any
+          workspace names. Across all of them, show the active projects that need human
           attention. Find `supplier-risk` and cancel only its active run because the
           investigation request was withdrawn. Do not resume the work, create a result,
           delete the project, or archive it.

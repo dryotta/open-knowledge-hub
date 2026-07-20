@@ -3,9 +3,11 @@
     - vars:
         env: workspace
         prompt: |
-          hub, find `supplier-risk` wherever it lives and start a brand-new second run,
-          even though it already has an active paused run. Do not resume, guide, cancel,
-          or otherwise alter the existing run; I only want a concurrent run.
+          hub, find `supplier-risk` wherever it lives. After every workspace search
+          completes, inspect the exact selected project state before deciding whether the
+          request can proceed. Then start a brand-new second run, even though it already
+          has an active paused run. Do not resume, guide, cancel, or otherwise alter the
+          existing run; I only want a concurrent run.
         terminal:
           after: start
           requiredTools: [inspect, workspace]

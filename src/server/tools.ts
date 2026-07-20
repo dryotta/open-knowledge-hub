@@ -83,6 +83,8 @@ function formatHub(r: HubMap): string {
       "Search all of them even after the first match. Select only after every workspace",
       "responds; if more than one matches, ask the user to choose.",
       "Never infer a project's location from its name, artifact type, or the first match.",
+      "After selecting one unique match, call `workspace:get` for that project before",
+      "deciding, acting, or refusing; list summaries are discovery-only.",
       "Before project execution, run the workspace's `coordinate` skill. If `get` reports",
       "an active run, never probe `start` for a concurrent run; explain the invariant.",
       "",

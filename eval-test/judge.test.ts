@@ -548,6 +548,19 @@ describe("buildArtifactsSection", () => {
     expect(out).toContain("old entry");
   });
 
+  it("filters artifacts by case-insensitive file extension", async () => {
+    const { c } = await pair();
+    await writeFile(join(c, "mem", "deck.MD"), "deck\n", "utf8");
+    await writeFile(join(c, "mem", "events.jsonl"), "event\n", "utf8");
+    const out = await buildArtifactsSection(
+      { containerPath: c },
+      { module: "mem", extensions: [".md"] },
+    );
+    expect(out).toContain("deck.MD");
+    expect(out).toContain("2026-01-01.md");
+    expect(out).not.toContain("events.jsonl");
+  });
+
   it("returns empty string when nothing was written or config is incomplete", async () => {
     const { fx, c } = await pair(); // container === fixture, nothing new
     expect(await buildArtifactsSection({ containerPath: c, fixtureDir: fx }, { module: "mem" })).toBe("");

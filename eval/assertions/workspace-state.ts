@@ -18,6 +18,7 @@ import type {
   ResultRecord,
   WorkspaceEvent,
 } from "../../src/workspaces/types.js";
+import type { ToolEvent } from "../copilot.js";
 
 type Mode =
   | "completed-presentation"
@@ -29,6 +30,7 @@ type Mode =
   | "ambiguous-read-only";
 
 interface TurnMetadata {
+  user?: string;
   finalMessage?: string;
 }
 
@@ -41,6 +43,7 @@ interface Metadata {
   baselineCommitCount?: number;
   finalMessage?: string;
   turns?: TurnMetadata[];
+  toolEvents?: ToolEvent[];
 }
 
 interface Ctx {
@@ -131,6 +134,59 @@ export function committedSequenceMatches(
 ): boolean {
   return actual.length === expected.length
     && actual.every((value, index) => value === expected[index]);
+}
+
+export function unsupportedPresentationNumbers(text: string): string[] {
+  const withoutHeadingOrdinals = text
+    .replace(/^(\s*#{1,6}\s+)(?:[1-9]|1\d|20)[.):]\s+/gmu, "$1")
+    .replace(
+      /^(\s*#{1,6}\s+)(?:[1-9]|1\d|20)\s+(?=(?:executive|recommendation|evidence|risks?|next steps?|source boundar(?:y|ies)|agenda|summary|decision)\b)/gimu,
+      "$1",
+    )
+    .replace(/^(\s*#{1,6}\s+slide\s+)(?:[1-9]|1\d|20)\b/gimu, "$1");
+  const withoutOrderedListMarkers = withoutHeadingOrdinals.replace(/^\s*\d+[.)]\s+/gmu, "");
+  const allowed = new Set(["3", "15", "36", "42"]);
+  return [...new Set(
+    (withoutOrderedListMarkers.match(/\b\d+(?:\.\d+)?\b/gu) ?? [])
+      .filter((value) => !allowed.has(value)),
+  )];
+}
+
+export function hasSourceBoundaryLabel(text: string): boolean {
+  return /source[-\s]+boundar(?:y|ies)/iu.test(text);
+}
+
+export function checkpointPrecedesReliabilityGuidance(
+  events: readonly ToolEvent[],
+  turns: readonly TurnMetadata[],
+): boolean {
+  const guidanceTurnIndex = turns.findIndex((turn) =>
+    /prioritize reliability|accept the extra \$?50,?000/iu.test(turn.user ?? ""));
+  if (guidanceTurnIndex < 0) return false;
+  const guidanceTurn = guidanceTurnIndex + 1;
+  const pause = events.find((event) => {
+    const args = event.arguments as Record<string, unknown>;
+    return event.server === "open-knowledge-hub"
+      && event.tool === "workspace"
+      && event.completed
+      && event.success
+      && event.turn < guidanceTurn
+      && args.operation === "report"
+      && args.state === "paused"
+      && args.project === "checkout-rollout-choice";
+  });
+  if (!pause || pause.completionSequence === undefined) return false;
+  return events.some((event) => {
+    const args = event.arguments as Record<string, unknown>;
+    return event.server === "open-knowledge-hub"
+      && event.tool === "sync"
+      && event.completed
+      && event.success
+      && event.turn < guidanceTurn
+      && event.startSequence !== undefined
+      && event.startSequence > pause.completionSequence!
+      && args.container === "work-hub";
+  });
 }
 
 function assertProjectDefinitionUnchanged(
@@ -318,6 +374,11 @@ async function completedPresentation(meta: Metadata): Promise<string> {
   assert(data.project.result === current.path, "new result is not current");
   await assertResultValid(data, current);
   const text = await resultText(data, current);
+  const unsupportedNumbers = unsupportedPresentationNumbers(text);
+  assert(
+    unsupportedNumbers.length === 0,
+    `presentation added unsupported numbers: ${unsupportedNumbers.join(", ")}`,
+  );
   assertPatterns(text, [
     /september\s+15/iu,
     /\b42\b/u,
@@ -329,8 +390,8 @@ async function completedPresentation(meta: Metadata): Promise<string> {
     /evidence/iu,
     /risk/iu,
     /next steps?/iu,
-    /source boundaries/iu,
   ], "presentation result");
+  assert(hasSourceBoundaryLabel(text), "presentation result is missing a source-boundary label");
   assert(
     committedSequenceMatches(
       committedTypes(data.events),
@@ -353,6 +414,10 @@ async function completedPresentation(meta: Metadata): Promise<string> {
 
 async function guidedInvestigation(meta: Metadata): Promise<string> {
   const p = paths(meta);
+  assert(
+    checkpointPrecedesReliabilityGuidance(meta.toolEvents ?? [], meta.turns ?? []),
+    "durable paused checkpoint was not synced before reliability guidance",
+  );
   const data = await projectData(p.work, "investigations", "checkout-rollout-choice");
   assert(data.project.status === "active", "guided investigation is not active");
   assert(data.project.activeRun === null, "guided investigation still has an active run");

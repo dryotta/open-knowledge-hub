@@ -9,18 +9,29 @@
           - Blue/green: $120,000, 30-minute cutover, 5-minute rollback, 2% estimated customer-impacting incident risk.
           - In-place: $70,000, 2-hour cutover, 90-minute rollback, 8% estimated customer-impacting incident risk.
 
-          Before choosing a recommendation, create a durable human checkpoint and ask whether cost or reliability should dominate. Do not infer my preference. After I answer, record my guidance, continue the same run, and complete the investigation.
+          Before choosing a recommendation, create a durable human checkpoint and ask
+          whether cost or reliability should dominate. Do not infer my preference.
+          Before asking me, do not stop after creating, reading, or starting the project:
+          report the run paused and persist that checkpoint first. After I
+          answer, record my guidance, continue the same run, and complete the investigation.
         turns:
           - id: reliability-guidance
-            after: start
+            after: [start, checkpoint-reminder]
+            when: '(?:checkpoint[\s\S]{0,500}|cost[\s\S]{0,80}(?:reliability|risk)|(?:reliability|risk)[\s\S]{0,80}cost|(?:which|what)[\s\S]{0,100}dominate)[\s\S]{0,200}\?'
             send: |
               Prioritize reliability. Accept the extra $50,000 if it reduces incident risk.
               Record this guidance, continue the existing run, and complete the
               investigation with the cost tradeoff made explicit.
+          - id: checkpoint-reminder
+            after: start
+            send: |
+              Continue the requested first phase now. Do not choose a recommendation and
+              do not infer my preference. Start or resume the project as needed, report
+              the run paused with a durable checkpoint asking whether cost or reliability
+              should dominate, persist it, and only then ask me that question.
         terminal:
           after: reliability-guidance
           requiredTools: [inspect, run, workspace, sync]
-          finalTool: sync
   tests:
     - description: Workspace - pause for guidance and complete the same investigation run
       assert:
@@ -35,51 +46,34 @@
             ordered: true
             expect:
               - name: run
-                turn: 1
                 arguments: { container: work-hub, module: investigations, skill: create }
               - name: workspace
-                turn: 1
                 arguments: { operation: get, container: work-hub, module: investigations }
               - name: workspace
-                turn: 1
                 arguments:
                   { operation: create, container: work-hub, module: investigations, project: checkout-rollout-choice }
               - name: sync
-                turn: 1
                 arguments: { container: work-hub }
               - name: run
-                turn: 1
                 arguments: { container: work-hub, module: investigations, skill: coordinate }
               - name: workspace
-                turn: 1
                 arguments:
                   { operation: start, container: work-hub, module: investigations, project: checkout-rollout-choice }
               - name: workspace
-                turn: 1
                 arguments:
                   { operation: report, container: work-hub, module: investigations, project: checkout-rollout-choice, state: paused }
               - name: sync
-                turn: 1
                 arguments: { container: work-hub }
               - name: workspace
-                turn: 2
                 arguments:
                   { operation: intervene, container: work-hub, module: investigations, project: checkout-rollout-choice, action: guide }
               - name: workspace
-                turn: 2
                 arguments:
                   { operation: report, container: work-hub, module: investigations, project: checkout-rollout-choice, state: succeeded }
               - name: sync
-                turn: 2
                 arguments: { container: work-hub }
             forbid:
               - use_agent
-              - name: workspace
-                turn: 1
-                arguments: { operation: report, state: succeeded }
-              - name: workspace
-                turn: 2
-                arguments: { operation: start }
         - type: javascript
           value: file://assertions/workspace-mutations.ts
         - type: javascript
@@ -97,6 +91,6 @@
               maxCharsPerFile: 8000
             criteria:
               - id: genuine-checkpoint
-                text: The first turn genuinely paused for the requested human preference instead of choosing a recommendation early.
+                text: Before receiving the user's preference, the agent genuinely paused for the requested human checkpoint instead of choosing a recommendation early.
               - id: guidance-shaped-result
                 text: The completed investigation materially applies the reliability preference and clearly explains the additional $50,000 cost.

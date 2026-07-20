@@ -60,7 +60,8 @@ deterministic tool with seven operations:
 - If the user names an existing project but omits its workspace, call root `inspect`,
   then query every discovered workspace with `workspace:list` before selecting a unique
   match. Do not infer the workspace from the project name or artifact type. If multiple
-  matches remain, ask the user.
+  matches remain, ask the user. After selecting one unique match, call `workspace:get`
+  for that project before deciding, acting, or refusing; list summaries are discovery-only.
 - If the user requests new work without naming a workspace, root `inspect` may select a
   unique workspace from its declared type and description.
 
