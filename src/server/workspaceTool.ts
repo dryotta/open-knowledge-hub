@@ -324,24 +324,39 @@ function workspaceLinks(args: WorkspaceToolArgs, result: WorkspaceResult): Resou
   return [...new Map(links.map((link) => [link.uri, link])).values()];
 }
 
-function formatResult(args: WorkspaceToolArgs, result: WorkspaceResult): string {
+function formatResourceLinks(links: ResourceLink[]): string {
+  if (links.length === 0) return "";
+  return "\nResource links (copy an exact URI into read_resource; never construct one):\n"
+    + links.map((link) => `- ${link.title ?? link.name}: ${link.uri}`).join("\n");
+}
+
+function formatResult(
+  args: WorkspaceToolArgs,
+  result: WorkspaceResult,
+  links: ResourceLink[],
+): string {
+  let summary: string;
   if ("projects" in result) {
     const next = result.nextCursor ? " More results are available." : "";
-    return `Found ${result.projects.length} matching project${result.projects.length === 1 ? "" : "s"}.${next}`;
-  }
-  if (result.workspace) {
-    return `Workspace ${args.container}/${args.module}: ${result.counts?.active ?? 0} active,`
+    summary = `Found ${result.projects.length} matching project${result.projects.length === 1 ? "" : "s"}.${next}`;
+  } else if (result.workspace) {
+    summary = `Workspace ${args.container}/${args.module}: ${result.counts?.active ?? 0} active,`
       + ` ${result.counts?.archived ?? 0} archived, ${result.counts?.attention ?? 0} need attention.`;
+  } else {
+    const project = result.project;
+    const replay = "replayed" in result && result.replayed ? " Replayed the recorded outcome." : "";
+    if (!project) {
+      summary = `Workspace operation ${args.operation} completed.${replay}`;
+    } else {
+      const run = project.activeRun ? ` Active run: ${project.activeRun}.` : "";
+      summary = `${args.operation} ${args.container}/${args.module}/${project.id}:`
+        + ` ${project.status}; ETag ${result.etag}.${run}${replay}`;
+    }
   }
-  const project = result.project;
-  const replay = "replayed" in result && result.replayed ? " Replayed the recorded outcome." : "";
-  if (!project) return `Workspace operation ${args.operation} completed.${replay}`;
-  const run = project.activeRun ? ` Active run: ${project.activeRun}.` : "";
-  const sync = args.operation === "get"
+  const sync = args.operation === "list" || args.operation === "get"
     ? ""
-    : ` Local workspace change is pending sync for container "${args.container}".`;
-  return `${args.operation} ${args.container}/${args.module}/${project.id}:`
-    + ` ${project.status}; ETag ${result.etag}.${run}${replay}${sync}`;
+    : `\nRequired next step: before ending this request, call sync for container "${args.container}".`;
+  return summary + formatResourceLinks(links) + sync;
 }
 
 export async function registerWorkspaceTool(
@@ -356,13 +371,14 @@ export async function registerWorkspaceTool(
     },
     handler(async (args: WorkspaceToolArgs) => {
       const result = await workspaces.execute(toWorkspaceInput(args));
+      const links = workspaceLinks(args, result);
       if (args.operation !== "list" && args.operation !== "get") {
         await server.sendResourceListChanged();
       }
       return ok(
-        formatResult(args, result),
+        formatResult(args, result, links),
         result as unknown as Record<string, unknown>,
-        workspaceLinks(args, result),
+        links,
       );
     }),
   );

@@ -1,0 +1,57 @@
+# workspace flow — aggregate attention across workspaces and cancel one selected active run.
+- config:
+    - vars:
+        env: workspace
+        prompt: |
+          hub, across all my workspaces, show the active projects that need human
+          attention. Find `supplier-risk` and cancel only its active run because the
+          investigation request was withdrawn. Do not resume the work, create a result,
+          delete the project, or archive it.
+        terminal:
+          after: start
+          requiredTools: [inspect, workspace, sync]
+          finalTool: sync
+  tests:
+    - description: Workspace - discover attention across workspaces and cancel only the selected run
+      assert:
+        - type: javascript
+          value: file://assertions/workspace-discovery.ts
+          config:
+            containers: [work-hub, personal-hub]
+            lists:
+              - { operation: list, container: work-hub, module: presentations, status: active, attention: true }
+              - { operation: list, container: work-hub, module: investigations, status: active, attention: true }
+              - { operation: list, container: personal-hub, module: writing, status: active, attention: true }
+            selected: { container: work-hub, module: investigations }
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: workspace
+                arguments:
+                  { operation: get, container: work-hub, module: investigations, project: supplier-risk }
+              - name: workspace
+                arguments:
+                  { operation: intervene, container: work-hub, module: investigations, project: supplier-risk, action: cancel }
+              - name: sync
+                arguments: { container: work-hub }
+            forbid:
+              - use_agent
+              - name: run
+                arguments: { skill: coordinate }
+              - name: workspace
+                arguments: { operation: start }
+              - name: workspace
+                arguments: { operation: report }
+              - name: workspace
+                arguments: { operation: update }
+              - name: workspace
+                arguments: { operation: create }
+        - type: javascript
+          value: file://assertions/workspace-mutations.ts
+        - type: javascript
+          value: file://assertions/workspace-state.ts
+          config: { mode: cancelled-attention }
+        - type: javascript
+          value: file://assertions/git-committed.ts

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, mkdir, writeFile } from "node:fs/promises";
+import { readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeTempDir, makeOrigin, pushToOrigin } from "../test/helpers.js";
+import { makeTempDir, makeOrigin, pushToOrigin, testRun } from "../test/helpers.js";
 import toolsCalled from "../eval/assertions/tools-called.js";
 import transcript from "../eval/assertions/transcript.js";
 import okfValid from "../eval/assertions/okf-valid.js";
@@ -12,8 +12,15 @@ import containerRegistered from "../eval/assertions/container-registered.js";
 import manifestInitialized from "../eval/assertions/manifest-initialized.js";
 import wakePhraseSet from "../eval/assertions/wake-phrase-set.js";
 import llmwikiState from "../eval/assertions/llmwiki-state.js";
+import workspaceMutations from "../eval/assertions/workspace-mutations.js";
+import workspaceResourceReads from "../eval/assertions/workspace-resource-reads.js";
+import workspaceState, {
+  committedSequenceMatches,
+} from "../eval/assertions/workspace-state.js";
+import workspaceDiscovery from "../eval/assertions/workspace-discovery.js";
 import { isDeepSubset, matchesTool, matchesToolAttempt, missingTools } from "../eval/assertions/tool-events.js";
 import type { ToolEvent } from "../eval/copilot.js";
+import { provisionEnvironment } from "../eval/environments.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -32,6 +39,12 @@ const mkEvent = (overrides: Partial<ToolEvent> = {}): ToolEvent => ({
   success: true,
   ...overrides,
 });
+const sequenceEvents = (events: ToolEvent[]): ToolEvent[] =>
+  events.map((event, index) => ({
+    ...event,
+    startSequence: index * 2 + 1,
+    completionSequence: index * 2 + 2,
+  }));
 
 describe("isDeepSubset", () => {
   it("matches primitives with Object.is", () => {
@@ -505,6 +518,364 @@ describe("git-committed", () => {
   });
   it("fails cleanly for a non-git container", async () => {
     expect((await gitCommitted("", ctx({}, {}))).pass).toBe(false);
+  });
+
+  it("uses the provisioned baseline when setup already added commits", async () => {
+    const origin = await makeOrigin({ "kb/index.md": "# k\n" });
+    await pushToOrigin(origin, "kb/baseline.md", "seeded baseline");
+    expect((await gitCommitted("", ctx(
+      { originPath: origin, baselineCommitCount: 2 },
+      {},
+    ))).pass).toBe(false);
+    await pushToOrigin(origin, "kb/change.md", "agent change");
+    expect((await gitCommitted("", ctx(
+      { originPath: origin, baselineCommitCount: 2 },
+      {},
+    ))).pass).toBe(true);
+  });
+});
+
+describe("workspace eval assertions", () => {
+  it("requires exact committed lifecycle sequences", () => {
+    expect(committedSequenceMatches(
+      ["project.created", "run.started", "run.succeeded"],
+      ["project.created", "run.started", "run.succeeded"],
+    )).toBe(true);
+    expect(committedSequenceMatches(
+      ["project.created", "project.updated", "run.started", "run.succeeded"],
+      ["project.created", "run.started", "run.succeeded"],
+    )).toBe(false);
+  });
+
+  it("requires root/container discovery, configured searches, and the selected mutation target", () => {
+    const events = sequenceEvents([
+      mkEvent({
+        tool: "inspect",
+        callId: "root",
+        arguments: {},
+        result: "Containers: work-hub, personal-hub",
+      }),
+      mkEvent({ tool: "inspect", callId: "work", arguments: { container: "work-hub" } }),
+      mkEvent({ tool: "inspect", callId: "personal", arguments: { container: "personal-hub" } }),
+      mkEvent({
+        tool: "workspace",
+        callId: "search",
+        arguments: {
+          operation: "list",
+          container: "work-hub",
+          module: "presentations",
+          query: "launch-readiness",
+          status: "all",
+        },
+      }),
+      mkEvent({
+        tool: "workspace",
+        callId: "update",
+        arguments: {
+          operation: "update",
+          container: "work-hub",
+          module: "presentations",
+        },
+      }),
+    ]);
+    const config = {
+      containers: ["work-hub", "personal-hub"],
+      lists: [{
+        container: "work-hub",
+        module: "presentations",
+        query: "launch-readiness",
+        status: "all",
+      }],
+      selected: { container: "work-hub", module: "presentations" },
+    };
+    const discoveryMetadata = {
+      toolEvents: events,
+      containerPaths: {
+        "work-hub": "C:\\work-hub",
+        "personal-hub": "C:\\personal-hub",
+      },
+    };
+    expect(workspaceDiscovery("", ctx(discoveryMetadata, config)).pass).toBe(true);
+    expect(workspaceDiscovery("", ctx({
+      ...discoveryMetadata,
+      toolEvents: events.filter((event) => event.callId !== "root"),
+    }, config)).pass).toBe(false);
+    expect(workspaceDiscovery("", ctx({
+      ...discoveryMetadata,
+      toolEvents: events.map((event) =>
+        event.callId === "update"
+          ? {
+              ...event,
+              arguments: {
+                ...(event.arguments as Record<string, unknown>),
+                module: "investigations",
+              },
+            }
+          : event),
+    }, config)).pass).toBe(false);
+    expect(workspaceDiscovery("", ctx({
+      ...discoveryMetadata,
+      toolEvents: sequenceEvents([events[0]!, events[1]!, events[2]!, events[4]!, events[3]!]),
+    }, config)).pass).toBe(false);
+    expect(workspaceDiscovery("", ctx({
+      ...discoveryMetadata,
+      toolEvents: events.map((event) =>
+        event.callId === "search" ? { ...event, completionSequence: 12 } : event),
+    }, config)).pass).toBe(false);
+    expect(workspaceDiscovery("", ctx({
+      ...discoveryMetadata,
+      toolEvents: sequenceEvents([
+        events[0]!,
+        {
+          ...events[4]!,
+          callId: "early-get",
+          arguments: {
+            operation: "get",
+            container: "work-hub",
+            module: "presentations",
+            project: "launch-readiness",
+          },
+        },
+        events[1]!,
+        events[2]!,
+        events[3]!,
+        events[4]!,
+      ]),
+    }, config)).pass).toBe(false);
+    expect(workspaceDiscovery("", ctx({
+      ...discoveryMetadata,
+      toolEvents: [
+        { ...events[0]!, startSequence: 1, completionSequence: 4 },
+        { ...events[3]!, callId: "early-search", startSequence: 2, completionSequence: 3 },
+        { ...events[3]!, callId: "late-search", startSequence: 5, completionSequence: 6 },
+        { ...events[4]!, startSequence: 7, completionSequence: 8 },
+      ],
+    }, config)).pass).toBe(false);
+  });
+
+  it("validates generated command IDs, ETags, success, and canonical retry reuse", () => {
+    const commandId = "12345678-1234-4123-8123-123456789abc";
+    const startCommandId = "22345678-1234-4123-8123-123456789abc";
+    const etag = `sha256:${"a".repeat(64)}`;
+    const generatedCreate = mkEvent({
+      server: "",
+      tool: "powershell",
+      callId: "generate-create",
+      arguments: { command: "[guid]::NewGuid()", description: "Generate UUID" },
+      result: commandId,
+    });
+    const create = mkEvent({
+      tool: "workspace",
+      callId: "create",
+      arguments: {
+        operation: "create",
+        container: "work-hub",
+        module: "presentations",
+        project: "example",
+        commandId,
+      },
+    });
+    const start = mkEvent({
+      tool: "workspace",
+      callId: "start",
+      arguments: {
+        operation: "start",
+        container: "work-hub",
+        module: "presentations",
+        project: "example",
+        etag,
+        commandId: startCommandId,
+      },
+    });
+    const generatedStart = mkEvent({
+      server: "",
+      tool: "powershell",
+      callId: "generate-start",
+      arguments: { command: "[guid]::NewGuid()", description: "Generate UUID" },
+      result: startCommandId,
+    });
+    const validEvents = [generatedCreate, create, generatedStart, start];
+    expect(workspaceMutations("", ctx({ toolEvents: validEvents })).pass).toBe(true);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        {
+          ...generatedCreate,
+          arguments: {
+            command: "[guid]::NewGuid(); [guid]::NewGuid()",
+            description: "Generate UUIDs",
+          },
+          result: `${commandId}\n${startCommandId}`,
+        },
+        create,
+        start,
+      ],
+    })).pass).toBe(true);
+    expect(workspaceMutations("", ctx({ toolEvents: [create, generatedStart, start] })).pass).toBe(false);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        {
+          ...generatedCreate,
+          arguments: {
+            command: `Write-Output "${commandId}"`,
+            description: "Generate UUID",
+          },
+        },
+        create,
+      ],
+    })).pass).toBe(false);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        {
+          ...generatedCreate,
+          arguments: {
+            command: `[guid]::NewGuid() | Out-Null; Write-Output "${commandId}"`,
+          },
+        },
+        create,
+      ],
+    })).pass).toBe(false);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        generatedCreate,
+        create,
+        generatedStart,
+        {
+          ...start,
+          arguments: {
+            ...(start.arguments as Record<string, unknown>),
+            etag: "bad",
+          },
+        },
+      ],
+    })).pass).toBe(false);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        generatedCreate,
+        create,
+        {
+          ...create,
+          callId: "reused",
+          arguments: {
+            ...(create.arguments as Record<string, unknown>),
+            project: "different",
+          },
+        },
+      ],
+    })).pass).toBe(false);
+    expect(workspaceMutations("", ctx({
+      toolEvents: [
+        generatedCreate,
+        create,
+        {
+          ...create,
+          callId: "canonical-retry",
+          arguments: {
+            commandId,
+            project: "example",
+            module: "presentations",
+            container: "work-hub",
+            operation: "create",
+          },
+        },
+      ],
+    })).pass).toBe(true);
+  });
+
+  it("requires resource reads to use an exact URI from an earlier workspace response", () => {
+    const uri = "okh://containers/work-hub/presentations/files/projects%2Fexample%2Fresult.md";
+    const get = mkEvent({
+      tool: "workspace",
+      callId: "get",
+      arguments: { operation: "get" },
+      result: `Resource links:\n- Current result: ${uri}`,
+      startSequence: 1,
+      completionSequence: 2,
+    });
+    const read = mkEvent({
+      tool: "read_resource",
+      callId: "read",
+      arguments: { uri },
+      startSequence: 3,
+      completionSequence: 4,
+    });
+    expect(workspaceResourceReads("", ctx({ toolEvents: [get, read] })).pass).toBe(true);
+    expect(workspaceResourceReads("", ctx({
+      toolEvents: [
+        get,
+        { ...read, arguments: { uri: `${uri}-invented` } },
+      ],
+    })).pass).toBe(false);
+    expect(workspaceResourceReads("", ctx({
+      toolEvents: [
+        { ...get, result: `Resource links:\n- Current result: ${uri}.bak` },
+        read,
+      ],
+    })).pass).toBe(false);
+    expect(workspaceResourceReads("", ctx({
+      toolEvents: [
+        { ...read, startSequence: 1, completionSequence: 2 },
+        { ...get, startSequence: 3, completionSequence: 4 },
+      ],
+    })).pass).toBe(false);
+    expect(workspaceResourceReads("", ctx({
+      toolEvents: [
+        { ...get, startSequence: 1, completionSequence: 4 },
+        { ...read, startSequence: 2, completionSequence: 3 },
+      ],
+    })).pass).toBe(false);
+    expect(workspaceResourceReads("", ctx({
+      toolEvents: [{ ...read, completed: true, success: false }, get],
+    })).pass).toBe(false);
+  });
+
+  it("checks unchanged concurrent-run and ambiguity fixture state end to end", async () => {
+    const provisioned = await provisionEnvironment("workspace", {
+      repoRoot: "C:/repo",
+      runner: testRun,
+    });
+    cleanups.push(provisioned.root);
+    const metadata = {
+      ...provisioned,
+      finalMessage: "The system prevents concurrent runs: only one run can be active. Cancel it before starting another.",
+      turns: [{
+        finalMessage: "I found two matches in work-hub and personal-hub. Which one should I use?",
+      }],
+    };
+
+    expect((await workspaceState("", ctx(metadata, {
+      mode: "concurrent-run-rejected",
+    }))).pass).toBe(true);
+
+    metadata.finalMessage = "Delivery health is green. The release train met its commitments.";
+    expect((await workspaceState("", ctx(metadata, {
+      mode: "ambiguous-read-only",
+    }))).pass).toBe(true);
+
+    const stagingRelative = join(
+      "work-hub",
+      "investigations",
+      "supplier-risk",
+      "2026-06-25-001",
+      "draft.md",
+    );
+    const stagingDraft = join(provisioned.okhHome, "workspace-staging", stagingRelative);
+    const originalDraft = await readFile(join(provisioned.stagingBaselinePath!, stagingRelative));
+    await writeFile(stagingDraft, "decision-owner preference was corrupted");
+    metadata.finalMessage = "Only one run can be active. Cancel it before starting another.";
+    expect((await workspaceState("", ctx(metadata, {
+      mode: "concurrent-run-rejected",
+    }))).pass).toBe(false);
+    await writeFile(stagingDraft, originalDraft);
+
+    metadata.finalMessage = "Delivery health is green. The release train met its commitments.";
+    await writeFile(
+      join(provisioned.containerPaths!["work-hub"]!, "unexpected.txt"),
+      "mutation",
+      "utf8",
+    );
+    expect((await workspaceState("", ctx(metadata, {
+      mode: "ambiguous-read-only",
+    }))).pass).toBe(false);
   });
 });
 

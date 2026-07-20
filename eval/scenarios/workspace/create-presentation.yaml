@@ -1,0 +1,79 @@
+# workspace flow — discover the presentation workspace, create a project, and publish a result.
+- config:
+    - vars:
+        env: workspace
+        prompt: |
+          hub, start a new presentation project named `q3-launch-readiness` and complete it now.
+
+          Create a concise Markdown deck using only these facts:
+          - Launch target: September 15.
+          - 42 beta teams; 36 are weekly active.
+          - SSO setup averages three days and is the main blocker.
+          - The decision is whether to fund guided onboarding or delay launch.
+
+          Include an executive recommendation, an evidence table, risks, and next steps.
+        terminal:
+          after: start
+          requiredTools: [inspect, run, workspace, sync]
+          finalTool: sync
+  tests:
+    - description: Workspace - discover presentation workspace and publish a new project result
+      assert:
+        - type: javascript
+          value: file://assertions/workspace-discovery.ts
+          config:
+            containers: [work-hub, personal-hub]
+            selected: { container: work-hub, module: presentations }
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: work-hub, module: presentations, skill: create }
+              - name: workspace
+                arguments: { operation: get, container: work-hub, module: presentations }
+              - name: workspace
+                arguments:
+                  { operation: create, container: work-hub, module: presentations, project: q3-launch-readiness }
+              - name: sync
+                arguments: { container: work-hub }
+              - name: run
+                arguments: { container: work-hub, module: presentations, skill: coordinate }
+              - name: workspace
+                arguments:
+                  { operation: get, container: work-hub, module: presentations, project: q3-launch-readiness }
+              - name: workspace
+                arguments:
+                  { operation: start, container: work-hub, module: presentations, project: q3-launch-readiness }
+              - name: workspace
+                arguments:
+                  { operation: report, container: work-hub, module: presentations, project: q3-launch-readiness, state: succeeded }
+              - name: sync
+                arguments: { container: work-hub }
+            forbid:
+              - use_agent
+              - name: workspace
+                arguments: { operation: intervene }
+              - name: workspace
+                arguments: { operation: update }
+        - type: javascript
+          value: file://assertions/workspace-mutations.ts
+        - type: javascript
+          value: file://assertions/workspace-state.ts
+          config: { mode: completed-presentation }
+        - type: javascript
+          value: file://assertions/git-committed.ts
+          config: { minNewCommits: 2 }
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts:
+              module: presentations
+              maxFiles: 10
+              maxCharsPerFile: 8000
+            criteria:
+              - id: factual-fidelity
+                text: The published presentation uses only supported facts and does not add unsupported dates, revenue or market claims, product-market-fit claims, risk levels, pilot sizes, or numerical thresholds as though they were known.
+              - id: decision-ready
+                text: The presentation gives a clear, reasoned executive recommendation with useful risks and next steps.

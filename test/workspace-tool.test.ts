@@ -53,6 +53,15 @@ function links(result: Awaited<ReturnType<Client["callTool"]>>): string[] {
     .map((entry) => entry.uri);
 }
 
+function text(result: Awaited<ReturnType<Client["callTool"]>>): string {
+  if (!("content" in result)) return "";
+  return (result as CallToolResult).content
+    .filter((entry): entry is Extract<CallToolResult["content"][number], { type: "text" }> =>
+      entry.type === "text")
+    .map((entry) => entry.text)
+    .join("\n");
+}
+
 function isError(result: Awaited<ReturnType<Client["callTool"]>>): boolean {
   return "isError" in result && result.isError === true;
 }
@@ -107,6 +116,10 @@ async function connect(): Promise<Client> {
 describe("workspace MCP tool", () => {
   it("exposes all seven operations over one strict adapter with resource links", async () => {
     const client = await connect();
+    const hub = await client.callTool({ name: "inspect", arguments: {} });
+    expect(text(hub)).toContain("# Workspace project discovery");
+    expect(text(hub)).toContain("Search all of them even after the first match.");
+
     const initialized = await client.callTool({
       name: "workspace",
       arguments: {
@@ -119,6 +132,9 @@ describe("workspace MCP tool", () => {
       },
     });
     expect(isError(initialized)).toBe(false);
+    expect(text(initialized)).toContain(
+      'Required next step: before ending this request, call sync for container "work".',
+    );
 
     const workspaceGet = await client.callTool({
       name: "workspace",
@@ -140,6 +156,9 @@ describe("workspace MCP tool", () => {
       },
     });
     expect(isError(configured)).toBe(false);
+    expect(text(configured)).toContain(
+      'Required next step: before ending this request, call sync for container "work".',
+    );
 
     const created = await client.callTool({
       name: "workspace",
@@ -154,6 +173,9 @@ describe("workspace MCP tool", () => {
       },
     });
     const project = structured(created).project as { etag: string };
+    expect(text(created)).toContain(
+      'Required next step: before ending this request, call sync for container "work".',
+    );
     const listed = await client.callTool({
       name: "workspace",
       arguments: {
@@ -180,7 +202,10 @@ describe("workspace MCP tool", () => {
       etag: string;
       resume: { runId: string };
     };
-    expect(links(started).some((uri) => uri.includes("%2Fsnapshot%2F"))).toBe(true);
+    const snapshotUri = links(started).find((uri) => uri.includes("%2Fsnapshot%2F"));
+    expect(snapshotUri).toBeDefined();
+    expect(text(started)).toContain("copy an exact URI into read_resource");
+    expect(text(started)).toContain(snapshotUri);
 
     const paused = await client.callTool({
       name: "workspace",

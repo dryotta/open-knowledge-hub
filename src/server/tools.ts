@@ -58,6 +58,9 @@ function formatHub(r: HubMap): string {
     }
     if (moduleExample) break;
   }
+  const hasWorkspace = r.containers.some((container) =>
+    container.modules.some((module) => module.type === "workspace")
+  );
 
   const lines: string[] = [
     "# Hub",
@@ -71,6 +74,20 @@ function formatHub(r: HubMap): string {
     "`run` returns the skill's instructions for you to carry out — it does not do the work itself.",
     "",
   ];
+
+  if (hasWorkspace) {
+    lines.push(
+      "# Workspace project discovery",
+      "When an existing project is named without its exact container/module, call `workspace`",
+      "with `operation: \"list\"` and the project query in every workspace module.",
+      "Search all of them even after the first match. Select only after every workspace",
+      "responds; if more than one matches, ask the user to choose.",
+      "Never infer a project's location from its name, artifact type, or the first match.",
+      "Before project execution, run the workspace's `coordinate` skill. If `get` reports",
+      "an active run, never probe `start` for a concurrent run; explain the invariant.",
+      "",
+    );
+  }
 
   lines.push("# Module skills");
   lines.push("Every runnable skill is scoped to the module where it appears.");

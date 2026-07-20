@@ -1,0 +1,84 @@
+# workspace flow — locate an archived project, preserve prior results, and publish a revision.
+- config:
+    - vars:
+        env: workspace
+        prompt: |
+          hub, find the archived project `launch-readiness` wherever it lives, reopen it,
+          and revise its current result in a new run. Preserve the existing material,
+          add a decision matrix comparing guided onboarding with delaying launch, and
+          change the recommendation to guided onboarding. Preserve every prior result
+          and complete the revision now.
+        terminal:
+          after: start
+          requiredTools: [inspect, run, workspace, sync]
+          finalTool: sync
+  tests:
+    - description: Workspace - discover and revise an archived project without overwriting prior results
+      assert:
+        - type: javascript
+          value: file://assertions/workspace-discovery.ts
+          config:
+            containers: [work-hub, personal-hub]
+            lists:
+              - { container: work-hub, module: presentations }
+              - { container: work-hub, module: investigations }
+              - { container: personal-hub, module: writing }
+            selected: { container: work-hub, module: presentations }
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: workspace
+                arguments:
+                  { operation: get, container: work-hub, module: presentations, project: launch-readiness }
+              - name: workspace
+                arguments:
+                  { operation: update, container: work-hub, module: presentations, project: launch-readiness, action: unarchive }
+              - name: workspace
+                arguments:
+                  { operation: start, container: work-hub, module: presentations, project: launch-readiness }
+              - name: workspace
+                arguments:
+                  { operation: report, container: work-hub, module: presentations, project: launch-readiness, state: succeeded }
+              - name: sync
+                arguments: { container: work-hub }
+            forbid:
+              - use_agent
+              - name: workspace
+                arguments: { operation: create }
+              - name: workspace
+                arguments: { operation: intervene }
+              - name: workspace
+                arguments: { operation: update, action: restore }
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: run
+                arguments: { container: work-hub, module: presentations, skill: coordinate }
+              - name: workspace
+                arguments:
+                  { operation: start, container: work-hub, module: presentations, project: launch-readiness }
+        - type: javascript
+          value: file://assertions/workspace-mutations.ts
+        - type: javascript
+          value: file://assertions/workspace-resource-reads.ts
+        - type: javascript
+          value: file://assertions/workspace-state.ts
+          config: { mode: revised-presentation }
+        - type: javascript
+          value: file://assertions/git-committed.ts
+        - type: javascript
+          value: file://assertions/judge.ts
+          config:
+            artifacts:
+              module: presentations
+              maxFiles: 10
+              maxCharsPerFile: 8000
+            criteria:
+              - id: faithful-revision
+                text: The new result preserves established prior facts while adding the requested decision matrix and changing the recommendation to guided onboarding.
+              - id: useful-comparison
+                text: The revision gives a coherent, decision-useful comparison between guided onboarding and delaying launch.

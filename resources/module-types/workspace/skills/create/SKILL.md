@@ -5,12 +5,17 @@ description: Create one focused active project in this workspace from a user's g
 
 # Create a workspace project
 
+For every mutation, obtain `commandId` from an actual RFC 4122 UUID generator available
+to the client. Never type or invent a UUID-shaped value.
+
 1. Call `workspace { operation: "get", container, module }` to verify the workspace is
    initialized and its agent references are valid.
 2. Derive one immutable lowercase kebab-case project ID, a concise title, and a
    concrete goal from the user's request. Gather only useful optional detail:
    project guidance, acceptance additions, target date, and normalized tags.
-3. Generate one UUID and call:
+   Set `targetDate` only when the user supplied a complete, unambiguous calendar date;
+   never infer a missing year or substitute today's date.
+3. Generate one UUID with that facility and call:
 
    ```text
    workspace {

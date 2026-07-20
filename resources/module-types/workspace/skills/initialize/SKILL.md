@@ -8,6 +8,9 @@ description: Initialize a new workspace module with one lead, concise working gu
 Use this only after `add_module` has created a module with `type: workspace`. The
 workspace is a reusable workflow; projects are created later.
 
+For every mutation, obtain `commandId` from an actual RFC 4122 UUID generator available
+to the client. Never type or invent a UUID-shaped value.
+
 1. Call `inspect { container, module }` and `config { container, module }`.
 2. Establish a concise routing description, one lead agent reference, and an optional
    agent pool. Agent references may be `agent`, `module/agent`, or
@@ -29,7 +32,7 @@ workspace is a reusable workflow; projects are created later.
 4. Gather short shared working guidance and at least one objectively reviewable
    acceptance criterion. Keep purpose and workflow detail in Markdown, not new config
    keys.
-5. Generate one UUID and call:
+5. Generate one UUID with that facility and call:
 
    ```text
    workspace {

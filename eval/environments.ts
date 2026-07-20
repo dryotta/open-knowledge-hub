@@ -7,6 +7,7 @@ import { Git } from "../src/git/git.js";
 import { emptyRegistry, type ContainerEntry } from "../src/registry/schema.js";
 import { saveRegistry, withContainerAdded } from "../src/registry/registry.js";
 import type { OkhPaths } from "../src/config.js";
+import { seedWorkspaceEnvironment } from "./workspaceEnvironment.js";
 
 const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 
@@ -29,6 +30,7 @@ export interface Environment {
   placement: "registered" | "workspace";
   hubs: EnvHub[];
   workspaceDir?: string;
+  seed?: "workspace";
 }
 
 export const environments = {
@@ -64,6 +66,23 @@ export const environments = {
     placement: "registered",
     hubs: [{ container: "wiki-hub", fixture: "fixtures/wiki-hub", backend: "local" }],
     workspaceDir: undefined,
+  },
+  workspace: {
+    placement: "registered",
+    hubs: [
+      {
+        container: "work-hub",
+        fixture: "fixtures/workspace-work-hub",
+        backend: "git-auto",
+      },
+      {
+        container: "personal-hub",
+        fixture: "fixtures/workspace-personal-hub",
+        backend: "local",
+      },
+    ],
+    workspaceDir: undefined,
+    seed: "workspace",
   },
 } satisfies Record<string, Environment>;
 
@@ -114,6 +133,16 @@ export interface Provisioned {
   fixtureDir: string;
   /** Primary hub's bare origin, if git-backed. */
   originPath?: string;
+  /** Registered container paths keyed by container name. */
+  containerPaths?: Record<string, string>;
+  /** Pristine post-seed baselines keyed by container name. */
+  baselinePaths?: Record<string, string>;
+  /** Pristine post-seed workspace staging tree. */
+  stagingBaselinePath?: string;
+  /** Bare origins keyed by git-backed container name. */
+  originPaths?: Record<string, string>;
+  /** Commit count in the primary origin before the Copilot conversation. */
+  baselineCommitCount?: number;
 }
 
 export type MakeTempRoot = (prefix: string) => Promise<string>;
@@ -165,6 +194,36 @@ async function registerHub(
   return { entry: { name: hub.container, backend: { type: "local", config: {} }, localPath: dir, sync: { mode: "auto", config: {} }, addedAt: new Date().toISOString() } };
 }
 
+async function commitSeededBaseline(
+  entry: ContainerEntry,
+  runner: typeof run,
+): Promise<void> {
+  await runner("git", ["add", "-A"], { cwd: entry.localPath });
+  await runner(
+    "git",
+    [
+      "-c",
+      "user.name=OKH Eval",
+      "-c",
+      "user.email=eval@okh.invalid",
+      "commit",
+      "-m",
+      "seed workspace lifecycle state",
+    ],
+    { cwd: entry.localPath },
+  );
+  await runner("git", ["push", "origin", "main"], { cwd: entry.localPath });
+}
+
+async function originCommitCount(originPath: string, runner: typeof run): Promise<number> {
+  const { stdout } = await runner("git", ["--git-dir", originPath, "rev-list", "--count", "main"]);
+  const count = Number(stdout.trim());
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`invalid baseline commit count for ${originPath}: ${JSON.stringify(stdout)}`);
+  }
+  return count;
+}
+
 /**
  * Build a fully isolated workspace for one eval run against a named environment:
  * an OKH_HOME (registry per the env), a COPILOT_HOME whose mcp-config launches the
@@ -174,7 +233,7 @@ export async function provisionEnvironment(
   env: EnvName,
   opts: ProvisionEnvironmentOptions,
 ): Promise<Provisioned> {
-  const def = environments[env];
+  const def: Environment = environments[env];
   const runner = opts.runner ?? run;
   const makeTempRoot: MakeTempRoot = opts.makeTempRoot ?? ((prefix) => mkdtemp(prefix));
   const removeTempRoot: RemoveTempRoot = opts.removeTempRoot ?? ((root) => rm(root, { recursive: true, force: true }));
@@ -201,6 +260,11 @@ export async function provisionEnvironment(
     const primaryFixtureDir = fixturePath(primary.fixture);
     let containerPath = "";
     let originPath: string | undefined;
+    const registered = new Map<string, {
+      hub: EnvHub;
+      entry: ContainerEntry;
+      originPath?: string;
+    }>();
 
     if (def.placement === "workspace") {
       for (const hub of def.hubs) {
@@ -213,6 +277,7 @@ export async function provisionEnvironment(
       let registry = emptyRegistry();
       for (const hub of def.hubs) {
         const { entry, originPath: hubOrigin } = await registerHub(hub, containersDir, root, git, runner);
+        registered.set(hub.container, { hub, entry, originPath: hubOrigin });
         registry = withContainerAdded(registry, entry);
         if (hub === primary) {
           containerPath = entry.localPath;
@@ -222,12 +287,60 @@ export async function provisionEnvironment(
       await saveRegistry(paths, registry);
     }
 
+    const baselinePaths: Record<string, string> = {};
+    let stagingBaselinePath: string | undefined;
+    if (def.seed === "workspace") {
+      await seedWorkspaceEnvironment(paths, runner);
+      for (const { hub, entry } of registered.values()) {
+        if ((hub.backend ?? "local") === "git-auto") {
+          await commitSeededBaseline(entry, runner);
+        }
+      }
+      const baselineRoot = join(root, "baselines");
+      await mkdir(baselineRoot, { recursive: true });
+      for (const [name, { entry }] of registered) {
+        const baseline = join(baselineRoot, name);
+        const gitDirectory = resolve(entry.localPath, ".git");
+        await cp(entry.localPath, baseline, {
+          recursive: true,
+          filter: (source) => resolve(source) !== gitDirectory,
+        });
+        baselinePaths[name] = baseline;
+      }
+      stagingBaselinePath = join(root, "staging-baseline");
+      await cp(join(okhHome, "workspace-staging"), stagingBaselinePath, { recursive: true });
+    }
+
     if (def.workspaceDir) {
       await cp(fixturePath(def.workspaceDir), workspace, { recursive: true });
     }
 
     await writeMcpConfig(copilotHome, opts.repoRoot, okhHome);
-    return { root, okhHome, copilotHome, workspace, containerPath, fixtureDir: primaryFixtureDir, originPath };
+    const containerPaths = Object.fromEntries(
+      [...registered].map(([name, value]) => [name, value.entry.localPath]),
+    );
+    const originPaths = Object.fromEntries(
+      [...registered]
+        .filter(([, value]) => value.originPath !== undefined)
+        .map(([name, value]) => [name, value.originPath!]),
+    );
+    const baselineCommitCount = originPath
+      ? await originCommitCount(originPath, runner)
+      : undefined;
+    return {
+      root,
+      okhHome,
+      copilotHome,
+      workspace,
+      containerPath,
+      fixtureDir: baselinePaths[primary.container] ?? primaryFixtureDir,
+      originPath,
+      containerPaths,
+      baselinePaths,
+      stagingBaselinePath,
+      originPaths,
+      baselineCommitCount,
+    };
   } catch (provisionError) {
     try {
       await removeTempRoot(root);

@@ -5,6 +5,9 @@ description: Revise a workspace's routing description, lead, agent pool, guidanc
 
 # Configure a workspace
 
+For every mutation, obtain `commandId` from an actual RFC 4122 UUID generator available
+to the client. Never type or invent a UUID-shaped value.
+
 1. Call both:
 
    ```text
@@ -18,7 +21,8 @@ description: Revise a workspace's routing description, lead, agent pool, guidanc
 3. Change only requested values. Use one `config { set }` call for manifest changes.
    `lead` is required; `agents` is an optional flat list. Do not add roles, execution
    modes, budgets, sorting, or project-type schema.
-4. For README changes, generate one UUID and use the ETag returned by `workspace:get`:
+4. For README changes, generate one UUID with that facility and use the ETag returned by
+   `workspace:get`:
 
    ```text
    workspace {

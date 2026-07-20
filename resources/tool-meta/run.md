@@ -13,6 +13,11 @@ plan. Learn/teach/add-knowledge requests run `skill: "learn"` on a knowledge mod
 do not substitute memory.
 Explicit remember requests run `skill: "remember"`; other todo changes run
 `skill: "todo"` before any deterministic `todos` mutation.
+For a workspace module, first run the module skill that owns setup, creation, or project
+execution: use `configure` or `initialize` for workspace setup, `create` for a new
+project, and `coordinate` for starting, resuming, continuing, or revising project work.
+Direct reads, external cancellation, explicit archive/restore operations, and a
+read-only refusal of an impossible run do not need a skill.
 
 Return the discipline for a module's skill (resolved from the module's type + its own
 skills), with the target paths and your input injected. Declared required resources are

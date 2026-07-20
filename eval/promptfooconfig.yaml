@@ -7,6 +7,10 @@ providers:
   - file://scenarios/shared/provider.ts
 scenarios:
   - file://scenarios/onboard/cold-start-conversation.yaml
+  - file://scenarios/workspace/guide-investigation.yaml
+  - file://scenarios/workspace/ambiguous-project.yaml
+  - file://scenarios/workspace/revise-project.yaml
+  - file://scenarios/workspace/create-presentation.yaml
   - file://scenarios/initialize/llmwiki.yaml
   - file://scenarios/ask/llmwiki-compounding.yaml
   - file://scenarios/ingest/into-existing-module.yaml
@@ -25,6 +29,9 @@ scenarios:
   - file://scenarios/ask/answerable.yaml
   - file://scenarios/onboard/github-repo.yaml
   - file://scenarios/todo/complete.yaml
+  - file://scenarios/workspace/cancel-attention.yaml
+  - file://scenarios/workspace/restore-archive.yaml
+  - file://scenarios/workspace/concurrent-run.yaml
   - file://scenarios/run/custom-skill.yaml
   - file://scenarios/onboard/existing-folder.yaml
   - file://scenarios/learn/trivial-fact.yaml

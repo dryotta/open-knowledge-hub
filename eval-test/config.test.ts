@@ -28,6 +28,7 @@ const EXPECTED_COUNTS: Record<string, number> = {
   write: 1,
   todo: 1,
   todos: 1,
+  workspace: 7,
 };
 
 /** Every scenario config file (verb/<name>.yaml), skipping the shared/ folder. */
@@ -146,9 +147,9 @@ describe("promptfoo tier configs", () => {
     expect([...configured].sort()).toEqual(await scenarioFiles());
     expect(configured.slice(0, 4)).toEqual([
       "onboard/cold-start-conversation.yaml",
-      "initialize/llmwiki.yaml",
-      "ask/llmwiki-compounding.yaml",
-      "ingest/into-existing-module.yaml",
+      "workspace/guide-investigation.yaml",
+      "workspace/ambiguous-project.yaml",
+      "workspace/revise-project.yaml",
     ]);
   });
 
@@ -159,7 +160,7 @@ describe("promptfoo tier configs", () => {
     expect(smoke.providers).toEqual(full.providers);
     const fullRefs = new Set(full.scenarios as string[]);
     const smokeRefs = smoke.scenarios as string[];
-    expect(smokeRefs).toHaveLength(8);
+    expect(smokeRefs).toHaveLength(9);
     expect(smokeRefs.length).toBeLessThan(fullRefs.size);
     expect(smokeRefs.every((ref) => fullRefs.has(ref))).toBe(true);
     expect(smokeRefs).toEqual(expect.arrayContaining([
@@ -167,14 +168,15 @@ describe("promptfoo tier configs", () => {
       "file://scenarios/write/into-wiki.yaml",
       "file://scenarios/ask/answerable.yaml",
       "file://scenarios/help/grilling.yaml",
+      "file://scenarios/workspace/create-presentation.yaml",
     ]));
   });
 });
 
 describe("scenario configs", () => {
-  it("provides 29 scenario files across the expected verb folders", async () => {
+  it("provides 36 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
-    expect(files.length).toBe(29);
+    expect(files.length).toBe(36);
     const counts: Record<string, number> = {};
     for (const f of files) {
       const verb = f.split("/")[0];
@@ -328,6 +330,11 @@ describe("scenario routing contracts", () => {
       ordered?: boolean;
     };
   }
+
+  it("workspace revision ends only after sync", async () => {
+    const scenario = await loadScenario("workspace/revise-project.yaml");
+    expect(scenario.config[0].vars.terminal.finalTool).toBe("sync");
+  });
 
   it.each([
     ["remember/todo.yaml", "remember"],
