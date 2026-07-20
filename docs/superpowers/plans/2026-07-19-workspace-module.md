@@ -101,8 +101,8 @@ Modify:
 - [x] Run full typecheck, build, and test suites.
 - [x] Review the complete diff for state, recovery, path, and concurrency defects.
 - [x] Resolve high-confidence review findings.
-- [ ] Commit and push each coherent phase to the existing PR branch.
-- [ ] Update PR #46 to describe the implementation and verify remote checks.
+- [x] Commit and push the implementation to the existing PR branch.
+- [x] Update PR #46 to describe the implementation and verify remote checks.
 
 ---
 
