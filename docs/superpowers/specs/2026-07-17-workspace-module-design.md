@@ -306,9 +306,15 @@ flowchart TD
     A -->|Cannot continue| T[Report failed or cancelled]
 ```
 
-Before starting or resuming agent execution, the client proves that it can read and
-write the external staging area. A failed preflight creates no new run and leaves an
-existing run unchanged.
+`start` creates the external staging directory and returns its path. Before delegating,
+the client must write, read, and delete a probe file there. If that check fails, it
+reports the run as paused with `staging-unavailable`; no agent work begins. Resume
+repeats the same check because a different MCP client may have different filesystem
+access.
+
+The Hub validates staging when `report` reads it, but it cannot independently prove that
+the client performed the probe or executed any particular subagent. Those remain
+client-reported behaviors.
 
 The `coordinate` skill supplies one orchestration prompt containing:
 
@@ -492,76 +498,530 @@ publication and command idempotency keep that retry safe.
 
 ## 9. Tool and client boundary
 
-One deterministic MCP tool is sufficient:
+A critical pass leaves seven operations:
+
+```text
+list | get | create | start | report | update | intervene
+```
+
+| Candidate | Decision |
+|---|---|
+| `list` | Keep: `inspect` discovers modules and items but does not provide workspace filtering, attention queries, or pagination |
+| `status` | Rename to `get`: it returns content, history, and resume inputs, not merely status |
+| `preflight` | Remove: a separate handshake duplicates run recovery; the client probes staging immediately after `start` |
+| `create` | Keep: initialization and project creation are deterministic writes |
+| `start` / `report` | Keep: these are the two durable boundaries around client-owned execution |
+| `update` | Keep: edits, lifecycle changes, and result restoration are project/workspace mutations |
+| `intervene` | Keep separate: guidance and cancellation target a live run and have different concurrency semantics |
+
+There are deliberately no `resume`, `continue`, `configure`, `compare`, or `sync`
+operations. Those are client workflows composed from the seven operations plus existing
+OKH tools.
+
+### Common contract
 
 ```text
 workspace {
-  operation:
-    list | create | status | preflight | start | report | update | intervene
-  action?
-  state?
-  filters?
-  include?
-  container
-  module
-  project?
-  ...
+  operation: list | get | create | start | report | update | intervene
+  container: string
+  module: string
+  project?: string
+  commandId?: string
+  etag?: string
+  ...operation fields
 }
 ```
 
-| Operation | Purpose |
-|---|---|
-| `list` | Filter, sort, and page projects, including archived or needs-attention views |
-| `create` | Create one project |
-| `status` | Return current state plus optional resume inputs or result history |
-| `preflight` | Prove access to external staging |
-| `start` | Start a run and return frozen coordination inputs |
-| `report` | Record a paused or terminal state; publish a successful result |
-| `update` | Archive, unarchive, or restore a project |
-| `intervene` | Add guidance to a paused run or cancel any active run |
+- `container`, `module`, and `project` are exact immutable IDs. Natural-language title
+  matching happens before the call.
+- `list` and `get` are read-only. Every mutation requires a UUID `commandId`; replaying
+  the same command and arguments returns the recorded response.
+- Mutations of existing content also require the latest `etag` returned by `get`.
+  Mismatch changes nothing and tells the client to read and reconsider; success returns
+  the new ETag for the next call.
+- Results follow current OKH conventions: concise text, structured content, and
+  `resource_link` values. Validation errors are explicit and never return
+  success-shaped fallbacks.
+- The tool never calls a model and never synchronizes implicitly. The client calls the
+  existing `sync` tool after the requested durable unit of work.
 
-`update.action` is `archive | unarchive | restore`.
-`intervene.action` is `guide | cancel`.
-`report.state` is `paused | succeeded | failed | cancelled`. Each transition accepts
-only its relevant fields and validates the current ETag and state.
-`start` accepts optional continuation-correction text.
+### `list`
 
-`list` may filter project lifecycle status and `attention: true`; attention means the
-latest active-run boundary is a pause with no later guidance. `status` may include:
+`list` queries project summaries without loading result content:
 
-- `resume`: the run ID, frozen inputs, staging path, latest checkpoint, and later
-  guidance for `activeRun`; and
-- `results`: prior successful run IDs, timestamps, result paths, and tree hashes.
+```text
+workspace {
+  operation: "list"
+  container
+  module
+  status?: active | archived | all       # default: active
+  attention?: boolean
+  tags?: string[]
+  tagMode?: any | all
+  targetAfter?: YYYY-MM-DD
+  targetBefore?: YYYY-MM-DD
+  query?: string
+  sort?: updatedAt | createdAt | targetDate | title
+  order?: asc | desc
+  limit?: 1..100
+  cursor?: string
+}
+```
 
-Result entries use the existing module-file resource template to expose their files; no
-separate history or artifact-browsing operation is needed.
+`attention: true` means the latest active-run boundary is a pause with no later
+guidance. The response contains project ID, title, lifecycle status, dates, tags,
+`activeRun`, current-result summary, attention summary, and an opaque next cursor.
 
-`start` returns the run ID, staging path, expected report schema, and frozen inputs as
-embedded content or MCP `resource_link` values. The `coordinate` skill combines those
-inputs with its orchestration instructions and hands the resulting prompt to the
-client's agentic loop.
+```text
+workspace {
+  operation: "list",
+  container: "Work",
+  module: "investigations",
+  status: "active",
+  attention: true,
+  limit: 25
+}
+```
 
-The server never calls a model. The `coordinate` skill checks `status` with the resume
-package and preflights the current client first. If `activeRun` exists, it rebuilds the
-prompt from that package; otherwise it calls `start`. Resuming a paused run records the
-current user request through `intervene: guide` before execution. After the client loop
-yields, `coordinate` calls `report` only for a paused or terminal state.
+A representative structured response is:
 
-`update: archive` and `update: unarchive` change project lifecycle status;
-`update: restore` changes the current result pointer. They share one operation because
-all are project-level mutations that require no active run. `intervene: cancel`
-terminalizes the Hub run and rejects late reports, but it cannot stop an MCP client
-process that is still executing.
+```json
+{
+  "projects": [
+    {
+      "id": "supplier-concentration",
+      "title": "Supplier concentration investigation",
+      "status": "active",
+      "targetDate": "2026-08-22",
+      "tags": ["sourcing"],
+      "updatedAt": "2026-07-19T18:30:00Z",
+      "activeRun": "2026-07-19-002",
+      "currentResult": {
+        "runId": "2026-07-19-001",
+        "path": "runs/2026-07-19-001/result",
+        "treeHash": "sha256:..."
+      },
+      "attention": {
+        "kind": "paused",
+        "summary": "Regulator data needs interpretation.",
+        "question": "Should the six-month lag be acceptable?"
+      }
+    }
+  ],
+  "nextCursor": null
+}
+```
 
-Built-in skills remain small:
+### `get`
 
-- `initialize` creates the manifest and workspace README;
-- `configure` updates lead, agents, guidance, or acceptance;
-- `create` gathers a goal and creates one project; and
-- `coordinate` starts or resumes coordinated work.
+With no `project`, `get` returns workspace README settings, resolved agent-reference
+health, project counts, and the workspace README ETag. With a project ID, it returns the
+project README projection, ETag, current run summary, current-result link, and valid next
+actions.
 
-Project lifecycle and intervention requests call `update` or `intervene` directly after
-the client resolves the workspace and project.
+```text
+workspace {
+  operation: "get"
+  container
+  module
+  project?
+  include?: [resume, results]
+}
+```
+
+- `resume` adds the active run ID, frozen inputs, staging path, latest checkpoint,
+  later guidance, criterion list, and report contract; it is `null` without
+  `activeRun`.
+- `results` adds successful run IDs, timestamps, result paths, tree hashes, criterion
+  evidence, and module-file resource links.
+
+```text
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  include: ["resume", "results"]
+}
+```
+
+Without a project, the structured response is:
+
+```json
+{
+  "workspace": {
+    "container": "Work",
+    "module": "investigations",
+    "description": "Investigate evidence-based questions and compare alternatives.",
+    "guidance": "Prefer primary evidence and state uncertainty explicitly.",
+    "acceptance": [
+      "Material claims cite primary or authoritative sources."
+    ],
+    "lead": "coordinators/orchestrator",
+    "agents": [
+      "research-agents/researcher",
+      "review-agents/evidence-checker"
+    ],
+    "agentHealth": "valid"
+  },
+  "counts": {
+    "active": 4,
+    "archived": 2,
+    "activeRuns": 1,
+    "attention": 1
+  },
+  "etag": "sha256:...",
+  "validActions": ["update", "create-project"]
+}
+```
+
+For a project with an active run, `start` and `get include: ["resume"]` return the same
+resume package:
+
+```json
+{
+  "project": {
+    "id": "supplier-concentration",
+    "title": "Supplier concentration investigation",
+    "status": "active",
+    "activeRun": "2026-07-19-002",
+    "result": "runs/2026-07-19-001/result"
+  },
+  "etag": "sha256:...",
+  "resume": {
+    "runId": "2026-07-19-002",
+    "stagingPath": "<okh-state>/workspace-staging/Work/investigations/supplier-concentration/2026-07-19-002",
+    "snapshot": [
+      {
+        "kind": "project",
+        "uri": "okh://containers/Work/investigations/files/projects%2Fsupplier-concentration%2Fruns%2F2026-07-19-002%2Fsnapshot%2Fproject.md",
+        "sha256": "sha256:..."
+      }
+    ],
+    "currentResult": {
+      "runId": "2026-07-19-001",
+      "treeHash": "sha256:...",
+      "uri": "okh://containers/Work/investigations/files/projects%2Fsupplier-concentration%2Fruns%2F2026-07-19-001%2Fresult%2Freport.md"
+    },
+    "criteria": [
+      {
+        "id": "workspace-1",
+        "source": "workspace",
+        "text": "Material claims cite primary or authoritative sources."
+      },
+      {
+        "id": "project-1",
+        "source": "project",
+        "text": "Cover both North America and Europe."
+      }
+    ],
+    "checkpoint": {
+      "summary": "Regulator data needs interpretation.",
+      "stagedPaths": ["notes/regulator-data.md"],
+      "question": "Should the six-month lag be acceptable?"
+    },
+    "guidance": [],
+    "profiles": {
+      "lead": {
+        "agent": {
+          "container": "Work",
+          "module": "coordinators",
+          "id": "orchestrator",
+          "description": "Plans, delegates, and integrates project work"
+        },
+        "requestedTools": ["read", "search"],
+        "profile": {
+          "format": "github-copilot-agent-md",
+          "content": "---\ndescription: Plans and integrates work\n---\n..."
+        },
+        "delegation": {
+          "preferredMode": "native-subagent",
+          "fallbackMode": "inline-parent"
+        }
+      },
+      "pool": [
+        {
+          "agent": {
+            "container": "Work",
+            "module": "research-agents",
+            "id": "researcher",
+            "description": "Finds primary evidence"
+          },
+          "requestedTools": ["read", "search", "web"],
+          "profile": {
+            "format": "github-copilot-agent-md",
+            "content": "---\ndescription: Finds primary evidence\n---\n..."
+          },
+          "delegation": {
+            "preferredMode": "native-subagent",
+            "fallbackMode": "inline-parent"
+          }
+        }
+      ]
+    },
+    "reportContract": {
+      "states": ["paused", "succeeded", "failed", "cancelled"],
+      "requiredByState": {
+        "paused": ["checkpoint"],
+        "succeeded": ["resultPath", "evidence"],
+        "failed": ["reason"],
+        "cancelled": ["reason"]
+      },
+      "outputLimits": {
+        "maxFiles": 1000,
+        "maxFileBytes": 16777216,
+        "maxTotalBytes": 268435456
+      }
+    }
+  },
+  "results": [
+    {
+      "runId": "2026-07-19-001",
+      "finishedAt": "2026-07-19T19:10:00Z",
+      "path": "runs/2026-07-19-001/result",
+      "treeHash": "sha256:..."
+    }
+  ],
+  "validActions": ["guide", "cancel", "update-project"]
+}
+```
+
+Frozen profile entries intentionally omit `task`. The coordinate loop creates a focused
+task for each delegation and combines it with the frozen profile, matching the existing
+`use_agent` separation between profile and task without reading a live profile.
+The returned output limits are fixed server safety caps, not workspace execution
+budgets or agent-loop limits.
+
+The existing `read_resource` tool reads linked files on tool-only hosts. No separate
+history, compare, or artifact-browsing operation is needed.
+
+### `create`
+
+Without `project`, `create` initializes the workspace README and `projects/` directory
+after `add_module` has created the manifest. It is valid only while those workspace
+files are absent:
+
+```text
+workspace {
+  operation: "create",
+  container: "Work",
+  module: "investigations",
+  guidance: "Prefer primary evidence and state uncertainty.",
+  acceptance: [
+    "Material claims cite primary or authoritative sources.",
+    "The conclusion states tradeoffs and unresolved risks."
+  ],
+  commandId: "<uuid>"
+}
+```
+
+With `project`, it creates one active project:
+
+```text
+workspace {
+  operation: "create",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  title: "Supplier concentration investigation",
+  goal: "Recommend two resilient alternatives with evidence and risks.",
+  guidance?: string,
+  acceptance?: string[],
+  targetDate?: "2026-08-15",
+  tags?: ["sourcing", "strategy"],
+  commandId: "<uuid>"
+}
+```
+
+The caller cannot set `status`, timestamps, `activeRun`, or `result`. The response
+returns the created projection, ETag, valid next actions, and README resource link.
+
+### `start`
+
+`start` creates one run; it never resumes one:
+
+```text
+workspace {
+  operation: "start",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  correction?: "Add direct evidence from the latest filings.",
+  etag: "sha256:...",
+  commandId: "<uuid>"
+}
+```
+
+The project must be active with no `activeRun`, and every configured agent reference
+must resolve. The transaction freezes the manifest, workspace/project READMEs, lead,
+agent-pool profiles, and acceptance criteria, and records the current result path/hash.
+It creates staging and returns the updated project ETag plus the same resume package
+described by `get`.
+
+The client next performs the staging probe defined in Section 6. Replaying `start` with
+the same command ID returns the existing package; another start conflicts while a run
+is active.
+
+### `report`
+
+`report` is the executing client's only run-state write:
+
+```text
+workspace {
+  operation: "report",
+  container
+  module
+  project
+  run
+  state: paused | succeeded | failed | cancelled
+  checkpoint?: {
+    summary: string
+    stagedPaths?: string[]
+    question?: string
+    reason?: string
+  }
+  resultPath?: string
+  evidence?: [{ criterion: string, references: string[] }]
+  reason?: string
+  etag
+  commandId
+}
+```
+
+| State | Required content | Effect |
+|---|---|---|
+| `paused` | Concise checkpoint; question or reason when applicable | Leaves `activeRun` set and exposes the run in Needs attention |
+| `succeeded` | Safe staging-relative `resultPath` and evidence for every criterion | Publishes one immutable result, makes it current, and clears `activeRun` |
+| `failed` | Human-readable reason | Clears `activeRun`; current result is unchanged |
+| `cancelled` | Human-readable reason | Acknowledges cancellation and clears `activeRun` |
+
+```text
+workspace {
+  operation: "report",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "2026-07-19-002",
+  state: "succeeded",
+  resultPath: ".",
+  evidence: [
+    { criterion: "workspace-1", references: ["report.md#sources"] },
+    { criterion: "project-1", references: ["report.md#regional-coverage"] }
+  ],
+  etag: "sha256:...",
+  commandId: "<uuid>"
+}
+```
+
+### `update`
+
+`update` accepts exactly one `patch` or one `action`:
+
+```text
+workspace {
+  operation: "update"
+  container
+  module
+  project?
+  patch?: {
+    guidance?
+    acceptance?
+    title?
+    goal?
+    targetDate?
+    tags?
+  }
+  action?: archive | unarchive | restore
+  fromRun?: string
+  etag
+  commandId
+}
+```
+
+Without `project`, a patch may replace workspace guidance or acceptance. Lead, agent
+pool, and routing description remain manifest settings and use the existing `config`
+tool. With `project`, patchable fields are title, goal, guidance, project acceptance,
+target date, and tags; `null` clears an optional field. Other Markdown sections remain
+ordinary source content rather than growing the tool schema.
+
+`archive` and `restore` require no active run. A paused run still counts as active and
+must first be cancelled with `intervene` or reach a terminal report. `unarchive` changes
+only lifecycle status. `restore` additionally requires `fromRun` and changes only the
+current result pointer.
+
+```text
+workspace {
+  operation: "update",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  patch: {
+    targetDate: "2026-08-22",
+    guidance: "Treat distributor data as provisional and label uncertainty."
+  },
+  etag: "sha256:...",
+  commandId: "<uuid>"
+}
+```
+
+### `intervene`
+
+`intervene` records an external human action against an active run:
+
+```text
+workspace {
+  operation: "intervene"
+  container
+  module
+  project
+  run
+  action: guide | cancel
+  guidance?: string
+  reason?: string
+  etag
+  commandId
+}
+```
+
+`guide` requires a paused run and non-empty guidance. It makes the run ready to resume
+but does not execute it; only an MCP client can invoke `coordinate`. `cancel` accepts
+any active run, appends its terminal event, clears `activeRun`, and rejects later client
+reports. It cannot terminate a client process that is already executing.
+
+```text
+workspace {
+  operation: "intervene",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "2026-07-19-002",
+  action: "guide",
+  guidance: "Use the regulator dataset and call out its six-month lag.",
+  etag: "sha256:...",
+  commandId: "<uuid>"
+}
+```
+
+### Skills compose tools
+
+Built-in skills remain guidance, consistent with the rest of OKH:
+
+- `initialize` calls `workspace:create` without a project after `add_module`;
+- `configure` uses existing `config` for description/lead/agents and
+  `workspace:update` for README guidance/acceptance;
+- `create` gathers a goal and calls `workspace:create` with a project; and
+- `coordinate` calls `workspace:get`, then resumes the active run or calls
+  `workspace:start`, runs the client loop, and finishes with `workspace:report`.
+
+`start` and `get include: resume` supply frozen profile content using the existing
+`use_agent` response conventions. The client delegates with those frozen profiles
+rather than calling live `use_agent` during a run, so later profile edits cannot alter
+the execution snapshot.
+
+Expected errors include not found, ETag conflict, command-ID conflict, invalid
+transition, field invalid for workspace/project scope, unresolved agent, unsafe path,
+unavailable staging, invalid evidence, and output-limit violations. Each error identifies
+the failed precondition and valid next calls; it does not mutate partial state.
 
 ## 10. Human and web experience
 
@@ -662,37 +1122,72 @@ A user may disambiguate directly:
 > hub, continue `Work/investigations/supplier-concentration-question` with the latest
 > filings.
 
+The routing table uses `tool:selector` only as shorthand: `run:create` means
+`run { skill: "create" }`, while `workspace:create` means
+`workspace { operation: "create" }`. The names intentionally match because the skill
+gathers and validates intent while the operation performs the deterministic write.
+Full argument objects follow in the examples.
+
 | User intent | Hub routing |
 |---|---|
-| "Set up an Investigations workspace" | `add_module` workflow, then workspace `initialize` |
-| "Configure Investigations to use..." | Workspace `configure` skill |
-| "Create an investigation for later" | Workspace `create` skill only |
-| "Investigate..." or "start a new presentation..." | Create a project, then `coordinate` |
-| "Resume..." | Continue the existing `activeRun` through `coordinate` |
-| "Continue... with..." | Start a new run from the current result plus correction |
-| "Archive", "unarchive", "reopen", or "restore" | `workspace` with `operation: update` |
-| "Use this guidance" for a paused run, or "cancel" an active run | `workspace` with `operation: intervene` |
-| "What needs attention?" | `workspace` with `operation: list`, `attention: true` |
-| "Show result history" | `workspace` with `operation: status`, including `results` |
-| "List", "find", or "show status" | `workspace` with `operation: list` or `status` |
+| "Set up an Investigations workspace" | `add_module` -> `run:initialize` -> `workspace:create` -> `sync` |
+| "Configure Investigations to use..." | `run:configure` -> `config` and/or `workspace:update` -> `sync` |
+| "Create an investigation for later" | `run:create` -> `workspace:create` -> `sync` |
+| "Investigate..." or "start a new presentation..." | Create if needed -> `run:coordinate` -> `workspace:get/start/report` -> `sync` |
+| "Resume..." | `run:coordinate` -> `workspace:get include:resume` -> client loop -> `report` |
+| "Continue..." or "revise..." | `run:coordinate` -> `get` -> `start` with correction -> client loop -> `report` |
+| "Change the goal/date/tags/guidance..." | `workspace:get` -> `workspace:update` -> `sync` |
+| "Archive", "unarchive", "reopen", or "restore" | `workspace:get` -> `workspace:update` -> `sync` |
+| "Use this guidance" or "cancel" | `workspace:get` -> `workspace:intervene` -> `sync` |
+| "What needs attention?" | `workspace:list` with `attention: true` |
+| "Show or compare result history" | `workspace:get include:results` -> `read_resource` as needed |
+| "List", "find", or "show details" | `workspace:list` or `workspace:get` |
 
 ```mermaid
 sequenceDiagram
     actor U as User
     participant C as MCP client
     participant H as Hub
+    participant A as Client subagent
 
     U->>C: hub, investigate supplier concentration risk
-    C->>H: inspect
+    C->>H: inspect {}
     H-->>C: Matching workspace and skills
-    C->>H: run create
-    C->>H: preflight, start
-    H-->>C: Frozen inputs and report contract
-    C->>C: Lead agentic loop plans, delegates, and iterates
-    C->>H: report paused or terminal state
-    H-->>C: Current result or intervention state
-    C-->>U: Outcome and next valid actions
+    C->>H: run { skill: "create", input: request }
+    H-->>C: Create discipline
+    C->>H: workspace { operation: "create", project: id, ... }
+    C->>H: sync { container: "Work" }
+    C->>H: run { skill: "coordinate", input: request }
+    H-->>C: Coordination discipline
+    C->>H: workspace { operation: "get", include: ["resume"] }
+    alt No active run
+        C->>H: workspace { operation: "start", project: id, ... }
+        H-->>C: Run ID, ETag, staging, frozen profiles, report contract
+    else Existing active run
+        H-->>C: Resume package from the frozen snapshot
+    end
+    C->>C: Write/read/delete staging probe
+    alt Staging unavailable
+        C->>H: workspace { operation: "report", state: "paused", ... }
+    else Staging available
+        loop Client-owned agentic loop
+            C->>A: Frozen profile + client-created task
+            A-->>C: Specialist output
+            C->>C: Lead inspects, integrates, and iterates
+        end
+        alt Human input needed after this client turn
+            C->>H: workspace { operation: "report", state: "paused", ... }
+        else Run terminal
+            C->>H: workspace { operation: "report", state: succeeded/failed/cancelled, ... }
+        end
+    end
+    C->>H: sync { container: "Work" }
+    C-->>U: Result, checkpoint, or explicit failure
 ```
+
+The subagent lane is a native client subagent when supported and inline parent execution
+otherwise. It receives the frozen profile and a client-created task; the client does not
+call live `use_agent` during the run.
 
 ### Example A: Set up and configure a workspace
 
@@ -700,15 +1195,53 @@ sequenceDiagram
 > lead, include the researcher and evidence-checker in its agent pool, and require
 > primary sources, explicit alternatives, and unresolved risks.
 
-The client:
+The exact call sequence is:
 
-1. Calls `inspect` to resolve the Work container and agent references.
-2. Starts the existing `add_module` workflow with `type: workspace` and a proposed
-   `investigations` path.
-3. Shows the normal add-module plan and waits for confirmation.
-4. Creates the module, then runs its `initialize` skill with the requested config,
-   guidance, and `## Acceptance` bullets.
-5. Validates the new workspace and syncs its container.
+```text
+inspect {}
+
+add_module {}
+
+# After the user agrees to the normal add-module plan:
+add_module {
+  container: "Work",
+  path: "investigations",
+  type: "workspace",
+  description: "Investigate evidence-based questions and compare alternatives.",
+  config: {
+    lead: "coordinators/orchestrator",
+    agents: [
+      "research-agents/researcher",
+      "review-agents/evidence-checker"
+    ]
+  },
+  create: true
+}
+
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "initialize",
+  input: "Use primary evidence; require alternatives, tradeoffs, and unresolved risks."
+}
+
+# The initialize discipline directs:
+workspace {
+  operation: "create",
+  container: "Work",
+  module: "investigations",
+  guidance: "Prefer primary evidence and state uncertainty explicitly.",
+  acceptance: [
+    "Material claims cite primary or authoritative sources.",
+    "Viable alternatives are compared consistently.",
+    "The conclusion states tradeoffs and unresolved risks."
+  ],
+  commandId: "<uuid>"
+}
+
+inspect { container: "Work", module: "investigations" }
+sync { container: "Work", message: "Initialize Investigations workspace" }
+```
 
 The result is still only:
 
@@ -724,9 +1257,53 @@ Later configuration uses the workspace skill rather than another metadata file:
 > hub, configure Investigations to add the market-analyst agent and require an explicit
 > confidence statement.
 
-The `configure` skill presents the exact manifest/README changes, applies them after any
-required confirmation, validates agent resolution, and syncs. The same values remain
-editable in the web Settings page.
+Configuration composes the existing manifest tool with the workspace README mutation:
+
+```text
+inspect {}
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "configure",
+  input: "Add market-analyst and require an explicit confidence statement."
+}
+config {
+  container: "Work",
+  module: "investigations",
+  set: {
+    agents: [
+      "research-agents/researcher",
+      "review-agents/evidence-checker",
+      "analysis-agents/market-analyst"
+    ]
+  }
+}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations"
+}
+workspace {
+  operation: "update",
+  container: "Work",
+  module: "investigations",
+  patch: {
+    acceptance: [
+      "Material claims cite primary or authoritative sources.",
+      "Viable alternatives are compared consistently.",
+      "The conclusion states tradeoffs and unresolved risks.",
+      "Every conclusion includes an explicit confidence statement."
+    ]
+  },
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+inspect { container: "Work", module: "investigations" }
+sync { container: "Work", message: "Configure Investigations workspace" }
+```
+
+Active run snapshots do not change. The revised configuration applies to future runs
+and remains editable in the web Settings page.
 
 ### Example B: Create a project or start new work
 
@@ -735,17 +1312,83 @@ To create a project without starting agents:
 > hub, create an investigation for the supplier concentration question so I can work on
 > it later. Target August 15, 2026 and tag it sourcing.
 
-The client resolves the Investigations workspace, proposes
-`supplier-concentration-question` as the immutable project ID, runs the workspace
-`create` skill, and syncs. It asks only if routing or required goal details are unclear.
+The client resolves the workspace, proposes `supplier-concentration` as the immutable
+project ID, and executes:
+
+```text
+inspect {}
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "create",
+  input: "Create the supplier concentration investigation for later; target 2026-08-15 and tag sourcing."
+}
+workspace {
+  operation: "create",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  title: "Supplier concentration investigation",
+  goal: "Assess supplier concentration risk and recommend resilient alternatives.",
+  acceptance: ["Cover both North America and Europe."],
+  targetDate: "2026-08-15",
+  tags: ["sourcing"],
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Create supplier concentration investigation" }
+```
+
+No run exists yet. The client asks only if routing or required goal details are unclear.
 
 An imperative workflow request means create **and** start:
 
 > hub, investigate supplier concentration risk in North America and Europe and recommend
 > two resilient alternatives.
 
-The client creates a project from that goal, preflights staging, and runs `coordinate`
-until success or intervention.
+For a new imperative request, the client first creates and syncs the project as above,
+then starts client-owned execution:
+
+```text
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "coordinate",
+  input: "Investigate supplier concentration risk in North America and Europe and recommend two resilient alternatives."
+}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  include: ["resume"]
+}
+workspace {
+  operation: "start",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+
+# The client probes the returned staging path, runs the lead loop, and writes its result.
+workspace {
+  operation: "report",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "<run from start>",
+  state: "succeeded",
+  resultPath: ".",
+  evidence: [
+    { criterion: "workspace-1", references: ["report.md#sources"] },
+    { criterion: "project-1", references: ["report.md#regional-coverage"] }
+  ],
+  etag: "<etag from start>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Publish supplier concentration result" }
+```
 
 If a likely matching project already exists, it reports that project and asks whether to
 resume/continue it or create a distinct project.
@@ -757,25 +1400,91 @@ The same routing works for another workspace:
 
 The client resolves the Presentations workspace, creates a project with
 `targetDate: 2026-07-30`, then coordinates its first run. If more than one workspace
-matches "presentations," it asks which one instead of choosing silently.
+matches "presentations," it asks which one instead of choosing silently. The operation
+sequence is identical; only `module`, project fields, and the user task differ.
 
-### Example C: Resume or continue
+### Example C: Resume an interrupted run or iterate a result
 
 Resume means an active run already exists:
 
 > hub, resume the supplier concentration investigation.
 
-The client resolves the project, calls `status` including the resume package, preflights
-the current client, records the resume request as guidance when needed, and re-enters
-the client agentic loop without calling `start` or creating a new snapshot.
+The exact resume path does not call `start`:
+
+```text
+inspect {}
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "coordinate",
+  input: "Resume the supplier concentration investigation."
+}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  include: ["resume"]
+}
+
+# Only when this user request answers or redirects a recorded pause:
+workspace {
+  operation: "intervene",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "<activeRun from get>",
+  action: "guide",
+  guidance: "<the user's answer or correction>",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Record supplier investigation guidance" }
+
+# The client probes staging, resumes the lead loop, then reports with the ETag returned
+# by intervene and syncs the paused or terminal report.
+```
+
+If the paused checkpoint contains an unanswered question, a bare "resume" does not
+invent an answer; the client asks for the missing guidance. No new snapshot is created.
 
 Continue means the prior run is terminal and a new run is wanted:
 
 > hub, continue the supplier concentration investigation. Add direct evidence from the
 > latest filings and make the regional tradeoffs explicit.
 
-The client verifies that no run is active, calls `start` with the correction text, and
-coordinates a new run from the current result and fresh snapshots.
+This is the normal revision loop:
+
+```text
+inspect {}
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "coordinate",
+  input: "Revise the current result with direct filing evidence and explicit regional tradeoffs."
+}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration"
+}
+workspace {
+  operation: "start",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  correction: "Add direct filing evidence and make regional tradeoffs explicit.",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+
+# Probe staging -> run the client loop -> report -> sync, as in Example B.
+```
+
+The prior immutable result remains current until this new run succeeds. Failure or
+cancellation leaves it unchanged, making iteration safe without candidate-version
+state.
 
 If the user says "continue" while a run is active, the client reports that state and asks
 whether to resume it or cancel it; it never starts a second run.
@@ -783,53 +1492,241 @@ whether to resume it or cancel it; it never starts a second run.
 If the project is archived, the client reports that state and requires unarchive before
 starting.
 
-### Example D: Unarchive, iterate, and handle intervention
+### Example D: Revise project instructions without a run
 
-People commonly say "reopen"; for an archived project, that means unarchive:
+Project metadata and instructions can change without executing agents:
 
-> hub, reopen the supplier concentration investigation.
+> hub, move the supplier investigation target to August 22, treat distributor data as
+> provisional, and require uncertainty to be explicit.
 
-This calls `workspace` with `operation: update` and `action: unarchive`. To unarchive and
-immediately do more work, the user can compose both intents:
+```text
+inspect {}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration"
+}
+workspace {
+  operation: "update",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  patch: {
+    targetDate: "2026-08-22",
+    guidance: "Treat distributor data as provisional and label its uncertainty.",
+    acceptance: [
+      "Cover both North America and Europe.",
+      "State uncertainty for provisional evidence."
+    ]
+  },
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Revise supplier investigation guidance" }
+```
 
-> hub, reopen the supplier concentration investigation and continue it with the latest
-> regulatory changes.
+`acceptance` replaces the project's complete acceptance list, so the client first reads
+and preserves criteria the user did not remove. If a run is active, its frozen snapshot
+does not change; these edits apply to the next run.
 
-The client unarchives the project, then starts and coordinates a new run. If the project
-is already active, it reports that state and treats "reopen" as a request to continue
-only after confirming the intent.
-
-An intervention can also be handled entirely from the client:
+### Example E: Find waits, provide guidance, or cancel
 
 > hub, what workspace work needs attention?
+
+```text
+inspect {}
+workspace {
+  operation: "list",
+  container: "Work",
+  module: "investigations",
+  status: "active",
+  attention: true
+}
+```
+
+To answer one paused run and resume it:
 
 > hub, retry the supplier investigation with this guidance: treat distributor data as
 > provisional and document the uncertainty.
 
-The first request lists waits. The second resolves the waiting run, calls
-`workspace` with `operation: intervene` and `action: guide`, and resumes `coordinate`.
-Cancel requests use the same project resolution but may target any active run. The web
-**Needs attention** view invokes the same deterministic actions.
+```text
+run {
+  container: "Work",
+  module: "investigations",
+  skill: "coordinate",
+  input: "Treat distributor data as provisional and document the uncertainty."
+}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  include: ["resume"]
+}
+workspace {
+  operation: "intervene",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "<activeRun from get>",
+  action: "guide",
+  guidance: "Treat distributor data as provisional and document the uncertainty.",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Record supplier investigation guidance" }
 
-### Example E: Archive and restore
+# Probe staging -> resume -> report with the ETag from intervene -> sync the report.
+```
 
-> hub, archive the supplier concentration investigation.
+The web **Needs attention** action ends after `intervene`; it cannot resume execution.
+An MCP client may resume immediately. To cancel instead:
 
-> hub, unarchive the supplier concentration investigation.
+```text
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration"
+}
+workspace {
+  operation: "intervene",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "<activeRun from get>",
+  action: "cancel",
+  reason: "The decision is no longer needed.",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Cancel supplier investigation run" }
+```
 
-Each prompt resolves the project and calls `workspace` with the matching `update` action.
-Archive requires no active run and is the only way to set aside finished or inactive
-work. Unarchive always returns the project to active.
+Cancellation closes the Hub run immediately but cannot stop an already executing client;
+any late report is rejected.
 
-To roll back an automatically published result:
+### Example F: Operational queries
 
-> hub, show the result history for the supplier concentration investigation.
+Read-only operational requests call `list`, `get`, or existing `inspect` and never sync:
+
+| Prompt | Exact call after `inspect {}` |
+|---|---|
+| "List active sourcing investigations due by August 31" | `workspace { operation: "list", container: "Work", module: "investigations", status: "active", tags: ["sourcing"], targetBefore: "2026-08-31" }` |
+| "Show the supplier investigation, its current result, and valid actions" | `workspace { operation: "get", container: "Work", module: "investigations", project: "supplier-concentration" }` |
+| "Show archived investigations containing supplier" | `workspace { operation: "list", container: "Work", module: "investigations", status: "archived", query: "supplier" }` |
+| "Are any workspace agent references invalid?" | `inspect {}` followed by `workspace { operation: "get", container: "Work", module: "investigations" }` for the selected workspace |
+
+The client follows `cursor` for another page. It does not read every project or result to
+answer a summary query.
+
+### Example G: Inspect, compare, or restore results
+
+> hub, compare the last two results for the supplier concentration investigation.
+
+```text
+inspect {}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  include: ["results"]
+}
+
+# Read only changed text files selected from the returned path/hash arrays:
+read_resource { uri: "<result file resource URI returned by get>" }
+```
+
+Comparison is client-side reasoning over immutable result metadata and selected files;
+it does not create Hub state. To make an older result current:
 
 > hub, restore the result from run `2026-07-19-001`.
 
-The client lists immutable successful results, resolves the requested run, and calls
-`workspace` with `operation: update` and `action: restore`. It changes only the current
-result pointer.
+```text
+workspace {
+  operation: "update",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  action: "restore",
+  fromRun: "2026-07-19-001",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Restore supplier investigation result" }
+```
+
+Restore changes only the current result pointer. It neither mutates the old result nor
+starts a run.
+
+### Example H: Archive, unarchive, or reopen
+
+> hub, archive the supplier concentration investigation.
+
+```text
+inspect {}
+workspace {
+  operation: "get",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration"
+}
+workspace {
+  operation: "update",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  action: "archive",
+  etag: "<etag from get>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Archive supplier concentration investigation" }
+```
+
+Archive requires no active run. "Reopen" is a natural-language alias for the same call
+with `action: "unarchive"`. If the user says:
+
+> hub, reopen the supplier concentration investigation and continue it with the latest
+> regulatory changes.
+
+the client unarchives and syncs first, then follows Example C with the correction text.
+If the project is already active, it confirms whether "reopen" means start a revision
+run rather than silently doing so.
+
+### Example I: Recover after a client exit or staging mismatch
+
+An unexpected client exit leaves `activeRun` intact. A later "resume" follows Example C:
+`run:coordinate`, `workspace:get include:resume`, a staging probe, and no new `start`.
+The client uses the frozen snapshot, surviving staging, and latest checkpoint; it may
+repeat client-internal work because transcripts are not durable.
+
+If the current client cannot access staging, it records the recoverable wait:
+
+```text
+workspace {
+  operation: "report",
+  container: "Work",
+  module: "investigations",
+  project: "supplier-concentration",
+  run: "<activeRun>",
+  state: "paused",
+  checkpoint: {
+    summary: "No agent work started in this client.",
+    question: "Resume from a client that can access the staging path.",
+    reason: "staging-unavailable"
+  },
+  etag: "<current etag>",
+  commandId: "<uuid>"
+}
+sync { container: "Work", message: "Pause inaccessible workspace run" }
+```
+
+The user may resume from a compatible client or cancel. If staging is permanently lost,
+cancel is the terminal escape hatch; a later Continue starts a fresh run from the
+current published result while the cancelled run and checkpoint remain in history. No
+dedicated recovery or preflight operation is needed.
 
 For Git containers, client-driven configuration, creation, lifecycle, restore, and
 intervention actions sync after the completed user request. `coordinate` syncs at human
@@ -925,17 +1822,18 @@ The implementation must prove:
 - lifecycle and archive transitions;
 - wake-phrase routing for create, start, resume, continue, update, and intervention;
 - lifecycle/attention filtering, pagination, and remembered sorting;
-- preflight before run creation;
+- staging read/write/delete probe before delegation and a durable paused result on failure;
 - exact replay after restart;
 - transaction recovery at every crash boundary;
 - CloudEvents schema, sequence, command replay, and terminal-run enforcement;
 - deterministic coordination-prompt composition from frozen inputs;
 - pause, guidance, success, failure, and cancellation report transitions;
-- client-only run initiation and the status/preflight start-versus-resume branch;
+- client-only run initiation and the `get`/`start` start-versus-resume branch;
 - resume-package and result-history retrieval without a new run;
 - cancellation of active runs and rejection of late client reports;
 - snapshot stability when source files later change;
-- staging isolation and missing-staging failure;
+- staging isolation, client-specific access failure, permanent-loss cancellation, and
+  fresh continuation;
 - result path safety, deterministic tree hashes, publication, comparison, and restore;
 - acceptance extraction, criterion IDs, and final lead evidence coverage;
 - container write/sync serialization;
