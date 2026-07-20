@@ -5,12 +5,12 @@
 {{var:targets}}
 
 # Instructions
-Answer using the `ask` discipline: fork a fresh sub-agent that reads only the
+Answer using the `ask` instructions: fork a fresh sub-agent that reads only the
 relevant module(s), starting from each module's overview (knowledge/llmwiki: index.md;
 skills: the root index and nested paths; memory: recent files). Return a distilled,
 **cited** answer. Do not load whole modules into this context.
 
-<discipline name="ask">
+<instructions name="ask">
 
 # OKF Ask
 
@@ -124,4 +124,4 @@ context — each ask is a fresh, cheap fork.
 - Coverage is stated honestly: answered, partial (gap named), or out of scope — no invented facts.
 - The answer ends with concrete next steps when further questions remain.
 
-</discipline>
+</instructions>

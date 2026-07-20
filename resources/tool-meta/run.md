@@ -19,7 +19,7 @@ project, and `coordinate` for starting, resuming, continuing, or revising projec
 Direct reads, external cancellation, explicit archive/restore operations, and a
 read-only refusal of an impossible run do not need a skill.
 
-Return the discipline for a module's skill (resolved from the module's type + its own
+Return the instructions for a module's skill (resolved from the module's type + its own
 skills), with the target paths and your input injected. Declared required resources are
 embedded when they fit the context budget; oversized requirements are marked for
 `read_resource`. All dependencies and bundled files remain available as MCP resource

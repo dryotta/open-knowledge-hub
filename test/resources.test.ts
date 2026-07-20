@@ -551,7 +551,7 @@ describe("MCP resources", () => {
     await mkdir(localSkillDir, { recursive: true });
     await writeFile(
       join(localSkillDir, "SKILL.md"),
-      `---\nname: custom\ndescription: Local custom discipline\nresources:\n  - ${moduleDependency}\n  - ${fileDependency}\n---\nRead [the rubric](rubric.md).\n`,
+      `---\nname: custom\ndescription: Local custom instructions\nresources:\n  - ${moduleDependency}\n  - ${fileDependency}\n---\nRead [the rubric](rubric.md).\n`,
     );
     await writeFile(join(localSkillDir, "rubric.md"), "# Rubric\n\nBe precise.\n");
 

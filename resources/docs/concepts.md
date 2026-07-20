@@ -15,7 +15,7 @@ description: The OKH domain model, skill precedence, common instructions, resour
   `.okh/module.yaml` selects a loader and carries a routing description.
 - **Item** - a discoverable unit inside a module, such as a knowledge concept,
   memory entry, wiki page, skill, or agent profile.
-- **Skill** - module-scoped discipline in a `SKILL.md`. `run` returns its
+- **Skill** - module-scoped instructions in a `SKILL.md`. `run` returns its
   instructions; the client agent performs the work.
 - **Common instruction** - reusable built-in guidance exposed under
   `okh://instructions/`. It is read by skills and is not independently runnable.

@@ -127,7 +127,7 @@ describe("MCP server surface", () => {
     const res = await client.callTool({ name: "add_module", arguments: {} });
 
     const text = textOf(res);
-    expect(text).toContain('<discipline name="add_module">');
+    expect(text).toContain('<instructions name="add_module">');
     expect(text).toContain("create: true");
     expect(structuredOf(res).needsConfirmation).toBeUndefined();
   });
@@ -715,7 +715,7 @@ describe("MCP server surface", () => {
     expect(textOf(res)).toContain("container cannot be empty");
   });
 
-  it("the ask tool returns discipline text pointing at resolved paths", async () => {
+  it("the ask tool returns instructions text pointing at resolved paths", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();
     cleanups.push(dir);
@@ -735,7 +735,7 @@ describe("MCP server surface", () => {
     expect(tools).not.toContain("reflect");
   });
 
-  it("run tool returns discipline for a memory module skill", async () => {
+  it("run tool returns instructions for a memory module skill", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();
     cleanups.push(dir);
@@ -763,7 +763,7 @@ describe("MCP server surface", () => {
     expect(isErrorResult(res)).toBe(true);
   });
 
-  it("dream tool returns the consolidation discipline pointing at resolved modules", async () => {
+  it("dream tool returns the consolidation instructions pointing at resolved modules", async () => {
     const { client } = await connect();
     const dir = await makeTempDir();
     cleanups.push(dir);
@@ -773,7 +773,7 @@ describe("MCP server surface", () => {
 
     const res = await client.callTool({ name: "dream", arguments: { container: "hub" } });
     const text = textOf(res);
-    expect(text).toContain('<discipline name="dream">');
+    expect(text).toContain('<instructions name="dream">');
     expect(text).toContain("kb");
     expect(text).toMatch(/index\.md/);
   });

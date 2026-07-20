@@ -46,7 +46,7 @@ item with `contentIndex`.
 | Explain OKH | `hub, how should I organize several skill collections?` |
 
 The agent routes module work through `run { container, module, skill, input? }`.
-`run` supplies discipline, resource links, and bounded embedded copies of declared
+`run` supplies instructions, resource links, and bounded embedded copies of declared
 required resources. It does not edit by itself.
 
 ## Add containers and modules
