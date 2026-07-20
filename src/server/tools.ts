@@ -42,6 +42,8 @@ import { loadPromptFile } from "../prompts/templates.js";
 import type { OkhResourceRegistry } from "../resources/index.js";
 import { chunkResourceResult } from "../resources/embedding.js";
 import { renderUseAgentResult } from "./agentDelegation.js";
+import type { WorkspaceService } from "../workspaces/service.js";
+import { registerWorkspaceTool } from "./workspaceTool.js";
 
 /** Render the no-arg hub map with every runnable skill nested under its module. */
 function formatHub(r: HubMap): string {
@@ -265,6 +267,7 @@ export async function registerTools(
   service: ContainerService,
   paths: OkhPaths,
   todoService: TodoService,
+  workspaceService: WorkspaceService,
   resources: OkhResourceRegistry,
   options: RegisterToolsOptions = {},
 ): Promise<void> {
@@ -528,6 +531,7 @@ export async function registerTools(
   );
 
   await registerFlowTools(server, service, resources);
+  await registerWorkspaceTool(server, workspaceService);
   await registerTodoTools(server, todoService, {
     ...(options.todoWebUrl !== undefined ? { webUrl: options.todoWebUrl } : {}),
   });

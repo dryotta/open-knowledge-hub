@@ -1,7 +1,10 @@
 import type { WebFeature } from "./feature.js";
 import { browseFeature } from "./features/browse.js";
 import { todosFeature } from "./features/todos.js";
+import { workspacesFeature } from "./features/workspaces.js";
+import { agentsFeature } from "./features/agents.js";
 import { errorMessage, escapeHtml } from "./dom.js";
+import { matchRoute, type AppRoute } from "./routing.js";
 
 const navNode = document.getElementById("feature-nav");
 const rootNode = document.getElementById("feature-root");
@@ -13,11 +16,32 @@ const nav = navNode;
 const root = rootNode;
 const status = statusNode;
 
-const features: WebFeature[] = [browseFeature, todosFeature];
+const features: WebFeature[] = [workspacesFeature, browseFeature, todosFeature, agentsFeature];
+const notFoundFeature: WebFeature = {
+  id: "not-found",
+  label: "Not found",
+  path: "",
+  title: "Not found",
+  routes: ["not-found"],
+  mount({ root, setStatus }) {
+    root.innerHTML = `
+      <section class="feature">
+        <div class="panel empty-state">
+          <div>
+            <h1>Page not found</h1>
+            <p>The requested Open Knowledge Hub page does not exist.</p>
+            <a class="primary-button button-link" data-route href="/workspaces">Go to workspaces</a>
+          </div>
+        </div>
+      </section>
+    `;
+    setStatus("Page not found");
+  },
+};
 let routeController: AbortController | undefined;
 
-function currentFeature(): WebFeature {
-  return features.find((feature) => feature.path === window.location.pathname) ?? browseFeature;
+function currentFeature(route: AppRoute): WebFeature {
+  return features.find((feature) => feature.routes.includes(route.id)) ?? notFoundFeature;
 }
 
 function renderNav(active: WebFeature): void {
@@ -32,10 +56,8 @@ function renderNav(active: WebFeature): void {
 }
 
 async function renderRoute(): Promise<void> {
-  const feature = currentFeature();
-  if (window.location.pathname !== feature.path) {
-    history.replaceState(null, "", feature.path);
-  }
+  const route = matchRoute(window.location.pathname);
+  const feature = currentFeature(route);
   routeController?.abort();
   routeController = new AbortController();
   const { signal } = routeController;
@@ -50,6 +72,7 @@ async function renderRoute(): Promise<void> {
       setStatus(message) {
         if (!signal.aborted) status.textContent = message;
       },
+      route,
     });
     if (!signal.aborted) root.focus({ preventScroll: true });
   } catch (error: unknown) {
@@ -74,7 +97,7 @@ document.addEventListener("click", (event) => {
   const link = event.target.closest<HTMLAnchorElement>("a[data-route]");
   if (!link || link.origin !== window.location.origin) return;
   event.preventDefault();
-  history.pushState(null, "", link.pathname);
+  history.pushState(null, "", `${link.pathname}${link.search}${link.hash}`);
   void renderRoute();
 });
 

@@ -38,6 +38,9 @@ item with `contentIndex`.
 | Remember | `hub, remember that the release moved to Friday` |
 | Reflect | `hub, reflect on the memory module and propose consolidations` |
 | Use a Hub agent | `hub, use the researcher agent to find primary evidence` |
+| Start project work | `hub, investigate supplier concentration` |
+| Resume project work | `hub, reopen the supplier investigation and use the regulator dataset` |
+| Find waits | `hub, show workspace projects that need my input` |
 | List todos | `hub, show open todos tagged shopping` |
 | Refresh descriptions | `hub, dream on my-notes` |
 | Explain OKH | `hub, how should I organize several skill collections?` |
@@ -105,6 +108,21 @@ The MCP client should prefer a native subagent that accepts the returned
 instructions. If unavailable, it follows the profile in the parent context for
 that task only. The client reports `native-subagent` or `inline-parent`; OKH keeps
 no per-agent memory, history, or execution log.
+
+## Workspace projects
+
+A `workspace` module combines one lead and an optional agent pool with durable projects.
+Say `hub, start a new presentation on quarterly reliability`, `hub, investigate
+supplier concentration`, or `hub, resume the supplier investigation`. The client
+selects the workspace from its routing description and runs its `create` or
+`coordinate` skill.
+
+The coordinate skill branches on `workspace:get`: it resumes `activeRun` or starts a
+new run with the current ETag. The Hub returns frozen profiles and snapshots; the
+client probes staging, executes its own agentic loop, and records only a pause or
+terminal run report. Human guidance and cancellation use `workspace:intervene`.
+Successful results are immutable and can be revised by another run or restored by
+pointer. See [Workspaces and projects](okh://docs/workspaces.md) for exact calls.
 
 ## Todos and sync
 

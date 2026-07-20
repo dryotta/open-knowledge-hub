@@ -8,13 +8,28 @@ import { isOkhError } from "../errors.js";
 import { isPathWithin, normalizeModuleRelativePath } from "../modules/pathSafety.js";
 import type { TodoService } from "../todos/service.js";
 import type { TodoMutationInput, TodoQuery } from "../todos/types.js";
+import { WorkspaceService } from "../workspaces/service.js";
 import type {
+  ProjectSummary,
+  WorkspaceCreateInput,
+  WorkspaceInterveneInput,
+  WorkspaceUpdateInput,
+} from "../workspaces/types.js";
+import type {
+  WebAgentSummary,
+  WebAgentsResponse,
+  WebAttentionEntry,
+  WebAttentionResponse,
   WebContainerSummary,
   WebContainersResponse,
   WebDirectoryResponse,
   WebErrorResponse,
   WebFileEntry,
   WebFileResponse,
+  WebProjectDetailResponse,
+  WebWorkspaceDetailResponse,
+  WebWorkspaceSummary,
+  WebWorkspacesResponse,
 } from "./types.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -55,6 +70,58 @@ const updateTodoSchema = z.object({
   priority: todoPrioritySchema.nullable().optional(),
 }).strict();
 const todoMutationSchema = z.discriminatedUnion("operation", [createTodoSchema, updateTodoSchema]);
+const commandIdSchema = z.string().uuid();
+const workspacePatchSchema = z.object({
+  guidance: z.string().nullable().optional(),
+  acceptance: z.array(z.string()).optional(),
+  title: z.string().optional(),
+  goal: z.string().optional(),
+  targetDate: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+}).strict();
+const createProjectSchema = z.object({
+  operation: z.literal("create"),
+  project: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+  title: z.string(),
+  goal: z.string(),
+  guidance: z.string().optional(),
+  acceptance: z.array(z.string()).optional(),
+  targetDate: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  commandId: commandIdSchema,
+}).strict();
+const updateWorkspaceSchema = z.object({
+  operation: z.literal("update"),
+  patch: workspacePatchSchema.optional(),
+  action: z.enum(["archive", "unarchive", "restore"]).optional(),
+  fromRun: z.string().optional(),
+  etag: z.string().min(1),
+  commandId: commandIdSchema,
+}).strict();
+const interveneWorkspaceSchema = z.object({
+  operation: z.literal("intervene"),
+  run: z.string().min(1),
+  action: z.enum(["guide", "cancel"]),
+  guidance: z.string().optional(),
+  reason: z.string().optional(),
+  etag: z.string().min(1),
+  commandId: commandIdSchema,
+}).strict();
+const configureWorkspaceSchema = z.object({
+  operation: z.literal("configure"),
+  set: z.object({
+    description: z.string().min(1).optional(),
+    lead: z.string().min(1).optional(),
+    agents: z.array(z.string().min(1)).optional(),
+  }).strict()
+    .refine((value) => Object.keys(value).length > 0, "set must contain a field"),
+}).strict();
+const workspaceWebMutationSchema = z.discriminatedUnion("operation", [
+  createProjectSchema,
+  updateWorkspaceSchema,
+  interveneWorkspaceSchema,
+  configureWorkspaceSchema,
+]);
 
 interface WebAssets {
   index: Buffer;
@@ -65,6 +132,7 @@ interface WebAssets {
 export interface StartWebServerOptions {
   service: ContainerService;
   todos: TodoService;
+  workspaces: WorkspaceService;
   port?: number;
   env?: NodeJS.ProcessEnv;
 }
@@ -73,6 +141,9 @@ export interface WebServerHandle {
   origin: string;
   browseUrl: string;
   todosUrl: string;
+  workspacesUrl: string;
+  attentionUrl: string;
+  agentsUrl: string;
   close: () => Promise<void>;
 }
 
@@ -311,6 +382,284 @@ function parseTodoQuery(url: URL): TodoQuery {
   return parsed.data;
 }
 
+type WorkspaceApiRoute =
+  | { kind: "collection" }
+  | { kind: "attention" }
+  | { kind: "workspace"; container: string; module: string }
+  | { kind: "project"; container: string; module: string; project: string };
+
+function decodeApiSegment(value: string, name: string): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    throw new WebHttpError(400, "INVALID_PATH", `${name} is not valid URL encoding.`);
+  }
+  if (
+    !decoded
+    || decoded === "."
+    || decoded === ".."
+    || /[\/\\\0-\x1f\x7f]/u.test(decoded)
+  ) {
+    throw new WebHttpError(400, "INVALID_PATH", `${name} is not a safe path segment.`);
+  }
+  return decoded;
+}
+
+function decodeModuleSegment(value: string): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    throw new WebHttpError(400, "INVALID_PATH", "module is not valid URL encoding.");
+  }
+  const segments = decoded.split("/");
+  if (
+    !decoded
+    || decoded.includes("\\")
+    || segments.some((segment) =>
+      !segment || segment === "." || segment === ".." || /[\0-\x1f\x7f]/u.test(segment))
+  ) {
+    throw new WebHttpError(400, "INVALID_PATH", "module is not a safe module path.");
+  }
+  return segments.join("/");
+}
+
+function matchWorkspaceApi(pathname: string): WorkspaceApiRoute | undefined {
+  if (pathname === "/api/workspaces") return { kind: "collection" };
+  if (pathname === "/api/workspaces/attention") return { kind: "attention" };
+  if (!pathname.startsWith("/api/workspaces/")) return undefined;
+  const segments = pathname.slice(1).split("/");
+  if (segments.length === 4) {
+    return {
+      kind: "workspace",
+      container: decodeApiSegment(segments[2]!, "container"),
+      module: decodeModuleSegment(segments[3]!),
+    };
+  }
+  if (segments.length === 6 && segments[4] === "projects") {
+    const project = decodeApiSegment(segments[5]!, "project");
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(project)) {
+      throw new WebHttpError(400, "INVALID_PATH", "project must be lowercase kebab-case.");
+    }
+    return {
+      kind: "project",
+      container: decodeApiSegment(segments[2]!, "container"),
+      module: decodeModuleSegment(segments[3]!),
+      project,
+    };
+  }
+  return undefined;
+}
+
+async function listAllWorkspaceProjects(
+  workspaces: WorkspaceService,
+  container: string,
+  module: string,
+  options: { attention?: boolean } = {},
+): Promise<ProjectSummary[]> {
+  const projects: ProjectSummary[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await workspaces.list({
+      operation: "list",
+      container,
+      module,
+      status: "all",
+      ...(options.attention === undefined ? {} : { attention: options.attention }),
+      sort: "updatedAt",
+      order: "desc",
+      limit: 100,
+      ...(cursor ? { cursor } : {}),
+    });
+    projects.push(...page.projects);
+    cursor = page.nextCursor ?? undefined;
+    if (projects.length >= 1_000 && cursor) {
+      throw new WebHttpError(409, "LIMIT_EXCEEDED", "The web UI supports at most 1,000 projects per workspace.");
+    }
+  } while (cursor);
+  return projects;
+}
+
+async function loadWorkspaces(
+  service: ContainerService,
+  workspaces: WorkspaceService,
+): Promise<WebWorkspacesResponse> {
+  const summaries: WebWorkspaceSummary[] = [];
+  for (const container of await service.resolveTargets()) {
+    for (const module of container.modules.filter((candidate) => candidate.type === "workspace")) {
+      try {
+        const [detail, projects] = await Promise.all([
+          workspaces.get({
+            operation: "get",
+            container: container.name,
+            module: module.path,
+          }),
+          listAllWorkspaceProjects(workspaces, container.name, module.path),
+        ]);
+        const nearestTargetDate = projects
+          .filter((project) => project.status === "active" && project.targetDate)
+          .map((project) => project.targetDate!)
+          .sort()[0];
+        summaries.push({
+          container: container.name,
+          module: module.path,
+          description: module.description,
+          sync: container.sync,
+          ...(detail.counts ? { counts: detail.counts } : {}),
+          ...(nearestTargetDate ? { nearestTargetDate } : {}),
+          ...(detail.workspace ? { agentHealth: detail.workspace.agentHealth } : {}),
+        });
+      } catch (error) {
+        summaries.push({
+          container: container.name,
+          module: module.path,
+          description: module.description,
+          sync: container.sync,
+          issue: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+  summaries.sort((left, right) =>
+    left.container.localeCompare(right.container) || left.module.localeCompare(right.module));
+  return { workspaces: summaries };
+}
+
+async function loadWorkspaceDetail(
+  service: ContainerService,
+  workspaces: WorkspaceService,
+  container: string,
+  module: string,
+): Promise<WebWorkspaceDetailResponse> {
+  const targets = await service.resolveTargets(container, module);
+  const target = targets[0];
+  if (!target) throw new WebHttpError(404, "NOT_FOUND", `Workspace "${container}/${module}" does not exist.`);
+  const [detail, projects] = await Promise.all([
+    workspaces.get({ operation: "get", container, module }),
+    listAllWorkspaceProjects(workspaces, container, module),
+  ]);
+  return { detail, projects, sync: target.sync };
+}
+
+async function loadProjectDetail(
+  workspaces: WorkspaceService,
+  container: string,
+  module: string,
+  project: string,
+): Promise<WebProjectDetailResponse> {
+  const [detail, activity] = await Promise.all([
+    workspaces.get({
+      operation: "get",
+      container,
+      module,
+      project,
+      include: ["resume", "results"],
+    }),
+    workspaces.activity(container, module, project),
+  ]);
+  return { detail, activity };
+}
+
+async function loadAttention(
+  service: ContainerService,
+  workspaces: WorkspaceService,
+): Promise<WebAttentionResponse> {
+  const entries: WebAttentionEntry[] = [];
+  for (const container of await service.resolveTargets()) {
+    for (const module of container.modules.filter((candidate) => candidate.type === "workspace")) {
+      const projects = await listAllWorkspaceProjects(
+        workspaces,
+        container.name,
+        module.path,
+        { attention: true },
+      );
+      for (const project of projects) {
+        entries.push({
+          container: container.name,
+          module: module.path,
+          project,
+          detail: await workspaces.get({
+            operation: "get",
+            container: container.name,
+            module: module.path,
+            project: project.id,
+            include: ["resume"],
+          }),
+        });
+      }
+    }
+  }
+  return { entries };
+}
+
+function matchesAgentReference(
+  reference: string,
+  workspaceContainer: string,
+  agent: Pick<WebAgentSummary, "container" | "module" | "id">,
+): boolean {
+  return reference === `${agent.container}/${agent.module}/${agent.id}`
+    || (workspaceContainer === agent.container && reference === `${agent.module}/${agent.id}`)
+    || (workspaceContainer === agent.container && reference === agent.id);
+}
+
+async function loadAgents(service: ContainerService): Promise<WebAgentsResponse> {
+  const targets = await service.resolveTargets();
+  const agents: WebAgentSummary[] = [];
+  const issues: string[] = [];
+  for (const container of targets) {
+    for (const module of container.modules.filter((candidate) => candidate.type === "agents")) {
+      const result = await service.inspect(container.name, module.path);
+      if (result.kind !== "module") continue;
+      issues.push(...(result.itemIssues ?? []).map(
+        (issue) => `${container.name}/${module.path}: ${issue}`,
+      ));
+      agents.push(...result.items.map((item) => ({
+        container: container.name,
+        module: module.path,
+        id: item.title,
+        description: item.description ?? "",
+        path: item.path,
+        referencedBy: [],
+      })));
+    }
+  }
+  for (const container of targets) {
+    for (const module of container.modules.filter((candidate) => candidate.type === "workspace")) {
+      try {
+        const manifest = await service.getModuleManifest(container.name, module.path);
+        const lead = typeof manifest.config?.lead === "string" ? manifest.config.lead : undefined;
+        const pool = Array.isArray(manifest.config?.agents)
+          ? manifest.config.agents.filter((value): value is string => typeof value === "string")
+          : [];
+        for (const agent of agents) {
+          if (lead && matchesAgentReference(lead, container.name, agent)) {
+            agent.referencedBy.push({
+              container: container.name,
+              module: module.path,
+              role: "lead",
+            });
+          }
+          if (pool.some((reference) => matchesAgentReference(reference, container.name, agent))) {
+            agent.referencedBy.push({
+              container: container.name,
+              module: module.path,
+              role: "pool",
+            });
+          }
+        }
+      } catch (error) {
+        issues.push(`${container.name}/${module.path}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  agents.sort((left, right) =>
+    left.container.localeCompare(right.container)
+    || left.module.localeCompare(right.module)
+    || left.id.localeCompare(right.id));
+  return { agents, issues };
+}
+
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
   if (contentType !== "application/json") {
@@ -342,11 +691,11 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 
 function assertSameOrigin(request: IncomingMessage, origin: string): void {
   if (request.headers.origin !== origin) {
-    throw new WebHttpError(403, "FORBIDDEN", "Todo changes require a same-origin web UI request.");
+    throw new WebHttpError(403, "FORBIDDEN", "Web UI changes require a same-origin request.");
   }
   const fetchSite = request.headers["sec-fetch-site"];
   if (fetchSite !== undefined && fetchSite !== "same-origin") {
-    throw new WebHttpError(403, "FORBIDDEN", "Cross-site todo changes are not allowed.");
+    throw new WebHttpError(403, "FORBIDDEN", "Cross-site web UI changes are not allowed.");
   }
 }
 
@@ -357,6 +706,7 @@ async function handleApiRequest(
   origin: string,
   service: ContainerService,
   todos: TodoService,
+  workspaces: WorkspaceService,
 ): Promise<boolean> {
   if (!url.pathname.startsWith("/api/")) return false;
 
@@ -381,6 +731,109 @@ async function handleApiRequest(
     }));
     sendJson(response, 200, { containers } satisfies WebContainersResponse);
     return true;
+  }
+  const workspaceRoute = matchWorkspaceApi(url.pathname);
+  if (request.method === "GET" && workspaceRoute) {
+    if (workspaceRoute.kind === "collection") {
+      sendJson(response, 200, await loadWorkspaces(service, workspaces));
+    } else if (workspaceRoute.kind === "attention") {
+      sendJson(response, 200, await loadAttention(service, workspaces));
+    } else if (workspaceRoute.kind === "workspace") {
+      sendJson(
+        response,
+        200,
+        await loadWorkspaceDetail(
+          service,
+          workspaces,
+          workspaceRoute.container,
+          workspaceRoute.module,
+        ),
+      );
+    } else {
+      sendJson(
+        response,
+        200,
+        await loadProjectDetail(
+          workspaces,
+          workspaceRoute.container,
+          workspaceRoute.module,
+          workspaceRoute.project,
+        ),
+      );
+    }
+    return true;
+  }
+  if (request.method === "GET" && url.pathname === "/api/agents") {
+    sendJson(response, 200, await loadAgents(service));
+    return true;
+  }
+  if (request.method === "POST" && workspaceRoute) {
+    if (workspaceRoute.kind === "collection" || workspaceRoute.kind === "attention") {
+      throw new WebHttpError(405, "METHOD_NOT_ALLOWED", "This workspace endpoint is read-only.");
+    }
+    assertSameOrigin(request, origin);
+    const parsed = workspaceWebMutationSchema.safeParse(await readJson(request));
+    if (!parsed.success) {
+      throw new WebHttpError(
+        400,
+        "INVALID_ARGUMENT",
+        parsed.error.issues[0]?.message ?? "Invalid workspace mutation.",
+      );
+    }
+    if (workspaceRoute.kind === "workspace") {
+      if (parsed.data.operation === "create") {
+        const input: WorkspaceCreateInput = {
+          ...parsed.data,
+          container: workspaceRoute.container,
+          module: workspaceRoute.module,
+        };
+        sendJson(response, 200, await workspaces.create(input));
+        return true;
+      }
+      if (parsed.data.operation === "update") {
+        const input: WorkspaceUpdateInput = {
+          ...parsed.data,
+          container: workspaceRoute.container,
+          module: workspaceRoute.module,
+        };
+        sendJson(response, 200, await workspaces.update(input));
+        return true;
+      }
+      if (parsed.data.operation === "configure") {
+        sendJson(
+          response,
+          200,
+          await workspaces.configure(
+            workspaceRoute.container,
+            workspaceRoute.module,
+            parsed.data.set,
+          ),
+        );
+        return true;
+      }
+      throw new WebHttpError(400, "INVALID_ARGUMENT", "Run interventions require a project endpoint.");
+    }
+    if (parsed.data.operation === "update") {
+      const input: WorkspaceUpdateInput = {
+        ...parsed.data,
+        container: workspaceRoute.container,
+        module: workspaceRoute.module,
+        project: workspaceRoute.project,
+      };
+      sendJson(response, 200, await workspaces.update(input));
+      return true;
+    }
+    if (parsed.data.operation === "intervene") {
+      const input: WorkspaceInterveneInput = {
+        ...parsed.data,
+        container: workspaceRoute.container,
+        module: workspaceRoute.module,
+        project: workspaceRoute.project,
+      };
+      sendJson(response, 200, await workspaces.intervene(input));
+      return true;
+    }
+    throw new WebHttpError(400, "INVALID_ARGUMENT", "This operation does not target an existing project.");
   }
   if (request.method === "GET" && url.pathname === "/api/files") {
     const result = await listDirectory(
@@ -450,7 +903,17 @@ export async function startWebServer(options: StartWebServerOptions): Promise<We
       }
 
       const url = new URL(request.url ?? "/", origin);
-      if (await handleApiRequest(request, response, url, origin, options.service, options.todos)) return;
+      if (
+        await handleApiRequest(
+          request,
+          response,
+          url,
+          origin,
+          options.service,
+          options.todos,
+          options.workspaces,
+        )
+      ) return;
       if (request.method !== "GET") {
         throw new WebHttpError(405, "METHOD_NOT_ALLOWED", "The requested HTTP method is not supported.");
       }
@@ -484,6 +947,9 @@ export async function startWebServer(options: StartWebServerOptions): Promise<We
     origin,
     browseUrl: `${origin}/browse`,
     todosUrl: `${origin}/todos`,
+    workspacesUrl: `${origin}/workspaces`,
+    attentionUrl: `${origin}/workspaces/attention`,
+    agentsUrl: `${origin}/agents`,
     close: () => new Promise<void>((resolveClose, rejectClose) => {
       server.close((error) => {
         if (error && (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {

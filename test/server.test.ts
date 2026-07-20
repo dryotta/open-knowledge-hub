@@ -71,7 +71,7 @@ function normalizedWhitespace(text: string | undefined): string {
 }
 
 describe("MCP server surface", () => {
-  it("exposes exactly the 15 tools and no prompts", async () => {
+  it("exposes exactly the 16 tools and no prompts", async () => {
     const { client } = await connect();
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([
@@ -90,6 +90,7 @@ describe("MCP server surface", () => {
       "sync",
       "todos",
       "use_agent",
+      "workspace",
     ]);
     expect(client.getServerCapabilities()?.prompts).toBeUndefined();
   });
@@ -112,6 +113,9 @@ describe("MCP server surface", () => {
     expect(readResource.description).toContain("bounded protocol-native");
     expect(readResource.description).toContain("nextOffset");
     expect(readResource.description).toContain("only `okh://` URIs");
+    const workspace = tools.find((t) => t.name === "workspace")!;
+    expect(workspace.description).toContain("seven operations");
+    expect(workspace.description).toContain("does not run a model");
   });
 
   it("add_module without create returns the workflow (no mutation)", async () => {

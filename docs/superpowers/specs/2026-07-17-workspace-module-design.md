@@ -53,6 +53,7 @@ manifest, candidate-version system, approval queue, database, or workflow engine
 investigations/
   .okh/
     module.yaml
+    workspace-events.json           # workspace README command replay
   README.md
   projects/
     strategic-suppliers/
@@ -75,6 +76,7 @@ Each file has one job:
 | Path | Authority |
 |---|---|
 | `.okh/module.yaml` | Lead and agent pool |
+| `.okh/workspace-events.json` | Workspace initialization/update idempotency and recovery |
 | Workspace `README.md` | Shared guidance and acceptance rubric |
 | Project `README.md` | Current project state, goal, and optional guidance |
 | `events.json` | Project history, run checkpoints/outcomes, idempotency, and recovery |
@@ -85,10 +87,12 @@ The project README is the canonical current projection. `events.json` explains h
 state was reached and enables safe retry and crash recovery; it is not a second editable
 projection.
 
-One project-level journal is enough for v1. Each run event identifies its run in the
-CloudEvents `subject`. A terminal run event prohibits later events for that run, while
-the project stream remains open for future runs, lifecycle changes, and result
-restoration. Journal segmentation can be added later if measured file size requires it.
+Each project has one journal in v1. Each run event identifies its run in the CloudEvents
+`subject`. A terminal run event prohibits later events for that run, while the project
+stream remains open for future runs, lifecycle changes, and result restoration. The
+small workspace-level journal exists only because initialization and shared README
+updates have no project journal in which to persist command replay. Journal segmentation
+can be added later if measured file size requires it.
 
 ## 3. Workspace configuration
 

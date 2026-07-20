@@ -21,6 +21,11 @@ description: The OKH domain model, skill precedence, common instructions, resour
   `okh://instructions/`. It is read by skills and is not independently runnable.
 - **Resource** - read-only MCP context. OKH resources expose hub content,
   canonical documentation, and common instructions.
+- **Workspace** - a typed module that defines one reusable workflow, lead, optional
+  agent pool, shared guidance, and acceptance rubric.
+- **Project** - a durable active or archived goal inside a workspace.
+- **Run** - one frozen execution boundary coordinated by the MCP client's own agentic
+  loop; OKH stores its snapshot, checkpoint/outcome events, and immutable result.
 
 ```mermaid
 graph TD
@@ -35,7 +40,8 @@ graph TD
 
 ## Module types
 
-Built-in types are `knowledge`, `memory`, `llmwiki`, `skills`, and `agents`. Any other
+Built-in types are `knowledge`, `memory`, `llmwiki`, `skills`, `agents`, and
+`workspace`. Any other
 non-empty type is custom and uses the generic file-listing loader.
 
 Modules must be direct children of a container. The folder name is the module
@@ -77,6 +83,12 @@ specific module required to run it; there is no independent skill catalog.
 - Run a stateless Hub agent: select an ID from `inspect`, then call `use_agent`.
   Prefer the returned profile and task in a native subagent; otherwise follow them
   in the parent context and report the fallback mode.
+- Create a durable workspace project: run `create` on the selected `workspace` module.
+- Start, resume, or continue project execution: run `coordinate` on that workspace.
+  The skill uses frozen profiles returned by `workspace`; it does not call live
+  `use_agent` during an active run.
+- List/read workspace state or record an explicitly requested intervention: call
+  `workspace` directly with the corresponding operation.
 - Ingest source documents: call `help { question: "ingest" }`, apply its embedded
   instructions, confirm the routing plan, then run the target module's writing skill.
 - Explain OKH: call `help`.
