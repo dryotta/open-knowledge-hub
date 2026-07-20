@@ -16,18 +16,21 @@ flowchart LR
     W[Workspace<br/>workflow and guidance]
     P1[Project<br/>one durable goal]
     P2[Project<br/>another goal]
-    R[Run<br/>one bounded attempt]
-    A[Agent task<br/>one bounded unit]
+    R[Run<br/>one client-managed execution]
 
     W --> P1
     W --> P2
     P1 --> R
-    R --> A
 ```
 
-The Hub is a deterministic control plane. Existing stateless agents execute in an MCP
-client; the Hub stores coordination state, validates transitions, and exposes human
-controls in the web app. It does not run models or a background scheduler.
+Here, **Run** is the workspace domain noun for one project execution. The existing MCP
+`run` tool remains the generic way to invoke a module skill, such as `coordinate`; it is
+not another workspace entity.
+
+The Hub is a deterministic record keeper. Existing stateless agents execute in an MCP
+client; the Hub freezes run inputs, records run-level checkpoints and outcomes,
+publishes results, and exposes human controls in the web app. It does not run models or
+a background scheduler.
 
 The minimal v1 decisions are:
 
@@ -38,8 +41,8 @@ The minimal v1 decisions are:
 | Project history and run state | One append-only `events.json` per project |
 | Reproducible inputs | One immutable snapshot per run |
 | Durable output | One immutable result per successful run |
-| Agent quality checks | Ordinary tasks, not a review subsystem |
-| Human involvement | Interventions during a run; inspect, correct, restore, or complete afterward |
+| Agent coordination | Prompt the MCP client's own agentic loop |
+| Human involvement | Client conversation or web guidance; restore/archive afterward |
 
 There is no workspace state sidecar, project config sidecar, run journal, artifact
 manifest, candidate-version system, approval queue, database, or workflow engine.
@@ -71,10 +74,10 @@ Each file has one job:
 
 | Path | Authority |
 |---|---|
-| `.okh/module.yaml` | Lead, allowed agents, and limit overrides |
+| `.okh/module.yaml` | Lead and agent pool |
 | Workspace `README.md` | Shared guidance and acceptance rubric |
 | Project `README.md` | Current project state, goal, and optional guidance |
-| `events.json` | Project history, run coordination, idempotency, and recovery |
+| `events.json` | Project history, run checkpoints/outcomes, idempotency, and recovery |
 | `runs/<id>/snapshot/` | Exact inputs frozen when the run starts |
 | `runs/<id>/result/` | Complete immutable output of one successful run |
 
@@ -100,21 +103,18 @@ config:
     - researcher
     - research-agents/source-analyst
     - shared-hub/review-agents/evidence-checker
-  limits:
-    iterations: 3
-    tasks: 20
-    attempts: 2
 ```
 
-Only `lead` is required. `agents` and `limits` are optional.
+Only `lead` is required. `agents` is optional.
 
-- `lead` plans, integrates corrections, and produces the final result.
-- `agents` is the allowlist of other profiles the lead may assign.
-- `limits` overrides safe defaults and remains bounded by server maxima.
+- `lead` supplies the orchestration behavior for the client agentic loop.
+- `agents` is the pool of other profiles supplied for optional delegation.
 
-When omitted, limits default to three iterations, twenty total tasks, and two attempts
-per task. Workspace overrides may be lower or higher but never exceed
-server maxima.
+The `agents` key is a workspace-local list of references resolved through existing
+agents modules; it does not define another module type or copy agent profiles.
+
+The pool determines which profiles the Hub supplies; it is not a security boundary, and
+the Hub cannot prove what an external MCP client executes.
 
 ### Agent references
 
@@ -130,8 +130,8 @@ suggestions.
 
 At run start, every reference resolves to canonical `{ container, module, id }`
 identity. The Hub rejects missing, ambiguous, or duplicate canonical references and
-snapshots the exact profile. The lead is always allowed and need not be repeated in
-`agents`.
+snapshots the exact profile. The lead is always included in the coordination prompt and
+need not be repeated in `agents`.
 
 ### Customization without more schema
 
@@ -149,11 +149,13 @@ V1 deliberately has no configuration for:
 - sorting;
 - acceptance criteria;
 - execution mode or oversight;
+- task, retry, turn, or cost limits;
 - agent roles other than lead; or
 - retrospectives and learning.
 
 Sorting is a remembered user preference. The initial sort is `updatedAt` descending;
 presentations can use `targetDate` ascending without changing workspace configuration.
+Execution budgets use the MCP client's native limits rather than a second Hub policy.
 
 ## 4. README contract
 
@@ -186,7 +188,6 @@ questions.
 ---
 title: Strategic supplier investigation
 status: active
-archived: false
 createdAt: 2026-07-19T18:30:00Z
 updatedAt: 2026-07-19T18:30:00Z
 targetDate: 2026-08-15
@@ -211,8 +212,7 @@ Prefer filings and direct supplier documentation over market summaries.
 Required frontmatter:
 
 - `title`;
-- `status`, either `active` or `completed`;
-- `archived`, a boolean;
+- `status`, either `active` or `archived`;
 - `createdAt` and `updatedAt`;
 - `activeRun`, either `null` or a run ID; and
 - `result`, either `null` or a safe relative path such as
@@ -232,11 +232,10 @@ workflow-specific.
 The workspace must contain at least one top-level bullet under `## Acceptance`. A
 project may add more. Every listed criterion is required.
 
-At run start, the Hub snapshots the exact criterion text. Each run-local criterion ID is
-derived from the SHA-256 hash of canonical `{ source, ordinal, text }`; the ordered set
-also receives one hash. The lead's final integration reports evidence for every
-criterion. Unmet criteria cause another bounded iteration or a human intervention when
-limits are exhausted.
+At run start, the Hub snapshots the exact criterion text and assigns simple run-local
+IDs in source order, such as `workspace-1` and `project-1`. The lead's final integration
+reports evidence for every criterion. Unmet criteria keep the client loop working or
+cause a pause when it can no longer make credible progress.
 
 Acceptance is therefore a work rubric, not a separate YAML schema or human approval
 record. The Hub validates criterion IDs, coverage, evidence references, and result
@@ -252,43 +251,32 @@ pattern used by todos:
 3. Validate the complete result.
 4. Atomically replace the file.
 
-The Hub owns `status`, `archived`, timestamps, `activeRun`, and `result`. A user may edit
-the title, target date, tags, goal, guidance, acceptance additions, and arbitrary
-workflow sections. Unrelated Markdown is never regenerated.
+The Hub owns `status`, timestamps, `activeRun`, and `result`. A user may edit the title,
+target date, tags, goal, guidance, acceptance additions, and arbitrary workflow sections.
+Unrelated Markdown is never regenerated.
 
 ## 5. Project lifecycle
 
-Project completion and archiving are separate:
+Projects have one binary lifecycle:
 
 ```mermaid
-flowchart LR
-    A[status: active]
-    C[status: completed]
-    H[archived: true<br/>status retained]
-
-    A -->|Complete| C
-    C -->|Reopen| A
-    A -.->|Archive| H
-    C -.->|Archive| H
-    H -.->|Unarchive| A
-    H -.->|Unarchive| C
+stateDiagram-v2
+    [*] --> active: Create
+    active --> archived: Archive
+    archived --> active: Unarchive
 ```
-
-`archived: true` hides and freezes a project without losing whether it was active or
-completed. Unarchive only clears the flag.
 
 | Action | Rule |
 |---|---|
-| Create | Creates an active, unarchived project with no run or result |
-| Continue | Starts a new run when the project is active, unarchived, and has no active run |
+| Create | Creates an active project with no run or result |
+| Continue | Starts a new run when the project is active and has no active run |
 | Resume | Continues the exact run named by `activeRun` |
-| Complete | Marks an active, unarchived project completed when no run is active; a result is optional |
-| Reopen | Returns a completed project to active; `archived` must be false |
-| Archive | Requires no active run; retains status |
-| Unarchive | Clears `archived`; retains status |
+| Archive | Changes an active project to archived when no run is active |
+| Unarchive | Returns an archived project to active |
 
-Each project has at most one active run and one claimed task. Multiple projects
-may run independently. Dates never change status automatically.
+Each project has at most one active run. Multiple projects may run independently.
+Archived projects are hidden and frozen. There is no completed state; dates and
+successful runs never change project status automatically.
 
 Create builds the complete project directory, including README and the initial
 `project.created` event, in a sibling temporary directory and atomically renames it.
@@ -301,69 +289,69 @@ in memory. Supported sort fields are `targetDate`, `createdAt`, `updatedAt`, and
 Missing target dates sort last and project ID breaks ties. V1 targets hundreds, not
 millions, of projects.
 
-## 6. Coordination loop
+## 6. Client-managed coordination
 
-V1 is autopilot with exception-based human control:
+The Hub starts and records a run; the MCP client's own agentic loop manages it:
 
 ```mermaid
 flowchart TD
-    S[Start run] --> P[Lead plans]
-    P --> W[Configured agents execute ordered tasks]
-    W --> I[Lead integrates and checks Acceptance]
-    I -->|Criteria met| U[Publish immutable result]
-    U --> D[Run succeeded]
-    I -->|More work and limits remain| P
-
-    P -->|Blocked, limit, no progress, or pause| H[Human intervention]
-    W -->|Blocked, limit, no progress, or pause| H
-    I -->|Blocked, limit, no progress, or pause| H
-    H -->|Resume or in-run guidance| P
-    H -->|Cancel| X[Run cancelled]
-
-    P -->|Unrecoverable error| F[Run failed]
-    W -->|Unrecoverable error| F
-    I -->|Unrecoverable error| F
+    U[User request] --> C[coordinate skill]
+    C --> S[Hub freezes run snapshot]
+    S --> P[Client receives orchestration prompt]
+    P --> L[Apply lead profile]
+    L --> A[Plan, delegate, inspect, and iterate in client]
+    A -->|Needs user input| H[Ask user or report paused]
+    H -->|Guidance| A
+    A -->|Goal and criteria satisfied| R[Report success and publish result]
+    A -->|Cannot continue| T[Report failed or cancelled]
 ```
 
 Before starting or resuming agent execution, the client proves that it can read and
 write the external staging area. A failed preflight creates no new run and leaves an
 existing run unchanged.
 
-The lead produces a bounded ordered plan. Every planned unit is an agent task, and each
-attempt invokes the agent assigned to it:
+The `coordinate` skill supplies one orchestration prompt containing:
 
-- planning and final integration use `lead`;
-- work may use the lead or any configured agent;
-- a critique or fact check is an ordinary task; and
-- only the final lead integration may publish the run result.
+- the frozen workspace and project guidance;
+- the goal, acceptance criteria, and current result;
+- the lead profile and optional agent-pool profiles;
+- the run ID, staging path, and result constraints; and
+- the run-level report contract.
 
-There is no worker/reviewer/critic role, review phase, plan approval, per-task
-approval, or final approval gate.
+That prompt instructs the client LLM to:
 
-`Task` matches the existing OKH `use_agent(..., task)` contract and common agent/workflow
-terminology. A task is the run-scoped work item; assigning it selects a configured agent.
-Industry scope varies—an A2A Task can resemble an entire Run, while Temporal calls its
-retryable unit an Activity—so user-facing text says **agent task** when scope is unclear.
+1. Apply the lead profile to plan and integrate the work.
+2. Delegate to supplied agent profiles when useful, using native subagents when
+   available and inline fallback otherwise.
+3. Inspect agent outputs and iterate in the client's own context.
+4. Ask the user directly when clarification or judgment is needed.
+5. Stop when the client's native budget is reached or progress is no longer credible.
+6. Write one complete result to staging and report the run state to the Hub.
 
-The three limits have direct meanings:
+This reuses the existing
+[agents module client contract](2026-07-16-agents-module-design.md): use a native
+subagent when the client supports one, or apply the same profile in the parent context
+otherwise. Neither mode implies process isolation.
 
-| Limit | Counts |
-|---|---|
-| `iterations` | Lead plan/integration cycles |
-| `tasks` | Agent tasks created in the run |
-| `attempts` | Attempts for one task |
+Plans, delegated tasks, retries, model turns, and agent transcripts are client-internal;
+they are not Hub entities or events. The Hub therefore does not duplicate the client's
+scheduler, retry policy, or token/cost budget and does not claim to audit hidden
+reasoning.
 
-Planning and integration count as tasks. Retrying a task increments its attempts but
-does not create another task, so total model calls are bounded by `tasks * attempts`—for
-example, the defaults allow at most forty calls. Tasks are sequential in v1. A server
-restart alone does not consume an attempt.
+The client reports only run-level states:
 
-When a run is blocked, makes no progress, reaches a limit, or is paused, the web app
-offers only valid actions: allow retry, provide in-run guidance, grant a bounded
-extension, or cancel.
+```text
+paused | succeeded | failed | cancelled
+```
 
-A successful run automatically makes its result current. The project remains active
-until a person chooses **Complete**, so one project may have several successful runs.
+A paused report includes a concise summary, relevant staged paths, and the question or
+blocker for the human; it never contains hidden reasoning. Guidance may come from the
+same client conversation or the web app. A successful report includes criterion
+evidence and the staged result. The Hub validates structure, paths, hashes, and state
+transitions, not semantic quality.
+
+A successful run automatically makes its result current. The project remains active, so
+one project may have any number of successful runs before it is archived.
 
 ## 7. Events and recovery
 
@@ -399,8 +387,8 @@ run.
 
 The stream records:
 
-- project creation, edits, completion, reopening, archive, and unarchive;
-- run start, plan, tasks, attempts, waits, corrections, and terminal outcome;
+- project creation, edits, archive, and unarchive;
+- run start, pause checkpoints, human guidance, and terminal outcome;
 - snapshot and result hashes; and
 - result publication at successful run completion and later restoration.
 
@@ -447,7 +435,6 @@ recorded outcome; reusing the ID with different arguments conflicts.
 - File ETags cover exact bytes with SHA-256.
 - Result tree hashes cover RFC 8785 canonical JSON of the path-sorted
   `{ path, size, sha256 }` array.
-- Acceptance-set hashes cover the ordered run-local criterion records.
 - Snapshot events record the hash of every frozen source file.
 
 ## 8. Runs, snapshots, and results
@@ -463,14 +450,13 @@ The start transaction creates the complete run directory, sets project `activeRu
 commits the snapshot hashes. Live config, guidance, or profile edits affect future runs
 only.
 
-Task work stays in external staging while the run is active. Structured results and
-output hashes are recorded in `events.json`; later tasks receive declared
-prior outputs as read-only inputs. Staging survives a server restart on the same machine
-but is not container content and never syncs.
+The client agentic loop uses external staging as scratch space while the run is active.
+Staging survives a server restart on the same machine but is not container content and
+never syncs. The Hub records no client-internal work graph or transcript.
 
-When final integration succeeds, the Hub:
+When the client reports success, the Hub:
 
-1. Validates the task claim, declared paths, acceptance evidence, and output limits.
+1. Validates the active run, report schema, acceptance evidence, and output limits.
 2. Reads files without following links and revalidates opened handles where supported.
 3. Copies the complete output into a sibling temporary result directory.
 4. Atomically renames it to `runs/<run>/result`.
@@ -488,18 +474,21 @@ The successful terminal event stores the result's path-sorted file array and tre
 Result comparison diffs those recorded arrays and reads selected changed text files only
 when a content diff is requested; it creates no separate manifest.
 
-Restore is allowed only when the project is unarchived, no run is active, and the current
+Restore is allowed only when the project is active, no run is active, and the current
 result still matches the expected path and tree hash. The user selects a specific prior
 successful result, and the normal transaction protocol changes the README pointer to
 that path. Result directories are never mutated or deleted by restore.
 
 ### Continue versus resume
 
-- **Resume** replays `events.json` and continues the run in `activeRun`.
+- **Resume** reconstructs the orchestration prompt from the frozen snapshot, staging,
+  latest durable checkpoint, and later guidance for the run in `activeRun`.
 - **Continue** starts a new run from current snapshots, the current result, and an
   optional human correction.
 
-Neither operation depends on prior chat history or hidden model reasoning.
+Neither operation depends on prior chat history or hidden model reasoning. After an
+unexpected client exit, resume may repeat client-internal work; immutable result
+publication and command idempotency keep that retry safe.
 
 ## 9. Tool and client boundary
 
@@ -508,8 +497,11 @@ One deterministic MCP tool is sufficient:
 ```text
 workspace {
   operation:
-    list | create | status | preflight | start | next | submit | update | intervene
+    list | create | status | preflight | start | report | update | intervene
   action?
+  state?
+  filters?
+  include?
   container
   module
   project?
@@ -519,43 +511,52 @@ workspace {
 
 | Operation | Purpose |
 |---|---|
-| `list` | Filter, sort, and page projects |
+| `list` | Filter, sort, and page projects, including archived or needs-attention views |
 | `create` | Create one project |
-| `status` | Return current project and run state |
+| `status` | Return current state plus optional resume inputs or result history |
 | `preflight` | Prove access to external staging |
-| `start` | Start a new run |
-| `next` | Claim the next task or return an intervention/terminal result |
-| `submit` | Submit the current task result |
-| `update` | Complete, reopen, archive, unarchive, or restore a project |
-| `intervene` | Retry, add in-run guidance, extend a limit, or cancel a waiting run |
+| `start` | Start a run and return frozen coordination inputs |
+| `report` | Record a paused or terminal state; publish a successful result |
+| `update` | Archive, unarchive, or restore a project |
+| `intervene` | Add guidance to a paused run or cancel any active run |
 
-`update.action` is `complete | reopen | archive | unarchive | restore`.
-`intervene.action` is `retry | guide | extend | cancel`. Each action accepts only the
-fields relevant to that transition and validates the current ETag and state.
+`update.action` is `archive | unarchive | restore`.
+`intervene.action` is `guide | cancel`.
+`report.state` is `paused | succeeded | failed | cancelled`. Each transition accepts
+only its relevant fields and validates the current ETag and state.
 `start` accepts optional continuation-correction text.
 
-`next` returns a workspace-specific superset of the existing `use_agent` result shape:
-the frozen profile and bounded task plus declared inputs, expected result schema, claim
-token, and staging path. Large inputs use the existing MCP `resource_link` convention.
+`list` may filter project lifecycle status and `attention: true`; attention means the
+latest active-run boundary is a pause with no later guidance. `status` may include:
 
-Only a hash of the claim token is persisted. The claim also records the server instance
-that issued it:
+- `resume`: the run ID, frozen inputs, staging path, latest checkpoint, and later
+  guidance for `activeRun`; and
+- `results`: prior successful run IDs, timestamps, result paths, and tree hashes.
 
-- after restart, the old claim is reclaimable without consuming an attempt and its token
-  cannot submit;
-- during the same server process, a human may release a lost claim, consuming an
-  attempt; and
-- stale tokens and undeclared output paths always fail.
+Result entries use the existing module-file resource template to expose their files; no
+separate history or artifact-browsing operation is needed.
 
-The server never calls a model. The `coordinate` skill checks `status` and preflights the
-current client first. If `activeRun` exists, it resumes with `next`; otherwise it calls
-`start`. It then repeatedly calls `next`, executes the returned agent task in the client,
-and calls `submit`.
+`start` returns the run ID, staging path, expected report schema, and frozen inputs as
+embedded content or MCP `resource_link` values. The `coordinate` skill combines those
+inputs with its orchestration instructions and hands the resulting prompt to the
+client's agentic loop.
+
+The server never calls a model. The `coordinate` skill checks `status` with the resume
+package and preflights the current client first. If `activeRun` exists, it rebuilds the
+prompt from that package; otherwise it calls `start`. Resuming a paused run records the
+current user request through `intervene: guide` before execution. After the client loop
+yields, `coordinate` calls `report` only for a paused or terminal state.
+
+`update: archive` and `update: unarchive` change project lifecycle status;
+`update: restore` changes the current result pointer. They share one operation because
+all are project-level mutations that require no active run. `intervene: cancel`
+terminalizes the Hub run and rejects late reports, but it cannot stop an MCP client
+process that is still executing.
 
 Built-in skills remain small:
 
 - `initialize` creates the manifest and workspace README;
-- `configure` updates lead, agents, limits, guidance, or acceptance;
+- `configure` updates lead, agents, guidance, or acceptance;
 - `create` gathers a goal and creates one project; and
 - `coordinate` starts or resumes coordinated work.
 
@@ -572,7 +573,7 @@ flowchart LR
     WS[Workspaces]
     WP[Workspace<br/>Projects and Settings]
     PD[Project<br/>Overview · Activity · Result · Settings]
-    AT[Needs attention<br/>Blocked · Limit · No progress · Paused]
+    AT[Needs attention<br/>Paused · Input needed]
     AG[Agents]
 
     WS --> WP
@@ -594,8 +595,8 @@ target date, agent-reference validity, and sync state.
 - **New project**;
 - status, archive, tag, target-date, and text filters;
 - user-remembered sorting;
-- Complete, Reopen, Archive, and Unarchive actions; and
-- settings for lead, allowed agents, limits, guidance, and workspace acceptance.
+- Archive and Unarchive actions; and
+- settings for lead, agent pool, guidance, and workspace acceptance.
 
 Target-date sorting places missing dates last. Past dates are highlighted but never
 change project state.
@@ -605,22 +606,26 @@ change project state.
 | Tab | Content |
 |---|---|
 | Overview | Goal, guidance, lifecycle, and current state |
-| Activity | Plan, tasks, attempts, waits, corrections, and run history |
-| Result | Current/prior results, diff, criterion evidence, Complete, and Restore |
+| Activity | Run checkpoints, human guidance, outcomes, and history |
+| Result | Current/prior results, diff, criterion evidence, and Restore |
 | Settings | Source-preserving README edits |
 
-Inspecting a result creates no durable "reviewed" state. If it is good, the user may
-complete the project. If it needs work, the user edits project guidance or tells an MCP
-client to continue with a correction. If it should not be current, the user restores a
-specific prior result.
+Activity offers Cancel for any active run and explains that this closes the Hub record
+but cannot terminate an MCP client process.
+
+Inspecting a result creates no durable "reviewed" state. If it needs work, the user edits
+project guidance or tells an MCP client to continue with a correction. If it should not
+be current, the user restores a specific prior result. Archiving is the only project
+lifecycle action for work that should no longer remain active.
 
 ### Needs attention and agents
 
 **Needs attention** aggregates only active runs waiting for human action. Its panels show
-the recorded cause and valid next actions; there is no global approval/review queue.
+the recorded checkpoint and offer guidance or cancellation; there is no global
+approval/review queue.
 
 `/agents` browses existing profiles, canonical identities, and workspace references.
-Workspace settings select one lead and maintain the optional allowlist for future runs;
+Workspace settings select one lead and maintain the optional agent pool for future runs;
 they never edit profile files or active snapshots.
 
 Runs start and resume only from an MCP client, because that client executes the agents.
@@ -665,8 +670,10 @@ A user may disambiguate directly:
 | "Investigate..." or "start a new presentation..." | Create a project, then `coordinate` |
 | "Resume..." | Continue the existing `activeRun` through `coordinate` |
 | "Continue... with..." | Start a new run from the current result plus correction |
-| "Reopen", "complete", "archive", "unarchive", or "restore" | `workspace` with `operation: update` |
-| "Retry", "use this guidance", "extend", or "cancel" a wait | `workspace` with `operation: intervene` |
+| "Archive", "unarchive", "reopen", or "restore" | `workspace` with `operation: update` |
+| "Use this guidance" for a paused run, or "cancel" an active run | `workspace` with `operation: intervene` |
+| "What needs attention?" | `workspace` with `operation: list`, `attention: true` |
+| "Show result history" | `workspace` with `operation: status`, including `results` |
 | "List", "find", or "show status" | `workspace` with `operation: list` or `status` |
 
 ```mermaid
@@ -680,21 +687,18 @@ sequenceDiagram
     H-->>C: Matching workspace and skills
     C->>H: run create
     C->>H: preflight, start
-    loop Until success or intervention
-        C->>H: next
-        H-->>C: Frozen agent task
-        C->>C: Execute agent
-        C->>H: submit
-    end
-    H-->>C: Current result or intervention
+    H-->>C: Frozen inputs and report contract
+    C->>C: Lead agentic loop plans, delegates, and iterates
+    C->>H: report paused or terminal state
+    H-->>C: Current result or intervention state
     C-->>U: Outcome and next valid actions
 ```
 
 ### Example A: Set up and configure a workspace
 
 > hub, add an Investigations workspace to my Work container. Use the orchestrator as
-> lead, allow the researcher and evidence-checker agents, and require primary sources,
-> explicit alternatives, and unresolved risks.
+> lead, include the researcher and evidence-checker in its agent pool, and require
+> primary sources, explicit alternatives, and unresolved risks.
 
 The client:
 
@@ -717,8 +721,8 @@ investigations/
 
 Later configuration uses the workspace skill rather than another metadata file:
 
-> hub, configure Investigations to allow the market-analyst agent and limit runs to
-> two iterations.
+> hub, configure Investigations to add the market-analyst agent and require an explicit
+> confidence statement.
 
 The `configure` skill presents the exact manifest/README changes, applies them after any
 required confirmation, validates agent resolution, and syncs. The same values remain
@@ -761,9 +765,9 @@ Resume means an active run already exists:
 
 > hub, resume the supplier concentration investigation.
 
-The client resolves the project, calls `status`, preflights the current client, sees
-`activeRun`, and enters the `next`/execute/`submit` loop without calling `start` or
-creating a new snapshot.
+The client resolves the project, calls `status` including the resume package, preflights
+the current client, records the resume request as guidance when needed, and re-enters
+the client agentic loop without calling `start` or creating a new snapshot.
 
 Continue means the prior run is terminal and a new run is wanted:
 
@@ -776,25 +780,24 @@ coordinates a new run from the current result and fresh snapshots.
 If the user says "continue" while a run is active, the client reports that state and asks
 whether to resume it or cancel it; it never starts a second run.
 
-If the project is completed or archived, the client reports that state and requires
-reopen or unarchive before starting.
+If the project is archived, the client reports that state and requires unarchive before
+starting.
 
-### Example D: Reopen, iterate, and handle intervention
+### Example D: Unarchive, iterate, and handle intervention
 
-Reopening changes lifecycle state but does not start agents:
+People commonly say "reopen"; for an archived project, that means unarchive:
 
 > hub, reopen the supplier concentration investigation.
 
-This calls `workspace` with `operation: update` and `action: reopen`. To reopen and
+This calls `workspace` with `operation: update` and `action: unarchive`. To unarchive and
 immediately do more work, the user can compose both intents:
 
 > hub, reopen the supplier concentration investigation and continue it with the latest
 > regulatory changes.
 
-The client reopens the project, then starts and coordinates a new run.
-
-If the project is also archived, the client unarchives it before reopening and reports
-both transitions.
+The client unarchives the project, then starts and coordinates a new run. If the project
+is already active, it reports that state and treats "reopen" as a request to continue
+only after confirming the intent.
 
 An intervention can also be handled entirely from the client:
 
@@ -805,19 +808,18 @@ An intervention can also be handled entirely from the client:
 
 The first request lists waits. The second resolves the waiting run, calls
 `workspace` with `operation: intervene` and `action: guide`, and resumes `coordinate`.
-Limit extension and cancel requests follow the same pattern. The web **Needs attention**
-view invokes the same deterministic actions.
+Cancel requests use the same project resolution but may target any active run. The web
+**Needs attention** view invokes the same deterministic actions.
 
-### Example E: Complete, archive, and restore
+### Example E: Archive and restore
 
-> hub, mark the supplier concentration investigation complete.
-
-> hub, archive the completed supplier concentration investigation.
+> hub, archive the supplier concentration investigation.
 
 > hub, unarchive the supplier concentration investigation.
 
 Each prompt resolves the project and calls `workspace` with the matching `update` action.
-Completion is allowed with or without a result; archive retains active/completed status.
+Archive requires no active run and is the only way to set aside finished or inactive
+work. Unarchive always returns the project to active.
 
 To roll back an automatically published result:
 
@@ -829,9 +831,9 @@ The client lists immutable successful results, resolves the requested run, and c
 `workspace` with `operation: update` and `action: restore`. It changes only the current
 result pointer.
 
-For Git containers, client-driven configuration, creation, lifecycle, and restore
-actions sync after the completed user request. `coordinate` syncs at human waits and
-terminal outcomes, not after each task event.
+For Git containers, client-driven configuration, creation, lifecycle, restore, and
+intervention actions sync after the completed user request. `coordinate` syncs at human
+waits and terminal outcomes.
 
 ## 12. Safety and OKH integration
 
@@ -841,8 +843,8 @@ Workspace writes reuse the existing hub-wide container mutation lock rather than
 a workspace-specific lock. Hub-managed module, workspace, todo, and sync writes
 serialize; sync holds the lock through validation, staging, commit, and push.
 
-The lock is not held while an MCP client runs an agent. A later submission revalidates
-the project ETag, run state, claim token, output paths, and hashes. Projects therefore
+The lock is not held while an MCP client runs its agentic loop. A later report
+revalidates the project ETag, run state, output paths, and hashes. Projects therefore
 execute independently, while their short durable writes may queue behind another Hub
 mutation. Per-container lock partitioning is deferred unless measured contention
 justifies it.
@@ -853,8 +855,8 @@ Required invariants:
 - snapshots and results are complete before an event references them;
 - old event bytes and result directories never change;
 - a terminal run rejects later run-scoped events;
-- archived projects and completed projects cannot start work;
-- one project cannot have two active runs or two claimed tasks; and
+- archived projects cannot start work;
+- one project cannot have two active runs; and
 - invalid state stops visibly instead of being repaired heuristically.
 
 ### Reuse
@@ -883,32 +885,32 @@ Required invariants:
 - Another workspace or project config file.
 - Separate project and run journals.
 - Database, queue, scheduler, or server-side model runner.
+- Persisted plans, tasks, attempts, claims, or client transcripts.
 - Persisted collection index.
 - Candidate artifact versions or manifests.
 - Formal review, approval, or agent-role subsystem.
 - Custom agent format.
 - Project-type-specific code.
 
-Sync commits the whole container. Useful boundaries are project lifecycle changes and
-terminal runs, not individual task events. External staging and user UI
-preferences never sync.
+Sync commits the whole container. Useful boundaries are project lifecycle or
+intervention changes and run-level pauses or terminal outcomes. External staging and
+user UI preferences never sync.
 
 ## 13. Delivery and deferred work
 
 1. **Projects:** module config, README parsing/editing, events, lifecycle, listing, and
    MCP routing/skills, and read-only web pages.
-2. **Runs:** snapshots, plans, tasks, claims, limits, staging, results, recovery,
-   resume, continue, and restore.
+2. **Runs:** snapshots, coordination prompts, staging, pause/terminal reports, results,
+   recovery, resume, continue, and restore.
 3. **Web controls:** workspace settings, project actions, Needs attention, result
    comparison, agents, routing, accessibility, and sync integration.
 
 Deferred until a demonstrated need:
 
 - retrospectives and automated learning;
-- parallel tasks;
 - automatic local or Copilot SDK runner;
 - calendar and recurring projects;
-- notifications and timed claim expiry;
+- notifications;
 - journal segmentation and persistent external indexing;
 - binary deduplication or remote result storage;
 - remote multi-host active-run execution; and
@@ -918,17 +920,20 @@ Deferred until a demonstrated need:
 
 The implementation must prove:
 
-- minimal config, agent-reference, limit, and README validation;
+- minimal config, agent-reference, and README validation;
 - source-preserving edits and ETag conflicts;
 - lifecycle and archive transitions;
 - wake-phrase routing for create, start, resume, continue, update, and intervention;
-- filtering, pagination, and remembered sorting;
+- lifecycle/attention filtering, pagination, and remembered sorting;
 - preflight before run creation;
 - exact replay after restart;
 - transaction recovery at every crash boundary;
 - CloudEvents schema, sequence, command replay, and terminal-run enforcement;
-- planning, tasks, retries, claim recovery, corrections, and all limits;
+- deterministic coordination-prompt composition from frozen inputs;
+- pause, guidance, success, failure, and cancellation report transitions;
 - client-only run initiation and the status/preflight start-versus-resume branch;
+- resume-package and result-history retrieval without a new run;
+- cancellation of active runs and rejection of late client reports;
 - snapshot stability when source files later change;
 - staging isolation and missing-staging failure;
 - result path safety, deterministic tree hashes, publication, comparison, and restore;
@@ -960,8 +965,6 @@ References:
 - [OpenAI Agents SDK human-in-the-loop](https://openai.github.io/openai-agents-python/human_in_the_loop/)
 - [Microsoft AutoGen human-in-the-loop](https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html)
 - [Agent2Agent Protocol, Life of a Task](https://a2a-protocol.org/latest/topics/life-of-a-task/)
-- [AWS Step Functions, Task workflow state](https://docs.aws.amazon.com/step-functions/latest/dg/state-task.html)
-- [Temporal Activities](https://docs.temporal.io/activities)
 - [Microsoft Guidelines for Human-AI Interaction](https://www.microsoft.com/en-us/research/project/guidelines-for-human-ai-interaction/)
 - [NIST AI RMF Generative AI Profile](https://doi.org/10.6028/NIST.AI.600-1)
 
