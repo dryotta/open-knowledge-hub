@@ -25,7 +25,7 @@ module: module boundaries are part of the design.
    the folder taxonomy, naming rules, and a top-level catalog. Keep catalogs
    progressive: root lists areas; area indexes list their direct children.
 5. **Normalize skills.** Each leaf uses standard `SKILL.md` frontmatter (`name`,
-   `description`) and discipline text. Keep `name` unique within this module; the
+   `description`) and instructions. Keep `name` unique within this module; the
    same name may exist in another module. Preserve scripts, references, and
    templates inside their skill leaf.
 6. **Verify.** Inspect the module, confirm every skill appears at its nested path,

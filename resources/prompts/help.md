@@ -4,7 +4,7 @@
 # Selected MCP resources
 {{var:resources}}
 
-<discipline name="help">
+<instructions name="help">
 
 Apply every embedded resource in this tool result directly. Before answering, fetch
 any selected resource marked as deferred with `read_resource`; never open an `okh://`
@@ -13,4 +13,4 @@ follow the common instructions. Use the hub's current terminology and examples, 
 distinguish what OKH itself does from work performed by the client agent. Answer the
 request directly; do not merely list the resources.
 
-</discipline>
+</instructions>

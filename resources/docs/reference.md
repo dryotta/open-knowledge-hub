@@ -16,8 +16,8 @@ description: Complete current reference for OKH tools, resources, module types, 
 | `sync` | `container?`, `message?`, `action?` | Validate and synchronize; `publish-pr` is a shared-mode action. |
 | `config` | `set?`, `container?`, `module?` | View/edit global preferences or one module manifest. |
 | `todos` | operation plus filters/mutation fields | List, preview, create, or update memory-module todos. |
-| `ask` | `container?`, `module?`, `question?` | Return discipline for answering from modules. |
-| `context` | `container?`, `task?` | Return discipline for selecting a working set. |
+| `ask` | `container?`, `module?`, `question?` | Return instructions for answering from modules. |
+| `context` | `container?`, `task?` | Return instructions for selecting a working set. |
 | `run` | `container`, `module`, `skill`, `input?` | Return one module skill, links, and bounded embedded required resources. |
 | `onboard` | none | Return first-run setup guidance. |
 | `dream` | `container?`, `module?` | Return description-consolidation guidance. |
@@ -132,7 +132,7 @@ resources:
   - okh://instructions/grilling.md
 ---
 
-Skill discipline...
+Skill instructions...
 ```
 
 `name` is required and unique in the effective module set. `description` is used

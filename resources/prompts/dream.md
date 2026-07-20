@@ -1,7 +1,7 @@
 # Modules to consolidate
 {{var:targets}}
 
-<discipline name="dream">
+<instructions name="dream">
 
 # Dream — consolidate module descriptions
 
@@ -70,6 +70,6 @@ unchanged; empty/uninitialized modules skipped; and any scope contradictions you
 - Descriptions that redefined a module's scope were confirmed with the user before writing.
 - Empty or uninitialized modules were reported, not given invented descriptions.
 
-</discipline>
+</instructions>
 
 {{prompt:partials/write-policy.md}}

@@ -8,7 +8,7 @@
           sessions, validate state on the callback, rotate the session after login,
           and expire idle sessions after 24 hours.
   tests:
-    - description: Help - grilling guidance - resource-backed discipline asks one decision
+    - description: Help - grilling guidance - resource-backed instructions ask one decision
       assert:
         - type: javascript
           value: file://assertions/tools-called.ts

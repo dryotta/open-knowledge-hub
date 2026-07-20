@@ -4,9 +4,9 @@
 # Available targets
 {{var:targets}}
 
-<discipline name="context">
+<instructions name="context">
 
-# Discipline: context
+# Instructions: context
 
 Assemble a compact, task-relevant working set from your containers before acting.
 Do NOT dump whole modules into context.
@@ -60,4 +60,4 @@ Before sending it, apply a final rejection gate: delete any selected-item bullet
 whose rationale describes the item as optional, conditional, merely available,
 not needed, not applicable, or useful only if another problem occurs.
 
-</discipline>
+</instructions>

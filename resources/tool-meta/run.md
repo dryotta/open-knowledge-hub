@@ -14,7 +14,7 @@ do not substitute memory.
 Explicit remember requests run `skill: "remember"`; other todo changes run
 `skill: "todo"` before any deterministic `todos` mutation.
 
-Return the discipline for a module's skill (resolved from the module's type + its own
+Return the instructions for a module's skill (resolved from the module's type + its own
 skills), with the target paths and your input injected. Declared required resources are
 embedded when they fit the context budget; oversized requirements are marked for
 `read_resource`. All dependencies and bundled files remain available as MCP resource

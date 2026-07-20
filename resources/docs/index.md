@@ -7,7 +7,7 @@ description: Canonical documentation for installing, using, extending, and devel
 
 Open Knowledge Hub (OKH) is an MCP server that organizes agent-accessible knowledge
 and capabilities into **containers** of typed **modules**. OKH runs no model: it
-provides deterministic tools, read-only resources, and discipline text; the client
+provides deterministic tools, read-only resources, and instructions text; the client
 agent performs reasoning and edits.
 
 This directory is the single source of truth for current OKH behavior:
