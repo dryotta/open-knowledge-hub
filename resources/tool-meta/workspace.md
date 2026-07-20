@@ -65,7 +65,7 @@ deterministic tool with seven operations:
 - If the user requests new work without naming a workspace, root `inspect` may select a
   unique workspace from its declared type and description.
 
-Skills return the exact discipline for composing this tool with `config`,
+Skills return the exact instructions for composing this tool with `config`,
 `read_resource`, client-native subagents, and `sync`. Use resource-link URIs exactly as
 returned by `workspace:get` or `workspace:start`; never construct or rewrite an OKH URI.
 

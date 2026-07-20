@@ -32,7 +32,7 @@ Create:
 - `src/server/workspaceTool.ts` — one MCP tool adapter and response rendering.
 - `resources/tool-meta/workspace.md` — tool metadata matching the schema.
 - `resources/module-types/workspace/skills/{initialize,configure,create,coordinate}/SKILL.md`
-  — client disciplines.
+  — client instructions.
 - `resources/module-types/workspace/README-skeleton.md` — editable starter.
 - `resources/docs/workspaces.md` — product-facing workspace reference.
 - `app/web/features/workspaces.ts` — workspace/project/attention UI.

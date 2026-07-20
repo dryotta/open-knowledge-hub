@@ -43,7 +43,7 @@ add_module {
 }
 ```
 
-Then run its initialization discipline:
+Then run its initialization instructions:
 
 ```text
 run {
@@ -131,7 +131,7 @@ run {
 }
 ```
 
-The coordinate discipline first calls:
+The coordinate instructions first call:
 
 ```text
 workspace {

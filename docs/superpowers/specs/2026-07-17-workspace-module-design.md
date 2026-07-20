@@ -1158,11 +1158,11 @@ sequenceDiagram
     C->>H: inspect {}
     H-->>C: Matching workspace and skills
     C->>H: run { skill: "create", input: request }
-    H-->>C: Create discipline
+    H-->>C: Create instructions
     C->>H: workspace { operation: "create", project: id, ... }
     C->>H: sync { container: "Work" }
     C->>H: run { skill: "coordinate", input: request }
-    H-->>C: Coordination discipline
+    H-->>C: Coordination instructions
     C->>H: workspace { operation: "get", include: ["resume"] }
     alt No active run
         C->>H: workspace { operation: "start", project: id, ... }
@@ -1229,7 +1229,7 @@ run {
   input: "Use primary evidence; require alternatives, tradeoffs, and unresolved risks."
 }
 
-# The initialize discipline directs:
+# The initialize instructions direct:
 workspace {
   operation: "create",
   container: "Work",
