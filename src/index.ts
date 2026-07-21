@@ -11,6 +11,10 @@ import { tryStartWebServer } from "./web/server.js";
  * MCP client uses for a locally-spawned server).
  */
 async function main(): Promise<void> {
+  if (process.argv[2] === "wiki") {
+    const { runWikiCli } = await import("./wiki/cli.js");
+    process.exit(await runWikiCli(process.argv.slice(2)));
+  }
   const paths = resolvePaths();
   const service = new ContainerService(paths);
   const todoService = new TodoService(service);
