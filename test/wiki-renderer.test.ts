@@ -116,3 +116,40 @@ describe("structural pages", () => {
     expect(footer.content).toContain("Internal use only.");
   });
 });
+
+describe("link rewriting", () => {
+  function linkInput(): RenderInput {
+    return {
+      context: baseCtx,
+      modules: [
+        {
+          path: "design",
+          concepts: [
+            {
+              sourceRelPath: "patterns/retry.md",
+              title: "Retry",
+              rawMarkdown: "See [timeouts](./timeout.md) and [index](../index.md#intro) and [ext](https://x.com/a.md).",
+            },
+            { sourceRelPath: "patterns/timeout.md", title: "Timeout", rawMarkdown: "# Timeout" },
+          ],
+          assets: [],
+        },
+      ],
+    };
+  }
+
+  it("rewrites sibling and parent .md links relative to page dir", () => {
+    const site = renderWikiSite(linkInput());
+    const retry = site.pages.find((p) => p.path === "design/patterns/retry.md")!;
+    expect(retry.content).toContain("[timeouts](timeout)");
+    expect(retry.content).toContain("[index](../index#intro)");
+    expect(retry.content).toContain("[ext](https://x.com/a.md)");
+  });
+
+  it("warns on dangling internal link", () => {
+    const inp = linkInput();
+    inp.modules[0].concepts[0].rawMarkdown = "[gone](./missing.md)";
+    const site = renderWikiSite(inp);
+    expect(site.warnings.some((w) => w.kind === "dangling-link")).toBe(true);
+  });
+});

@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import { OKF_RESERVED } from "../modules/loaders/okf.js";
 import type { WikiConfig } from "./config.js";
 
@@ -112,9 +113,40 @@ function renderModulePages(
   return { pages, warnings, nav };
 }
 
-// Stub — replaced in Task 5 (links) and Task 6 (assets).
-function rewriteBody(rawBody: string, _ctx: RewriteContext): RewriteResult {
-  return { body: rawBody, assets: [], warnings: [] };
+function rewriteBody(rawBody: string, ctx: RewriteContext): RewriteResult {
+  const warnings: RenderWarning[] = [];
+  const currentDir = posix.dirname(ctx.currentWikiPath); // e.g. "design/patterns"
+  const linkRe = /(\]\()([^)]+)(\))/g;
+
+  const body = rawBody.replace(linkRe, (whole, open, rawTarget, close) => {
+    const target = rawTarget.trim();
+    if (/^[a-z]+:/i.test(target) || target.startsWith("/") || target.startsWith("#")) return whole;
+    const [pathPart, anchor] = splitAnchor(target);
+    if (!pathPart.toLowerCase().endsWith(".md")) return whole;
+    // resolve relative to current page's source dir (same as wiki dir)
+    const resolved = posix.normalize(posix.join(currentDir, pathPart));
+    const key = resolved.toLowerCase();
+    const wikiTarget = ctx.pageIndex.get(key);
+    if (!wikiTarget) {
+      warnings.push({ kind: "dangling-link", message: `Dangling link ${target} in ${ctx.currentWikiPath}` });
+      return whole;
+    }
+    const rel = relativePosix(currentDir, wikiTarget.replace(/\.md$/, ""));
+    return `${open}${rel}${anchor ? `#${anchor}` : ""}${close}`;
+  });
+
+  return { body, assets: [], warnings };
+}
+
+function splitAnchor(target: string): [string, string | undefined] {
+  const i = target.indexOf("#");
+  if (i === -1) return [target, undefined];
+  return [target.slice(0, i), target.slice(i + 1)];
+}
+
+function relativePosix(fromDir: string, toPath: string): string {
+  const rel = posix.relative(fromDir, toPath);
+  return rel === "" ? "." : rel;
 }
 
 function renderStructuralPages(input: RenderInput, nav: NavEntry[]): WikiPage[] {
