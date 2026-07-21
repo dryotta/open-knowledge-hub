@@ -1,10 +1,46 @@
 # GitHub Wiki: Manifest-Driven, Two-Way Sync
 
-**Status:** Approved design
+**Status:** Approved design (Revision R1: multi-module)
 **Date:** 2026-07-21
 **Builds on:** `2026-07-21-okh-wiki-flat-navigation-design.md` (flat slugs, sidebar,
 link rewriting — all retained). This spec changes **where the config lives**, **how
 the chrome is produced**, and **adds reverse (wiki → repo) sync**.
+
+## Revision R1 — Multi-module (supersedes the single-module rules below)
+
+The original spec published exactly one `knowledge` module. R1 generalizes this;
+where the sections below say "the single knowledge module," read the following:
+
+- **Selection:** publish **every** module (of **any** type) whose `.okh/module.yaml`
+  sets `wiki-sync: true`. `selectWikiModules(repoRoot)` returns them sorted
+  alphabetically by folder name. Zero matches is an error; there is no upper bound
+  and no type restriction.
+- **Per-module config:** `wiki-sync: true|false`, `wiki-sync-reverse-mode:
+  pr|direct|off` (default `pr`), and new `wiki-sync-expanded: true|false` (optional)
+  controlling the sidebar section's open/closed default. When unset, the first
+  module (alphabetical) is expanded and the rest collapsed.
+- **Enumeration:** modules are enumerated generically — every `.md` file under the
+  module (title = first H1 or title-cased filename) — instead of the knowledge-only
+  OKF loader, so all module types render.
+- **Namespaced slugs:** page slugs are prefixed by module to avoid cross-module
+  collisions: `telemetry/sources/eed.md` → `telemetry-sources-eed`; a module's
+  `index.md` → slug `<module>`. Reverse's `slugToSource` maps slug →
+  `{ module, sourceRel }`.
+- **Home:** a generated landing page listing each module (title, description, link
+  to its index page). H1 = the repository name.
+- **Sidebar:** a `🏠 Home` link, then one `<details>` per module (alphabetical),
+  `open` per the expand rule. Each section lists the module's index link followed by
+  its pages grouped by subfolder.
+- **Per-module TOC ordering:** within a module, pages and groups are ordered by first
+  appearance of their internal links in that module's `index.md`; anything not
+  referenced falls back to alphabetical after.
+- **Header/Footer:** the header is generic (repo provenance + "human edits may sync
+  back to the source"), because reverse mode is now per-module. Footer stays
+  provenance-only.
+- **Reverse:** changed pages are partitioned by their target module and landed per
+  that module's `wiki-sync-reverse-mode` — `direct` commits to the default branch,
+  `pr` changes are gathered into a single PR, `off` changes are ignored.
+
 
 ## 1. Summary
 

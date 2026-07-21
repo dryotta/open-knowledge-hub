@@ -103,10 +103,12 @@ describe("module manifest", () => {
         description: "kb",
         "wiki-sync": true,
         "wiki-sync-reverse-mode": "direct",
+        "wiki-sync-expanded": true,
       });
       const m = await loadModuleManifest(dir);
       expect(m["wiki-sync"]).toBe(true);
       expect(m["wiki-sync-reverse-mode"]).toBe("direct");
+      expect(m["wiki-sync-expanded"]).toBe(true);
       const raw = await readFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "utf8");
       expect(raw).toContain("wiki-sync: true");
     } finally {

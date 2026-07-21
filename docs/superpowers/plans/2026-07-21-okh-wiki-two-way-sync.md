@@ -3,6 +3,18 @@
 **Spec:** `docs/superpowers/specs/2026-07-21-okh-wiki-two-way-sync-design.md`
 **Branch:** `dryotta-wiki-sync-design` (PR #48)
 
+## Revision R1 — Multi-module
+
+After the single-module tasks below landed, the design was generalized to publish
+**every** module with `wiki-sync: true` (any type), sorted alphabetically. See the
+spec's "Revision R1" section for the authoritative deltas. Implemented changes:
+`selectWikiModule` → `selectWikiModules` (plural, all types); generic `.md`
+enumeration in `buildRenderModule`; multi-module renderer with namespaced slugs,
+a generated Home landing, one `<details>` sidebar section per module (first open),
+and index.md-driven per-module ordering; a new `wiki-sync-expanded` manifest key;
+and reverse sync that partitions changed pages by module and lands each per its
+`wiki-sync-reverse-mode` (`direct` commit, combined `pr`, or `off`).
+
 ## For agentic workers
 
 **REQUIRED SUB-SKILL:** Use `test-driven-development` for every task — write the

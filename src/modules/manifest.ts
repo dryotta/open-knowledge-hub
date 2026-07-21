@@ -17,6 +17,7 @@ const moduleManifestBodySchema = z
     config: z.record(z.string(), z.unknown()).optional(),
     "wiki-sync": z.boolean().optional(),
     "wiki-sync-reverse-mode": reverseModeSchema.optional(),
+    "wiki-sync-expanded": z.boolean().optional(),
   })
   .strict();
 
