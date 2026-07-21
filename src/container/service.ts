@@ -1,5 +1,5 @@
-import { lstat, mkdir, realpath, rm, stat, readdir } from "node:fs/promises";
-import { resolve, relative, basename, join, isAbsolute, normalize } from "node:path";
+import { lstat, mkdir, readFile, realpath, rm, stat, readdir, writeFile } from "node:fs/promises";
+import { resolve, relative, basename, dirname, join, isAbsolute, normalize } from "node:path";
 import { z } from "zod";
 import type { ZodType } from "zod";
 import type { OkhPaths } from "../config.js";
@@ -7,6 +7,8 @@ import { containerCloneDir } from "../config.js";
 import { OkhError, isOkhError } from "../errors.js";
 import { Git } from "../git/git.js";
 import { Gh } from "../git/gh.js";
+import { okhVersion } from "../util/version.js";
+import { parseGitHubRepo } from "../wiki/url.js";
 import { Mutex } from "../util/mutex.js";
 import {
   loadRegistry,
@@ -975,6 +977,64 @@ export class ContainerService {
   /** Absolute path to a container's root on disk. */
   containerRoot(entry: ContainerEntry): string {
     return entry.localPath;
+  }
+
+  /** The registered entry for `name` (throws NOT_FOUND if absent). */
+  async getContainerEntry(name: string): Promise<ContainerEntry> {
+    const reg = await this.loadRegistryData();
+    return requireContainer(reg, name);
+  }
+
+  /**
+   * Enable or disable GitHub-wiki sync for a container. Requires a git-backed
+   * container with a github.com origin. Scaffolds (enable) or removes (disable)
+   * `.github/workflows/okh-wiki.yml` in the clone, then records `wiki.enabled`
+   * in the registry. Selecting which modules to publish is a separate, explicit
+   * author action (`wiki-sync: true` in each module's `.okh/module.yaml`; any
+   * module type may opt in). The scaffolded workflow is committed by the user's
+   * next `sync`.
+   */
+  setContainerWikiEnabled(
+    name: string,
+    enabled: boolean,
+  ): Promise<{ entry: ContainerEntry; changed: boolean }> {
+    return this.mutex.run(async () => {
+      const reg = await this.loadRegistryData();
+      const entry = requireContainer(reg, name);
+      if (entry.backend.type !== "git") {
+        throw new OkhError(
+          "INVALID_ARGUMENT",
+          `Wiki publishing requires a git-backed container; "${name}" uses the ${entry.backend.type} backend.`,
+        );
+      }
+      const origin = typeof entry.backend.config["origin"] === "string" ? (entry.backend.config["origin"] as string) : "";
+      if (!parseGitHubRepo(origin)) {
+        throw new OkhError(
+          "INVALID_ARGUMENT",
+          `Wiki publishing requires a github.com origin; "${name}" has origin ${origin || "(none)"}.`,
+        );
+      }
+      const already = entry.wiki?.enabled === true;
+      if (enabled) await this.scaffoldWikiFiles(entry.localPath);
+      else await this.removeWikiFiles(entry.localPath);
+      const updated = withContainerUpdated(reg, name, (c) => ({ ...c, wiki: { enabled } }));
+      await saveRegistry(this.paths, updated);
+      return { entry: requireContainer(updated, name), changed: already !== enabled };
+    });
+  }
+
+  /** Write the version-pinned two-way sync workflow. */
+  private async scaffoldWikiFiles(containerRoot: string): Promise<void> {
+    const template = await readFile(new URL("../../resources/wiki/workflow.yml", import.meta.url), "utf8");
+    const rendered = template.replaceAll("__OKH_VERSION__", okhVersion());
+    const workflowPath = join(containerRoot, ".github", "workflows", "okh-wiki.yml");
+    await mkdir(dirname(workflowPath), { recursive: true });
+    await writeFile(workflowPath, rendered, "utf8");
+  }
+
+  /** Remove the scaffolded workflow (idempotent). */
+  private async removeWikiFiles(containerRoot: string): Promise<void> {
+    await rm(join(containerRoot, ".github", "workflows", "okh-wiki.yml"), { force: true });
   }
 
   /** Absolute path to a module root, guarded against traversal outside the container. */

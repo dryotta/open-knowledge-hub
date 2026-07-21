@@ -22,6 +22,7 @@ This directory is the single source of truth for current OKH behavior:
 | [Agent templates](okh://docs/agent-templates.md) | Research-backed recipes for creating focused Copilot agents |
 | [Resource architecture](okh://docs/resources.md) | MCP resource design, security, and provider extension |
 | [Development](okh://docs/development.md) | Build, test, inspect, and repository architecture |
+| [Publishing to the wiki](okh://docs/wiki.md) | Mirroring knowledge modules to a repo's GitHub wiki |
 
 Call `help` with a question to receive the most relevant documents as bounded embedded
 resources plus canonical links. Full MCP clients can browse `okh://docs/` through

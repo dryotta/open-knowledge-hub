@@ -1,0 +1,44 @@
+# resources/wiki/workflow.yml
+# Scaffolded by Open Knowledge Hub when wiki sync is enabled on this container.
+# Do not edit by hand; disable+re-enable to refresh the pinned version.
+#
+# Forward (repo -> wiki) runs on push to main. Reverse (wiki -> repo) runs on
+# wiki edits (gollum). Each edited page's landing mode is read from its source
+# module's .okh/module.yaml `wiki-sync-reverse-mode` (pr | direct | off); `off`
+# makes that module's reverse changes a runtime no-op.
+name: OKH Wiki Sync
+on:
+  push:
+    branches: [main]
+  gollum:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: okh-wiki
+  cancel-in-progress: false
+jobs:
+  forward:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npx --yes open-knowledge-hub@__OKH_VERSION__ wiki publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  reverse:
+    if: github.event_name == 'gollum'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npx --yes open-knowledge-hub@__OKH_VERSION__ wiki reverse
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
