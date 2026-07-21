@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { Git } from "../git/git.js";
 import { OkhError } from "../errors.js";
 import { walkFiles } from "../modules/fs.js";
-import { parseFrontmatter } from "../util/frontmatter.js";
+import { parseFrontmatter, stringField } from "../util/frontmatter.js";
 import { WIKI_BOT_EMAIL, WIKI_BOT_NAME } from "./constants.js";
 import { selectWikiModules, type SelectedWikiModule } from "./select.js";
 import {
@@ -71,12 +71,18 @@ const titleFromFilename = (name: string): string =>
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(" ");
 
-/** Module title: its index.md's first H1 if present, else the title-cased folder name. */
+/**
+ * Page/module title from raw markdown: frontmatter `title:` wins (the common
+ * knowledge convention), then the body's first H1, then the title-cased name.
+ */
+const deriveTitle = (rawMarkdown: string, fallbackName: string): string => {
+  const fm = parseFrontmatter(rawMarkdown);
+  return stringField(fm.data, "title") ?? firstH1(fm.body) ?? titleFromFilename(fallbackName);
+};
+
+/** Module title: its index.md's frontmatter/H1 title if present, else the folder name. */
 export function deriveModuleTitle(content: Pick<RenderModuleContent, "path" | "indexMarkdown">): string {
-  if (content.indexMarkdown) {
-    const h1 = firstH1(parseFrontmatter(content.indexMarkdown).body);
-    if (h1) return h1;
-  }
+  if (content.indexMarkdown) return deriveTitle(content.indexMarkdown, content.path);
   return titleFromFilename(content.path);
 }
 
@@ -101,7 +107,7 @@ export async function buildRenderModule(
   for (const rel of mdPaths) {
     if (rel.toLowerCase() === "index.md") continue; // module landing, not a concept
     const rawMarkdown = await readFile(join(moduleRoot, rel), "utf8");
-    const title = firstH1(parseFrontmatter(rawMarkdown).body) ?? titleFromFilename(basename(rel));
+    const title = deriveTitle(rawMarkdown, basename(rel));
     concepts.push({ sourceRelPath: rel, title, rawMarkdown });
   }
 

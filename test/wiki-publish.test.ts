@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { buildAndPublishWiki } from "../src/wiki/publish.js";
+import { buildAndPublishWiki, buildRenderModule } from "../src/wiki/publish.js";
 import { saveModuleManifest } from "../src/modules/manifest.js";
 import type { WikiReverseMode } from "../src/modules/manifest.js";
 
@@ -96,5 +96,31 @@ describe("buildAndPublishWiki module selection", () => {
     expect(stdout).toContain("Home.md");
     expect(stdout).toContain("design.md");
     expect(stdout).toContain("playbooks.md");
+  });
+});
+
+describe("buildRenderModule title derivation", () => {
+  it("prefers frontmatter title over a generic body H1 for concepts and the module", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "okh-mod-"));
+    await writeFile(
+      join(dir, "index.md"),
+      "---\ntitle: Telemetry Knowledge Pack\n---\n# Overview\n\nLanding.",
+    );
+    // Rich frontmatter title but a generic `# Overview` first H1 in the body.
+    await writeFile(
+      join(dir, "eed.md"),
+      "---\ntitle: EED / NRT SCR (per-leg call quality)\n---\n# Overview\n\nBody.",
+    );
+    // No frontmatter title: falls back to the body's first H1.
+    await writeFile(join(dir, "aria.md"), "# Aria client telemetry\n\nBody.");
+    // Neither: falls back to the title-cased filename.
+    await writeFile(join(dir, "id-pivots.md"), "Just prose, no heading.");
+
+    const content = await buildRenderModule(dir, "telemetry", "desc");
+    expect(content.title).toBe("Telemetry Knowledge Pack");
+    const byPath = new Map(content.concepts.map((c) => [c.sourceRelPath, c.title]));
+    expect(byPath.get("eed.md")).toBe("EED / NRT SCR (per-leg call quality)");
+    expect(byPath.get("aria.md")).toBe("Aria client telemetry");
+    expect(byPath.get("id-pivots.md")).toBe("Id Pivots");
   });
 });

@@ -225,10 +225,14 @@ describe("reverseSyncWiki", () => {
     await writeFile(join(wiki, "ops-deploy.md"), "# Deploy\n\nops edit.\n");
     await commitAll(wiki, "human edits", H);
 
+    let prArgs: { body?: string } | undefined;
     const res = await reverseSyncWiki(src, {
       resolve: resolver(origin, wiki),
       runId: "run-99",
-      openPr: async () => ({ number: 7, url: "https://github.com/acme/widgets/pull/7" }),
+      openPr: async (args) => {
+        prArgs = args;
+        return { number: 7, url: "https://github.com/acme/widgets/pull/7" };
+      },
     });
 
     expect(res.outcome).toBe("committed+pr-opened");
@@ -236,6 +240,11 @@ describe("reverseSyncWiki", () => {
     const refs = await git(origin, ["ls-remote", "--heads", "."]);
     expect(refs).toContain("refs/heads/main");
     expect(refs).toContain("okh/wiki-sync/run-99");
+    // Both edits landed, but the PR body counts and file list are pr-scoped only.
+    expect(res.counts.modified).toBe(2);
+    expect(prArgs?.body).toContain("Modified: 1");
+    expect(prArgs?.body).toContain("`ops/deploy.md`");
+    expect(prArgs?.body).not.toContain("`kb/sources/eed.md`");
   });
 
   it("no-ops (disabled) when the only edited module is off-mode", async () => {

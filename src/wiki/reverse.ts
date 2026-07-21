@@ -215,7 +215,11 @@ export async function reverseSyncWiki(
   const changes = parseChanges(await git.nameStatus(wikiDir, `${base}..HEAD`));
   if (changes.length === 0) return { outcome: "up-to-date", changed: 0, counts: zero };
 
-  const counts: ReverseCounts = { ...zero };
+  const countsByMode = new Map<WikiReverseMode, ReverseCounts>([
+    ["direct", { ...zero }],
+    ["pr", { ...zero }],
+    ["off", { ...zero }],
+  ]);
   /** Repo-relative paths touched, grouped by the owning module's reverse mode. */
   const touchedByMode = new Map<WikiReverseMode, string[]>([
     ["direct", []],
@@ -264,13 +268,14 @@ export async function reverseSyncWiki(
       const r = resolveSlug(slugOfWikiPage(change.newPath));
       if (!r) continue; // unknown slug (e.g. Home or a new page for no module) — skip
       await applyUpsert(change.newPath, r.target, r.destRel);
-      if (change.status === "A") counts.added += 1;
-      else counts.modified += 1;
+      const c = countsByMode.get(r.target.selected.reverseMode)!;
+      if (change.status === "A") c.added += 1;
+      else c.modified += 1;
     } else if (change.status === "D") {
       const r = resolveSlug(slugOfWikiPage(change.newPath));
       if (!r) continue;
       await applyDelete(r.target, r.destRel);
-      counts.deleted += 1;
+      countsByMode.get(r.target.selected.reverseMode)!.deleted += 1;
     } else {
       const oldR = resolveSlug(slugOfWikiPage(change.oldPath!));
       const newR = resolveSlug(slugOfWikiPage(change.newPath));
@@ -279,12 +284,16 @@ export async function reverseSyncWiki(
         await applyDelete(oldR.target, oldR.destRel);
       }
       await applyUpsert(change.newPath, newR.target, newR.destRel);
-      counts.renamed += 1;
+      countsByMode.get(newR.target.selected.reverseMode)!.renamed += 1;
     }
   }
 
   const directPaths = touchedByMode.get("direct")!;
   const prPaths = touchedByMode.get("pr")!;
+  const directCounts = countsByMode.get("direct")!;
+  const prCounts = countsByMode.get("pr")!;
+  // Report only what actually lands (direct + pr); off-mode edits are dropped.
+  const counts = sumCounts(directCounts, prCounts);
   const landed = directPaths.length + prPaths.length;
 
   if (landed === 0) {
@@ -338,7 +347,7 @@ export async function reverseSyncWiki(
         head: branch,
         base: info.defaultBranch,
         title: message,
-        body: prBody(counts, prPaths),
+        body: prBody(prCounts, prPaths),
         apiBase: opts.apiBase,
       });
     }
@@ -358,6 +367,15 @@ export async function reverseSyncWiki(
 
 function commitMessage(n: number): string {
   return `Sync wiki edits (${n} page${n === 1 ? "" : "s"})`;
+}
+
+function sumCounts(a: ReverseCounts, b: ReverseCounts): ReverseCounts {
+  return {
+    added: a.added + b.added,
+    modified: a.modified + b.modified,
+    deleted: a.deleted + b.deleted,
+    renamed: a.renamed + b.renamed,
+  };
 }
 
 function redact(message: string, token?: string): string {
