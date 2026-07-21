@@ -1,0 +1,345 @@
+# GitHub Wiki Sync for Knowledge Modules
+
+**Status:** Approved design
+**Date:** 2026-07-20
+
+## 1. Summary
+
+Publish a container's `knowledge` modules to its GitHub repository wiki as a
+human-browsable, generated view. Publishing runs **only in GitHub Actions** on
+push to `main`; the local OKH server never publishes. OKH's role is the control
+plane: enabling wiki for a git/GitHub container scaffolds a workflow and a
+repo-level wiki config into the container repo, and disabling removes them.
+
+The engine is a **repo-native wiki builder** with no dependency on the local OKH
+registry. It scans a checked-out repo for `type: knowledge` modules, renders a
+deterministic wiki site (Home, sidebar ToC, footer, per-concept pages, copied
+assets), and clean-mirrors it into the repo's `<repo>.wiki.git`. The builder is
+invoked in CI through a new `open-knowledge-hub wiki publish` CLI subcommand.
+
+## 2. Goals and non-goals
+
+### Goals
+
+1. Publish only `knowledge` modules to the GitHub wiki for human browsing.
+2. Run publishing exclusively in CI, on push to `main`.
+3. Make enable/disable generic and per-container across any GitHub-backed
+   container, driven from OKH.
+4. Produce a well-structured wiki: per-page header banner, sidebar ToC grouped by
+   module, and a footer, with high browsing fidelity (rewritten cross-links and
+   copied assets).
+5. Treat the wiki as fully generated: each publish is a clean mirror, so removed
+   concepts disappear.
+6. Keep the rendering engine pure and deterministic so it is unit-testable
+   without git or network.
+
+### Non-goals
+
+- A local/manual publish path or MCP `publish-wiki` action (CI only).
+- Non-GitHub wiki providers (GitLab wiki, static sites, Confluence).
+- Publishing non-`knowledge` module types.
+- Coexisting with hand-authored wiki pages (the wiki is OKH-owned).
+- Automatically enabling the repo's Wikis feature (`has_wiki`); it is a one-time
+  manual prerequisite.
+- Per-module include/exclude controls (a container-level toggle publishes all
+  knowledge modules).
+- A separate GitHub Marketplace action (the CLI in this package is invoked via
+  `npx`).
+
+## 3. Concepts
+
+- **Wiki builder** — the repo-native engine that renders and publishes. It
+  operates purely on a checked-out repo tree plus an optional `.okh/wiki.yml`. It
+  is the same code whether run in CI or (future) elsewhere; today only CI runs it.
+- **WikiSite** — the in-memory result of rendering: an ordered set of
+  `{ path, content }` text files and `{ path, bytes }` assets. Rendering never
+  touches git or the network.
+- **Clean mirror** — a publish replaces the entire wiki working tree with the
+  freshly rendered `WikiSite`, so the wiki always equals the current knowledge.
+- **Control plane** — OKH tooling that records wiki intent on the container
+  registry entry and scaffolds/removes the CI workflow and repo wiki config.
+
+## 4. Architecture
+
+Two separated concerns:
+
+1. **Repo-native builder** (engine, run by CI).
+2. **OKH control plane** (enable/disable, run by the local server).
+
+```mermaid
+graph TD
+  subgraph Local OKH
+    CFG[config container-scope wiki.enabled] --> SCAF[Scaffolder]
+    SCAF -->|writes| WF[.github/workflows/okh-wiki.yml]
+    SCAF -->|writes| WC[.okh/wiki.yml]
+    SCAF --> SYNC[sync -> push to main]
+  end
+  subgraph GitHub Actions on push to main
+    WF --> CLI[npx open-knowledge-hub wiki publish]
+    CLI --> BLD[buildAndPublishWiki]
+    BLD --> REND[WikiRenderer pure]
+    BLD --> REPO[WikiRepo clone/mirror/push]
+    REPO -->|push| WIKI[(repo.wiki.git)]
+  end
+```
+
+### 4.1 Builder units
+
+- **`WikiRenderer`** — pure. Input: discovered knowledge modules, their OKF
+  items, raw markdown, referenced asset bytes, and resolved wiki config. Output:
+  `WikiSite`. Responsibilities: header banner, cross-link rewriting, asset
+  collection/repathing, and generation of `Home.md`, `_Sidebar.md`, `_Footer.md`,
+  and per-module/per-concept pages. All collections are sorted so output is
+  byte-stable across runs.
+- **`WikiRepo`** — I/O. Derives the wiki remote URL from the repo origin,
+  clone-or-inits `<repo>.wiki.git`, wipes tracked files, writes the `WikiSite`,
+  stages, commits only when the tree changed, and pushes. Reuses the existing
+  `Git` wrapper; adds a small number of helpers as needed (see 8.3).
+- **`buildAndPublishWiki(repoRoot, opts)`** — orchestrator called by the CLI:
+  discover modules -> read files/assets -> `WikiRenderer` -> `WikiRepo`. Returns a
+  `WikiPublishResult { outcome, wikiUrl, pages, assets, commit? }`.
+
+### 4.2 Module discovery in CI
+
+In CI the checked-out repo **is** the container. The builder scans top-level
+folders for `.okh/module.yaml` with `type: knowledge` (modules are direct
+children of the container root, per the OKH model). It reuses the existing
+manifest reader and OKF enumeration; it does not read the OKH registry.
+
+## 5. Wiki structure
+
+Rendered layout (paths are wiki-repo-relative):
+
+```
+Home.md                        generated: repo title, "generated by OKH" note,
+                               and a list of modules linking to each landing
+_Sidebar.md                    ToC grouped by "## <module>" headings, nested
+                               concept links preserving subpaths
+_Footer.md                     attribution, source repo link, synced commit and
+                               timestamp
+<module>/index.md              module landing, from the module's index.md
+<module>/<concept-subpath>.md  each OKF concept, original subpath preserved
+<module>/assets/...            copied local images/assets referenced by concepts
+```
+
+### 5.1 Per-page header banner
+
+Every generated page body (concept pages and module landings) is prepended with a
+blockquote banner:
+
+```
+> 📘 <repo> › <module> › <page title> · _Generated by Open Knowledge Hub — do not edit._
+```
+
+The breadcrumb reflects the page's position; `Home.md`, `_Sidebar.md`, and
+`_Footer.md` are structural and receive their own tailored generated content
+rather than the concept banner.
+
+### 5.2 Page naming and namespacing
+
+Concepts are namespaced by module using wiki subdirectories: a concept at module
+`design/` path `patterns/retry.md` becomes wiki page `design/patterns/retry.md`.
+GitHub wikis support nested folders. The reserved OKF files are handled: a
+module's `index.md` becomes `<module>/index.md` (its landing), and `log.md` is
+skipped. Within one module, if two source paths normalize to the same wiki page
+path, the builder de-duplicates deterministically (stable order, suffix the later
+one) and emits a warning.
+
+### 5.3 Link and asset rewriting
+
+- **Internal `.md` cross-links** (relative links between concept files) are
+  resolved against the source tree and rewritten to the corresponding wiki page
+  path. Links are emitted as wiki-root-relative paths so they resolve correctly
+  from nested pages.
+- **Local assets** (images and other files referenced by relative path) are
+  copied into `<module>/assets/` in the wiki and their references repathed.
+- **External links** (absolute URLs) and anchors are left unchanged.
+- References whose target file does not exist on disk are left as-is and a
+  warning is recorded (dangling link/asset).
+
+### 5.4 Sidebar and footer
+
+- `_Sidebar.md`: one `## <module>` section per published module, each listing its
+  landing and concept pages as links, nested to mirror subpaths, sorted.
+- `_Footer.md`: a short generated line — "Generated by Open Knowledge Hub from
+  `<owner>/<repo>@<commit>` on `<timestamp>`" plus a link to the source repo, and
+  the optional `footer` note from `.okh/wiki.yml`.
+
+## 6. CI workflow
+
+The scaffolded `.github/workflows/okh-wiki.yml`:
+
+```yaml
+name: OKH Wiki Publish
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+concurrency:
+  group: okh-wiki
+  cancel-in-progress: true
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npx --yes open-knowledge-hub@<pinned-version> wiki publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+- **What runs:** the new `open-knowledge-hub wiki publish` CLI subcommand. It
+  reads `.okh/wiki.yml`, discovers knowledge modules from the repo root, renders,
+  and pushes.
+- **Version pinning:** the scaffolder writes the OKH version it ran from into the
+  workflow, so CI reruns are reproducible. Disabling and re-enabling refreshes it.
+- **Concurrency:** a single `okh-wiki` group with `cancel-in-progress` avoids
+  overlapping publishes racing on the wiki repo.
+
+### 6.1 Authentication
+
+The builder pushes to the wiki using the CI-provided token:
+
+```
+https://x-access-token:${GITHUB_TOKEN}@github.com/<owner>/<repo>.wiki.git
+```
+
+The default `GITHUB_TOKEN` with `contents: write` can push to the same repo's
+wiki. For org configurations that restrict the default token, the workflow may
+set `GITHUB_TOKEN` from a `WIKI_TOKEN` PAT secret instead; the builder reads the
+token from the `GITHUB_TOKEN` env var either way and does not persist it.
+
+### 6.2 Wiki enablement
+
+The repo's Wikis feature must be enabled once (Settings → Features → Wikis). The
+first push to `.wiki.git` initializes its content. If the push fails because
+wikis are disabled, the CLI exits non-zero with an actionable message. OKH does
+not auto-toggle `has_wiki` (that needs admin scope beyond the default token).
+
+### 6.3 Wiki branch
+
+GitHub wikis use `master`. `WikiRepo` clones the wiki and uses its default branch
+when it already exists; when initializing an empty/new wiki it commits and pushes
+`master`.
+
+## 7. Control plane
+
+### 7.1 Registry schema
+
+Add an optional `wiki` descriptor to `ContainerEntry`:
+
+```ts
+wiki?: { enabled: boolean }
+```
+
+This is backward compatible: existing v2 registry files omit the key and parse
+unchanged, so no registry version bump is required. The field records intent; the
+authoritative source for CI is the committed workflow file.
+
+### 7.2 Container-scope config
+
+Extend the `config` tool to support **container scope** — `container` present and
+`module` absent — mirroring the existing module-scope path. `config { container }`
+views container config (backend, sync, wiki); `config { container, set: { wiki:
+{ enabled: true } } }` toggles wiki.
+
+Enabling requires a git backend whose origin is a GitHub URL; otherwise `config`
+throws `INVALID_ARGUMENT` with a clear message. Enabling on an already-enabled
+container is idempotent.
+
+### 7.3 Scaffolding
+
+On enable, OKH writes into the container clone:
+
+- `.github/workflows/okh-wiki.yml` (Section 6, version pinned).
+- `.okh/wiki.yml` (repo wiki config, Section 7.4) if absent.
+
+On disable, OKH removes both files (leaving any other `.okh` content intact).
+Both changes are committed and pushed to `main` through the container's normal
+`sync` (the user runs `sync` after `config`, consistent with existing flows). The
+`config` result tells the user to `sync` to apply.
+
+### 7.4 Repo wiki config (`.okh/wiki.yml`)
+
+Deliberately minimal; most behavior is fixed by this design:
+
+```yaml
+title: <optional wiki Home title, defaults to the repo name>
+footer: <optional extra footer note>
+```
+
+Unknown keys are rejected (strict schema), leaving room to grow.
+
+## 8. Interfaces and files
+
+### 8.1 New files
+
+- `src/wiki/renderer.ts` — `WikiRenderer` (pure) + `WikiSite` types.
+- `src/wiki/repo.ts` — `WikiRepo` (clone/mirror/commit/push) + wiki URL
+  derivation.
+- `src/wiki/publish.ts` — `buildAndPublishWiki` orchestrator + discovery.
+- `src/wiki/config.ts` — `.okh/wiki.yml` schema (zod).
+- `src/wiki/cli.ts` — `wiki publish` subcommand (arg parsing, `--dry-run`,
+  process exit codes).
+- `resources/wiki/workflow.yml` — the scaffolded workflow template.
+
+### 8.2 Changed files
+
+- `src/index.ts` — dispatch: `argv[2] === "wiki"` → `wiki/cli.ts`; otherwise the
+  existing MCP server path (unchanged default behavior).
+- `src/registry/schema.ts` — add optional `wiki` to `ContainerEntry`.
+- `src/container/service.ts` — container-scope config get/set; enable/disable
+  scaffolding + GitHub-origin guard.
+- `src/server/tools.ts` + tool schema/meta — allow `config { container }` scope
+  and format container config output.
+
+### 8.3 `Git` additions (if needed)
+
+`WikiRepo` may need a couple of thin helpers not already on `Git` (e.g. remove
+all tracked files, push to an explicit URL with an inline token, init + first
+push to `master`). These follow the existing `Git` wrapper style and are covered
+by the integration tests in Section 9.
+
+## 9. Testing strategy
+
+- **Unit (pure):** `WikiRenderer` over fixture module trees asserts the exact
+  `WikiSite` — pages, sidebar grouping, footer, header banners, link and asset
+  rewriting, reserved-file handling, collision de-dup, and sorted determinism
+  (identical input → identical bytes). Wiki URL derivation is tested across
+  `https`, `ssh`, scp-style `git@host:path`, and `.git`/no-`.git` origins.
+- **Integration:** `WikiRepo` runs against a local **bare repo** standing in for
+  `.wiki.git` in temp dirs (mirroring the existing GitBackend test approach):
+  clean-mirror removes stale pages, commit-only-on-change, initialize an empty
+  wiki, and push. No network.
+- **Control plane:** enabling scaffolds the workflow + `.okh/wiki.yml`; disabling
+  removes them; guards throw `OkhError` for non-git and non-GitHub origins;
+  container-scope `config` get/set round-trips the `wiki` field.
+- **CLI:** `wiki publish` dispatch is exercised, including `--dry-run` (render,
+  no push) and non-zero exit on wiki-disabled/push failure.
+
+## 10. Edge cases
+
+- **Non-GitHub git origin / local / onedrive backend:** enable is refused with a
+  clear message.
+- **No knowledge modules in the repo:** publish a minimal `Home.md` stating there
+  is nothing to show; exit success (not a failure).
+- **Wikis disabled on the repo:** CLI exits non-zero with instructions to enable
+  Wikis in repo settings.
+- **Dangling cross-links / missing assets:** left as-is, warning recorded, publish
+  still succeeds.
+- **Slug collisions within a module:** deterministic de-dup with a warning.
+- **Unchanged content:** no commit, outcome reported as up-to-date.
+- **Empty/first-time wiki:** initialized and pushed on `master`.
+
+## 11. Rollout
+
+1. Land the pure `WikiRenderer` and its unit tests.
+2. Add `WikiRepo` + integration tests.
+3. Add the `wiki publish` CLI subcommand and `index.ts` dispatch.
+4. Add the registry `wiki` field, container-scope `config`, and scaffolding.
+5. Add the workflow template resource and wire scaffolding to it.
+6. Document enabling wiki (prerequisite: turn on Wikis; run `config` then `sync`).
