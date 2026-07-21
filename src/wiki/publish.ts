@@ -89,19 +89,33 @@ export async function buildAndPublishWiki(
   const resolve = opts.resolve ?? defaultResolve;
   const info = await resolve(repoRoot, git);
 
-  const discovered = await discoverModules(repoRoot);
-  const modules: RenderModule[] = [];
-  for (const m of discovered) {
-    if (m.manifest?.type !== "knowledge") continue;
-    const name = basename(m.path);
-    const moduleRoot = join(repoRoot, m.path);
-    modules.push(await buildRenderModule(moduleRoot, name, m.manifest.description));
+  const config = await loadWikiConfig(repoRoot);
+  if (!config.module) {
+    throw new OkhError(
+      "INVALID_ARGUMENT",
+      "Set 'module:' in .okh/wiki.yml to the knowledge module to publish (e.g. module: telemetry).",
+    );
   }
 
+  const discovered = await discoverModules(repoRoot);
+  const knowledge = discovered.filter((m) => m.manifest?.type === "knowledge");
+  const picked = knowledge.find((m) => basename(m.path) === config.module);
+  if (!picked || picked.manifest?.type !== "knowledge") {
+    const avail = knowledge.map((m) => basename(m.path)).join(", ") || "(none)";
+    throw new OkhError(
+      "INVALID_ARGUMENT",
+      `Knowledge module '${config.module}' not found. Available knowledge modules: ${avail}.`,
+    );
+  }
+  const moduleModel = await buildRenderModule(
+    join(repoRoot, picked.path),
+    basename(picked.path),
+    picked.manifest.description,
+  );
+
   const timestamp = (opts.now?.() ?? new Date()).toISOString();
-  const config = await loadWikiConfig(repoRoot);
   const site = renderWikiSite({
-    modules,
+    module: moduleModel,
     context: {
       owner: info.owner,
       repo: info.repo,
