@@ -47,7 +47,7 @@ describe("renderWikiSite skeleton", () => {
   it("sorts pages by path", () => {
     const site = renderWikiSite(input());
     const paths = site.pages.map((p) => p.path);
-    const sorted = [...paths].sort();
+    const sorted = [...paths].sort((a, b) => a.localeCompare(b));
     expect(paths).toEqual(sorted);
   });
 
@@ -68,5 +68,51 @@ describe("renderWikiSite skeleton", () => {
     expect(paths).toContain("design/a.md");
     expect(paths.some((p) => /-2\.md$/.test(p))).toBe(true);
     expect(site.warnings.some((w) => w.kind === "collision")).toBe(true);
+  });
+});
+
+describe("structural pages", () => {
+  it("emits Home, _Sidebar and _Footer", () => {
+    const site = renderWikiSite(input());
+    const paths = site.pages.map((p) => p.path);
+    expect(paths).toContain("Home.md");
+    expect(paths).toContain("_Sidebar.md");
+    expect(paths).toContain("_Footer.md");
+  });
+
+  it("Home links each module landing and Sidebar lists concepts", () => {
+    const site = renderWikiSite(input());
+    const home = site.pages.find((p) => p.path === "Home.md")!;
+    expect(home.content).toContain("[design](design/index)");
+    const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
+    expect(side.content).toContain("## design");
+    expect(side.content).toContain("[Retry](design/patterns/retry)");
+  });
+
+  it("Footer records owner/repo, short commit and timestamp", () => {
+    const site = renderWikiSite(input());
+    const footer = site.pages.find((p) => p.path === "_Footer.md")!;
+    expect(footer.content).toContain("acme/widgets");
+    expect(footer.content).toContain("abcdef1");
+    expect(footer.content).toContain("2026-07-20T00:00:00.000Z");
+  });
+
+  it("shows an empty-state message on Home when there are no modules", () => {
+    const inp = input();
+    inp.modules = [];
+    const site = renderWikiSite(inp);
+    const home = site.pages.find((p) => p.path === "Home.md")!;
+    expect(home.content).toContain("_No knowledge modules are published yet._");
+    expect(site.pages.map((p) => p.path)).toEqual(
+      expect.arrayContaining(["Home.md", "_Sidebar.md", "_Footer.md"]),
+    );
+  });
+
+  it("appends configured footer text", () => {
+    const inp = input();
+    inp.context = { ...baseCtx, config: { footer: "Internal use only." } };
+    const site = renderWikiSite(inp);
+    const footer = site.pages.find((p) => p.path === "_Footer.md")!;
+    expect(footer.content).toContain("Internal use only.");
   });
 });
