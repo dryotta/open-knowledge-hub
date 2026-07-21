@@ -1,0 +1,7 @@
+type: workspace
+description: Investigates evidence-based choices, tradeoffs, risks, and recommendations.
+config:
+  lead: agents/lead
+  agents:
+    - agents/researcher
+    - agents/editor

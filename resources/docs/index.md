@@ -17,6 +17,7 @@ This directory is the single source of truth for current OKH behavior:
 | [Getting started](okh://docs/getting-started.md) | Prerequisites, installation, and onboarding |
 | [Concepts and routing](okh://docs/concepts.md) | Hub, container, module, skill, resource, and intent routing |
 | [Usage](okh://docs/usage.md) | Natural-language and tool-call examples |
+| [Workspaces and projects](okh://docs/workspaces.md) | Reusable workflows, durable projects, client-executed runs, interventions, and results |
 | [Reference](okh://docs/reference.md) | Tools, resources, built-in skills, manifests, and variables |
 | [Agent templates](okh://docs/agent-templates.md) | Research-backed recipes for creating focused Copilot agents |
 | [Resource architecture](okh://docs/resources.md) | MCP resource design, security, and provider extension |

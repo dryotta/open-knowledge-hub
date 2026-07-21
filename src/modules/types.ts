@@ -1,5 +1,5 @@
 /** The built-in module types. Order is not significant. */
-export const BUILTIN_MODULE_TYPES = ["knowledge", "skills", "memory", "llmwiki", "agents"] as const;
+export const BUILTIN_MODULE_TYPES = ["knowledge", "skills", "memory", "llmwiki", "agents", "workspace"] as const;
 export type ModuleType = (typeof BUILTIN_MODULE_TYPES)[number];
 
 /** A module's on-disk `type` is any non-empty string; unknown => custom. */

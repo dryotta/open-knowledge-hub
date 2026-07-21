@@ -4,7 +4,7 @@ End-to-end tests that exercise the **real** Open Knowledge Hub MCP server **insi
 GitHub Copilot CLI** against real fixture containers. There is **no external grader
 key** — both the agent and the judge run through Copilot CLI.
 
-The same 29 scenarios run two ways:
+The same 36 scenarios run two ways:
 
 - **Automated** — [promptfoo](https://promptfoo.dev) drives a custom Copilot-CLI
   provider, applies deterministic `javascript` assertions plus a Copilot-CLI **judge**,
@@ -53,13 +53,13 @@ Key files:
 | `promptfooconfig.smoke.yaml` | representative local tier used by `npm run eval:smoke` |
 | `scenarios/shared/provider.ts` | the shared provider — the Copilot provider preconfigured with the default model/timeout |
 | `scenarios/<verb>/<case>.yaml` | one scenario (a one-element list): `config.vars` (prompt+env) + `tests[0].assert` |
-| `environments.ts` | defines the 6 environments **and** provisions them (`provisionEnvironment`) |
+| `environments.ts` | defines the 7 environments **and** provisions them (`provisionEnvironment`) |
 | `provider/copilotProvider.ts` | provisions the scenario's env, drives the (multi-turn) conversation, returns transcript + metadata |
 | `copilot.ts` | spawns Copilot CLI turns; `runConversation` drives multi-turn (session resume, JSON output); `parseCopilotEvents` extracts messages/tools/cost |
 | `assertions/*.ts` | deterministic checks + the judge |
 | `run-scenarios.ts` | selects the tier, configures concurrency/judge votes, runs promptfoo, and reports run/cleanup timing |
 | `manual.ts` | one-shot manual harness (`npm run manual`) with isolated homes and automatic cleanup |
-| `fixtures/` | the seed containers (`kb-hub`, `git-hub`, `plain-notes`, `custom-hub`, `health-hub`, `wiki-hub`) |
+| `fixtures/` | seed containers, including the multi-container workspace discovery fixture |
 
 ---
 
@@ -83,7 +83,7 @@ Key files:
 
 `eval/promptfooconfig.yaml` is the full release tier. It declares one pass-through
 prompt, the shared provider once, and every scenario file in measured slow-first order.
-`promptfooconfig.smoke.yaml` uses the same provider and scenarios but selects eight
+`promptfooconfig.smoke.yaml` uses the same provider and scenarios but selects nine
 representative cases for local iteration.
 
 ```yaml
@@ -145,6 +145,7 @@ side-effect assertions read: `containerPath`, `fixtureDir`, `originPath`).
 | `custom` | registered | `custom-hub` (local) | `inspect/custom-module`, `run/custom-skill` |
 | `health` | registered | `health-hub` (local); `workspaceDir` = `fixtures/health-source` | `ingest/into-existing-module`, `lint/*` |
 | `git` | registered | `git-hub` (git-auto, with a seeded bare origin) | `learn/useful-fact` (sync) |
+| `workspace` | registered | `work-hub` (git-auto) + `personal-hub` (local), with seeded projects/runs | workspace discovery, orchestration, HITL, revision, lifecycle, and guardrails |
 
 - **`registered`** copies each hub into `OKH_HOME/containers/<name>` and registers it;
   `git-auto` hubs also get a throwaway **bare origin** seeded and cloned so `sync` has
@@ -166,6 +167,11 @@ Fixtures (`fixtures/`):
 - **`custom-hub`** — a container with a `recipes` custom module including a `cook` skill.
 - **`health-hub`** — a container with a `health` knowledge module (retains source copies) and a `wiki` llmwiki module seeded with unhealthy state (orphan page, dangling link) for lint scenarios.
 - **`wiki-hub`** — a container with a `new-wiki` llmwiki module (pre-initialized scope contract) and a `wiki` llmwiki module with clean health baseline for initialize/ask/write scenarios.
+- **`workspace-work-hub` + `workspace-personal-hub`** — presentation,
+  investigation, and decoy writing workspaces. Provisioning uses the production
+  workspace service to seed two immutable presentation results, a paused investigation,
+  duplicate project IDs, snapshots, and machine-local staging, then commits that state
+  as the clean baseline before Copilot starts.
 
 ### Multi-turn scenarios
 
@@ -245,6 +251,9 @@ side-effects — no model needed:
 | `wake-phrase-set` | the wake phrase preference was set |
 | `source-retained` | a source file was copied into the module's `sources/` folder |
 | `llmwiki-state` | llmwiki module artifacts: index text, group index files, no content pages, expected new page type/terms, index+log changed, clean health |
+| `workspace-discovery` | root/container inspection, cross-workspace list searches, and mutation targeting after natural-language discovery |
+| `workspace-mutations` | successful workspace mutations use RFC 4122 command IDs, required ETags, and safe command-ID reuse |
+| `workspace-state` | project/run lifecycle, event order, evidence, result hashes, prior-result immutability, selected-result reads, and no-mutation guardrails |
 
 `tools-called` example with structured tuples and `ordered: true`:
 

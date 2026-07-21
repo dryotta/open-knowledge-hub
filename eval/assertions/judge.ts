@@ -6,6 +6,10 @@ import { readTree, diffTrees } from "./_compare.js";
 interface ArtifactsConfig {
   /** Module directory (under the container) whose files the judge should see. */
   module?: string;
+  /** Restrict included files to these case-insensitive suffixes, such as ".md". */
+  extensions?: string[];
+  /** Grade only authoritative on-disk artifacts, excluding the execution transcript. */
+  includeTranscript?: boolean;
   /** Per-file content cap (chars) before truncation. Default 4000. */
   maxCharsPerFile?: number;
   /** Max number of files to include. Default 10. */
@@ -37,6 +41,11 @@ export async function buildArtifactsSection(
     paths = [...d.added, ...d.changed].sort();
   } else {
     paths = [...after.keys()].sort();
+  }
+  if (cfg.extensions?.length) {
+    const extensions = cfg.extensions.map((extension) => extension.toLocaleLowerCase());
+    paths = paths.filter((path) =>
+      extensions.some((extension) => path.toLocaleLowerCase().endsWith(extension)));
   }
   if (paths.length === 0) return "";
   const maxChars = cfg.maxCharsPerFile ?? DEFAULT_MAX_CHARS;
@@ -94,7 +103,15 @@ export default async function judge(
   const meta = context.providerResponse?.metadata ?? {};
   let graded = output;
   if (context.config?.artifacts) {
-    graded += await buildArtifactsSection(meta, context.config.artifacts);
+    const artifacts = await buildArtifactsSection(meta, context.config.artifacts);
+    if (context.config.artifacts.includeTranscript === false) {
+      if (!artifacts) {
+        return { pass: false, score: 0, reason: "no authoritative artifacts available for judging" };
+      }
+      graded = artifacts;
+    } else {
+      graded += artifacts;
+    }
   }
   const abortController = new AbortController();
   const abort = (): void => abortController.abort(new Error("eval interrupted"));

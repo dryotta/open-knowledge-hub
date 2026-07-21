@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -45,6 +45,9 @@ export interface JudgeOptions {
 
 export const MAX_JUDGE_K = 11;
 const DEFAULT_JUDGE_MODEL = "gpt-5.6-luna";
+const MAX_INLINE_JUDGE_PROMPT_CHARS = 16_000;
+const CUSTOM_INSTRUCTIONS_JUDGE_PROMPT =
+  "Apply the grading instructions for this isolated workspace and return only the requested JSON array.";
 
 class JudgeProcessError extends Error {}
 
@@ -145,13 +148,22 @@ async function judgeOnce(
   await mkdir(copilotHome, { recursive: true });
   await mkdir(workspace, { recursive: true });
   try {
+    let runnerPrompt = prompt;
+    let loadCustomInstructions = false;
+    if (prompt.length > MAX_INLINE_JUDGE_PROMPT_CHARS) {
+      const promptPath = join(workspace, "AGENTS.md");
+      await writeFile(promptPath, prompt, "utf8");
+      runnerPrompt = CUSTOM_INSTRUCTIONS_JUDGE_PROMPT;
+      loadCustomInstructions = true;
+    }
     const res = await runner({
-      prompt,
+      prompt: runnerPrompt,
       model: opts.model ?? process.env.OKH_JUDGE_MODEL ?? DEFAULT_JUDGE_MODEL,
       copilotHome,
       cwd: workspace,
       timeoutMs: opts.timeoutMs ?? 180_000,
       abortSignal: opts.abortSignal,
+      ...(loadCustomInstructions ? { loadCustomInstructions: true } : {}),
     });
     if (res.processFailure || res.code !== 0) {
       const code = res.code === null ? "missing" : String(res.code);

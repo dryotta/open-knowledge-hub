@@ -279,6 +279,11 @@ export class ContainerService {
     this.backends = backends ?? createBackendRegistry(git, gh);
   }
 
+  /** Serialize a module mutation with config, todo, and sync writes. */
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    return this.mutex.run(operation);
+  }
+
   /**
    * Load the registry, automatically migrating v1 → v2 using the gh login when
    * needed. Passes `resolveGitLogin` so legacy git+pr entries are resolved to

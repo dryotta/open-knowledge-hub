@@ -9,6 +9,9 @@ import {
   isEnvName,
 } from "../eval/environments.js";
 import { makeTempDir, testRun } from "../test/helpers.js";
+import { fileEtag, stagingDirectory } from "../src/workspaces/files.js";
+import { parseProjectReadme } from "../src/workspaces/markdown.js";
+import { readEvents, runHistory, successfulResults } from "../src/workspaces/events.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -18,7 +21,15 @@ const exists = async (p: string) => !!(await stat(p).catch(() => null));
 
 describe("environments", () => {
   it("defines exactly the eval environments", () => {
-    expect(Object.keys(environments).sort()).toEqual(["custom", "empty", "git", "health", "local-and-git", "wiki"]);
+    expect(Object.keys(environments).sort()).toEqual([
+      "custom",
+      "empty",
+      "git",
+      "health",
+      "local-and-git",
+      "wiki",
+      "workspace",
+    ]);
     expect(isEnvName("git")).toBe(true);
     expect(isEnvName("nope")).toBe(false);
   });
@@ -157,5 +168,110 @@ describe("environments", () => {
     expect(await exists(join(prov.workspace, "lab-results.txt"))).toBe(true);
     const reg = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
     expect(reg.containers[0].name).toBe("health-hub");
+  });
+
+  it("workspace seeds valid lifecycle state and commits a clean baseline", async () => {
+    const prov = await provisionEnvironment("workspace", {
+      repoRoot: "C:/repo",
+      runner: testRun,
+    });
+    cleanups.push(prov.root);
+
+    const registry = JSON.parse(await readFile(join(prov.okhHome, "registry.json"), "utf8"));
+    const byName = Object.fromEntries(
+      registry.containers.map((entry: { name: string }) => [entry.name, entry]),
+    );
+    expect(Object.keys(byName).sort()).toEqual(["personal-hub", "work-hub"]);
+    expect(byName["work-hub"].backend.type).toBe("git");
+    expect(byName["personal-hub"].backend.type).toBe("local");
+    expect(prov.containerPaths).toMatchObject({
+      "work-hub": byName["work-hub"].localPath,
+      "personal-hub": byName["personal-hub"].localPath,
+    });
+    expect(await exists(prov.baselinePaths!["work-hub"]!)).toBe(true);
+    expect(await exists(prov.baselinePaths!["personal-hub"]!)).toBe(true);
+    expect(await exists(prov.stagingBaselinePath!)).toBe(true);
+    expect(await exists(join(
+      prov.stagingBaselinePath!,
+      "work-hub",
+      "investigations",
+      "supplier-risk",
+      "2026-06-25-001",
+      "draft.md",
+    ))).toBe(true);
+    expect(prov.fixtureDir).toBe(prov.baselinePaths!["work-hub"]);
+    expect(prov.baselineCommitCount).toBe(2);
+
+    const work = prov.containerPaths!["work-hub"]!;
+    const launchRoot = join(work, "presentations", "projects", "launch-readiness");
+    const launchReadme = join(launchRoot, "README.md");
+    const launch = parseProjectReadme(
+      "launch-readiness",
+      await readFile(launchReadme, "utf8"),
+      await fileEtag(launchReadme),
+    );
+    const launchEvents = await readEvents(join(launchRoot, "events.json"), work);
+    expect(launch).toMatchObject({
+      status: "archived",
+      activeRun: null,
+      tags: ["launch"],
+    });
+    expect(successfulResults(launchEvents).map((result) => result.runId)).toEqual([
+      "2026-06-15-001",
+      "2026-06-01-001",
+    ]);
+    expect(launch.result).toContain("2026-06-15-001");
+
+    const supplierRoot = join(work, "investigations", "projects", "supplier-risk");
+    const supplierReadme = join(supplierRoot, "README.md");
+    const supplier = parseProjectReadme(
+      "supplier-risk",
+      await readFile(supplierReadme, "utf8"),
+      await fileEtag(supplierReadme),
+    );
+    const supplierEvents = await readEvents(join(supplierRoot, "events.json"), work);
+    expect(supplier.activeRun).toBe("2026-06-25-001");
+    expect(runHistory(supplierEvents, supplier.activeRun!).state).toBe("paused");
+    expect(
+      await readFile(
+        join(
+          stagingDirectory(
+            {
+              home: prov.okhHome,
+              containersDir: join(prov.okhHome, "containers"),
+              registryFile: join(prov.okhHome, "registry.json"),
+              preferencesFile: join(prov.okhHome, "preferences.json"),
+            },
+            "work-hub",
+            "investigations",
+            "supplier-risk",
+            supplier.activeRun!,
+          ),
+          "draft.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("decision-owner preference");
+
+    for (const container of ["work-hub", "personal-hub"]) {
+      expect(
+        await exists(
+          join(
+            prov.containerPaths![container]!,
+            container === "work-hub" ? "presentations" : "writing",
+            "projects",
+            "quarterly-review",
+            "README.md",
+          ),
+        ),
+      ).toBe(true);
+    }
+
+    const { stdout: statusOutput } = await testRun(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: work },
+    );
+    expect(statusOutput.trim()).toBe("");
   });
 });

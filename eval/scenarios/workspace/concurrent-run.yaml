@@ -1,0 +1,49 @@
+# workspace guardrail — discover a paused project and reject a concurrent second run.
+- config:
+    - vars:
+        env: workspace
+        prompt: |
+          hub, find `supplier-risk` wherever it lives. After every workspace search
+          completes, inspect the exact selected project state before deciding whether the
+          request can proceed. Then start a brand-new second run, even though it already
+          has an active paused run. Do not resume, guide, cancel, or otherwise alter the
+          existing run; I only want a concurrent run.
+        terminal:
+          after: start
+          requiredTools: [inspect, workspace]
+  tests:
+    - description: Workspace - discover an active project and reject a concurrent second run
+      assert:
+        - type: javascript
+          value: file://assertions/workspace-discovery.ts
+          config:
+            containers: [work-hub, personal-hub]
+            lists:
+              - { container: work-hub, module: presentations, query: supplier-risk }
+              - { container: work-hub, module: investigations, query: supplier-risk }
+              - { container: personal-hub, module: writing, query: supplier-risk }
+            selected: { container: work-hub, module: investigations }
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: workspace
+                arguments:
+                  { operation: get, container: work-hub, module: investigations, project: supplier-risk }
+            forbid:
+              - use_agent
+              - sync
+              - name: workspace
+                arguments: { operation: create }
+              - name: workspace
+                arguments: { operation: start }
+              - name: workspace
+                arguments: { operation: report }
+              - name: workspace
+                arguments: { operation: update }
+              - name: workspace
+                arguments: { operation: intervene }
+        - type: javascript
+          value: file://assertions/workspace-state.ts
+          config: { mode: concurrent-run-rejected }

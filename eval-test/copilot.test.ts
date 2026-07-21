@@ -275,6 +275,7 @@ describe("parseCopilotEvents", () => {
     expect(ev0.completed).toBe(true);
     expect(ev0.success).toBe(true);
     expect(ev0.turn).toBe(1);
+    expect(ev0.result).toBe("done");
     // Full arguments preserved in toolEvents (not truncated)
     expect((ev0.arguments as { input: string }).input).toBe(longInput);
 
@@ -335,7 +336,7 @@ describe("parseCopilotEvents", () => {
     expect(p.render).toContain("Created container my-notes");
     expect(p.render).toContain("Done — created my-notes.");
     expect((p as { toolEvents?: unknown }).toolEvents).toEqual([
-     { turn: 1, callId: "c1", server: "open-knowledge-hub", tool: "add", arguments: { source: "my-notes", create: true }, completed: true, success: true },
+     { turn: 1, callId: "c1", server: "open-knowledge-hub", tool: "add", arguments: { source: "my-notes", create: true }, completed: true, success: true, startSequence: 2, completionSequence: 3, result: "Created container my-notes with module kb." },
     ]);
   });
 });
@@ -482,6 +483,40 @@ describe("runConversation", () => {
     expect(res.toolEvents[0]).toMatchObject({ tool: "run", turn: 1 });
     expect(res.toolEvents[1]).toMatchObject({ tool: "config", turn: 2 });
     expect(res.timings).toEqual({ totalMs: 30, agentMs: 19, toolMs: 11 });
+  });
+
+  it("rebases per-turn tool sequences into one monotonic conversation timeline", async () => {
+    const runner = fakeRunner([
+      {
+        match: "start",
+        agent: "Please confirm.",
+        toolEvents: [{
+          ...okh("c1", "inspect"),
+          startSequence: 5,
+          completionSequence: 8,
+        }],
+      },
+      {
+        match: "confirm",
+        agent: "Done.",
+        toolEvents: [{
+          ...okh("c2", "workspace"),
+          startSequence: 2,
+          completionSequence: 4,
+        }],
+      },
+    ], []);
+    const res = await runConversation(
+      {
+        initial: "start",
+        responses: [{ id: "confirm", after: "start", when: "confirm", send: "confirm" }],
+        terminal: { after: "confirm" },
+      },
+      ctx(runner),
+    );
+
+    expect(res.toolEvents[0]).toMatchObject({ startSequence: 5, completionSequence: 8 });
+    expect(res.toolEvents[1]!.startSequence).toBeGreaterThan(res.toolEvents[0]!.completionSequence!);
   });
 
   it("preserves structured tool event order across resumed turns", async () => {

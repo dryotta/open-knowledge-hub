@@ -1,0 +1,6 @@
+type: workspace
+description: Drafts personal notes and articles; it is not for investigations or presentations.
+config:
+  lead: agents/lead
+  agents:
+    - agents/writer

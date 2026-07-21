@@ -5,6 +5,7 @@ import { ContainerService } from "./container/service.js";
 import { buildServer } from "./server/index.js";
 import { TodoService } from "./todos/service.js";
 import { tryStartWebServer } from "./web/server.js";
+import { WorkspaceService } from "./workspaces/service.js";
 
 /**
  * Entry point: build the server and connect it over stdio (the transport every
@@ -14,12 +15,18 @@ async function main(): Promise<void> {
   const paths = resolvePaths();
   const service = new ContainerService(paths);
   const todoService = new TodoService(service);
-  const web = await tryStartWebServer({ service, todos: todoService });
+  const workspaceService = new WorkspaceService(service, paths);
+  const web = await tryStartWebServer({
+    service,
+    todos: todoService,
+    workspaces: workspaceService,
+  });
   try {
     const server = await buildServer({
       paths,
       service,
       todoService,
+      workspaceService,
       ...(web ? { todoWebUrl: web.todosUrl } : {}),
     });
     const transport = new StdioServerTransport();

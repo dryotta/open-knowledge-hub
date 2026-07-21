@@ -12,6 +12,8 @@ export interface CopilotRunOptions {
   timeoutMs?: number;
   /** Extra env merged over process.env (e.g. tokens). */
   extraEnv?: NodeJS.ProcessEnv;
+  /** Load instructions from the isolated working directory. */
+  loadCustomInstructions?: boolean;
   abortSignal?: AbortSignal;
 }
 
@@ -154,7 +156,11 @@ function terminationDiagnostic(
  * Default single-shot runner: spawns `copilot -p ... --allow-all [--model M]`,
  * captures stdout+stderr as text. Used by the judge for grading calls.
  */
-export function buildJudgeCopilotArgs(prompt: string, model?: string): string[] {
+export function buildJudgeCopilotArgs(
+  prompt: string,
+  model?: string,
+  loadCustomInstructions = false,
+): string[] {
   const args = [
     "-p",
     prompt,
@@ -162,11 +168,13 @@ export function buildJudgeCopilotArgs(prompt: string, model?: string): string[] 
     "--available-tools=",
     "--silent",
     "--no-color",
-    "--no-custom-instructions",
+  ];
+  if (!loadCustomInstructions) args.push("--no-custom-instructions");
+  args.push(
     "--disable-builtin-mcps",
     "--no-remote-export",
     "--no-auto-update",
-  ];
+  );
   if (model) args.push("--model", model);
   return args;
 }
@@ -182,7 +190,11 @@ export const spawnCopilot: CopilotRunner = (opts) =>
       });
       return;
     }
-    const args = buildJudgeCopilotArgs(opts.prompt, opts.model);
+    const args = buildJudgeCopilotArgs(
+      opts.prompt,
+      opts.model,
+      opts.loadCustomInstructions,
+    );
     const child = spawn("copilot", args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.extraEnv, COPILOT_HOME: opts.copilotHome },
@@ -246,6 +258,12 @@ export interface ToolEvent {
   arguments: unknown;
   completed: boolean;
   success: boolean;
+  /** JSONL event sequence at tool start, rebased across turns after aggregation. */
+  startSequence?: number;
+  /** JSONL event sequence at tool completion, rebased across turns after aggregation. */
+  completionSequence?: number;
+  /** Captured completion text for deterministic provenance assertions. */
+  result?: string;
 }
 
 export interface ParsedTurn {
@@ -305,6 +323,7 @@ export function parseCopilotEvents(jsonl: string, turn = 1): ParsedTurn {
   let cost = 0;
   let sessionId: string | null = null;
   let code: number | null = null;
+  let eventSequence = 0;
 
   const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
@@ -317,6 +336,7 @@ export function parseCopilotEvents(jsonl: string, turn = 1): ParsedTurn {
     } catch {
       continue;
     }
+    eventSequence += 1;
     const d = e.data ?? {};
     switch (e.type) {
       case "assistant.message": {
@@ -332,7 +352,16 @@ export function parseCopilotEvents(jsonl: string, turn = 1): ParsedTurn {
         const label = server ? `${server}:${tool}` : tool;
         const callId = d.toolCallId ?? `synthetic-${toolEvents.length}`;
         if (d.toolCallId) toolLabel.set(d.toolCallId, label);
-        const ev: ToolEvent = { turn, callId, server, tool, arguments: d.arguments, completed: false, success: false };
+        const ev: ToolEvent = {
+          turn,
+          callId,
+          server,
+          tool,
+          arguments: d.arguments,
+          completed: false,
+          success: false,
+          startSequence: eventSequence,
+        };
         toolEvents.push(ev);
         if (d.toolCallId) toolEventMap.set(d.toolCallId, ev);
         const args = d.arguments !== undefined ? truncate(JSON.stringify(d.arguments), 200) : "";
@@ -346,6 +375,11 @@ export function parseCopilotEvents(jsonl: string, turn = 1): ParsedTurn {
           if (ev) {
             ev.completed = true;
             ev.success = d.success === true;
+            ev.completionSequence = eventSequence;
+            const result = typeof d.result?.content === "string"
+              ? d.result.content
+              : d.result?.detailedContent;
+            if (typeof result === "string") ev.result = result;
           }
         }
         const res = typeof d.result?.content === "string" ? d.result.content : d.result?.detailedContent ?? "";
@@ -606,6 +640,8 @@ export interface ConversationScript {
 export interface ConversationTurn {
   user: string;
   agent: string;
+  /** Last spoken assistant message for this turn, excluding tool traces/results. */
+  finalMessage: string;
   tools: string[];
   toolEvents: ToolEvent[];
 }
@@ -687,6 +723,7 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
   const turns: ConversationTurn[] = [];
   const allToolEvents: ToolEvent[] = [];
   const toolSet = new Set<string>();
+  let sequenceOffset = 0;
   let cost = 0;
   let code: number | null = null;
   let state = "start";
@@ -712,14 +749,38 @@ export async function runConversation(script: ConversationScript, ctx: RunConver
       abortSignal: ctx.abortSignal,
       turn: turns.length + 1,
     });
-    turns.push({ user, agent: r.render || r.messages.join("\n"), tools: r.tools, toolEvents: r.toolEvents });
+    const toolEvents = r.toolEvents.map((event) => ({
+      ...event,
+      ...(event.startSequence === undefined
+        ? {}
+        : { startSequence: event.startSequence + sequenceOffset }),
+      ...(event.completionSequence === undefined
+        ? {}
+        : { completionSequence: event.completionSequence + sequenceOffset }),
+    }));
+    const turnSequenceMax = r.toolEvents.reduce(
+      (maximum, event) => Math.max(
+        maximum,
+        event.startSequence ?? 0,
+        event.completionSequence ?? 0,
+      ),
+      0,
+    );
+    sequenceOffset += turnSequenceMax;
+    turns.push({
+      user,
+      agent: r.render || r.messages.join("\n"),
+      finalMessage: r.lastMessage,
+      tools: r.tools,
+      toolEvents,
+    });
     if (r.timings) {
       timings.totalMs += r.timings.totalMs;
       timings.agentMs += r.timings.agentMs;
       timings.toolMs += r.timings.toolMs;
     }
     finalMessage = r.lastMessage;
-    for (const ev of r.toolEvents) {
+    for (const ev of toolEvents) {
       allToolEvents.push(ev);
       if (ev.completed && ev.success && ev.server === OKH_SERVER) toolSet.add(ev.tool);
     }
