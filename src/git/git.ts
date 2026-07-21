@@ -237,4 +237,20 @@ export class Git {
   async abortRebase(cwd: string): Promise<void> {
     await this.git(["rebase", "--abort"], cwd);
   }
+
+  /** Initialise a new repo at `cwd` with `branch` as the initial branch. */
+  async initWithBranch(cwd: string, branch: string): Promise<void> {
+    await this.git(["init", "-b", branch], cwd);
+  }
+
+  /** Push `refspec` (e.g. `HEAD:refs/heads/master`) directly to `url`. */
+  async pushUrl(cwd: string, url: string, refspec: string): Promise<void> {
+    await this.git(["push", url, refspec], cwd);
+  }
+
+  /** The configured URL of `remote`. */
+  async remoteUrl(cwd: string, remote: string): Promise<string> {
+    const out = await this.git(["remote", "get-url", remote], cwd);
+    return out.trim();
+  }
 }
