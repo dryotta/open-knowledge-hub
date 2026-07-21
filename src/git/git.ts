@@ -135,6 +135,35 @@ export class Git {
     await this.git(["commit", "-m", message], cwd);
   }
 
+  /** Commit with an explicit committer + author identity (no ambient config needed). */
+  async commitAs(cwd: string, message: string, name: string, email: string): Promise<void> {
+    await this.git(
+      ["-c", `user.name=${name}`, "-c", `user.email=${email}`, "commit", "-m", message],
+      cwd,
+    );
+  }
+
+  /**
+   * SHA of the newest commit whose committer email is `email`, or `null` when
+   * none exists. Used by reverse sync to find the last bot-authored wiki commit.
+   */
+  async logLastCommitBy(cwd: string, email: string): Promise<string | null> {
+    const out = await this.git(
+      ["log", "-1", "--format=%H", "--fixed-strings", `--committer=${email}`],
+      cwd,
+    );
+    const sha = out.trim();
+    return sha.length > 0 ? sha : null;
+  }
+
+  /**
+   * Raw `git diff --name-status -M` over `range` restricted to `*.md`, with
+   * rename detection. Callers parse the `A|M|D|Rnnn` lines.
+   */
+  async nameStatus(cwd: string, range: string): Promise<string> {
+    return (await this.git(["diff", "--name-status", "-M", range, "--", "*.md"], cwd)).trim();
+  }
+
   async resetSoft(cwd: string, ref: string): Promise<void> {
     await this.git(["reset", "--soft", ref], cwd);
   }
