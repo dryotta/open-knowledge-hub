@@ -1035,7 +1035,10 @@ export class ContainerService {
     if (!configExists) {
       await writeFile(
         configPath,
-        "# Open Knowledge Hub wiki config\n# title: My Knowledge Base\n# footer: (c) My Org\n",
+        "# Open Knowledge Hub wiki config\n" +
+          "# module: <knowledge-module-folder>   # required: the single knowledge module to publish\n" +
+          "# title: My Knowledge Base\n" +
+          "# footer: (c) My Org\n",
         "utf8",
       );
     }
