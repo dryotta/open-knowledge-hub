@@ -28,6 +28,7 @@ const EXPECTED_COUNTS: Record<string, number> = {
   write: 1,
   todo: 1,
   todos: 1,
+  workspace: 7,
 };
 
 /** Every scenario config file (verb/<name>.yaml), skipping the shared/ folder. */
@@ -146,9 +147,9 @@ describe("promptfoo tier configs", () => {
     expect([...configured].sort()).toEqual(await scenarioFiles());
     expect(configured.slice(0, 4)).toEqual([
       "onboard/cold-start-conversation.yaml",
-      "initialize/llmwiki.yaml",
-      "ask/llmwiki-compounding.yaml",
-      "ingest/into-existing-module.yaml",
+      "workspace/guide-investigation.yaml",
+      "workspace/ambiguous-project.yaml",
+      "workspace/revise-project.yaml",
     ]);
   });
 
@@ -159,7 +160,7 @@ describe("promptfoo tier configs", () => {
     expect(smoke.providers).toEqual(full.providers);
     const fullRefs = new Set(full.scenarios as string[]);
     const smokeRefs = smoke.scenarios as string[];
-    expect(smokeRefs).toHaveLength(8);
+    expect(smokeRefs).toHaveLength(9);
     expect(smokeRefs.length).toBeLessThan(fullRefs.size);
     expect(smokeRefs.every((ref) => fullRefs.has(ref))).toBe(true);
     expect(smokeRefs).toEqual(expect.arrayContaining([
@@ -167,14 +168,15 @@ describe("promptfoo tier configs", () => {
       "file://scenarios/write/into-wiki.yaml",
       "file://scenarios/ask/answerable.yaml",
       "file://scenarios/help/grilling.yaml",
+      "file://scenarios/workspace/create-presentation.yaml",
     ]));
   });
 });
 
 describe("scenario configs", () => {
-  it("provides 29 scenario files across the expected verb folders", async () => {
+  it("provides 36 scenario files across the expected verb folders", async () => {
     const files = await scenarioFiles();
-    expect(files.length).toBe(29);
+    expect(files.length).toBe(36);
     const counts: Record<string, number> = {};
     for (const f of files) {
       const verb = f.split("/")[0];
@@ -328,6 +330,103 @@ describe("scenario routing contracts", () => {
       ordered?: boolean;
     };
   }
+
+  it("workspace revision syncs after report and allows read-only verification", async () => {
+    const scenario = await loadScenario("workspace/revise-project.yaml");
+    const cfg = toolsConfig(scenario);
+    const report = cfg.expect.findIndex(
+      (tool) =>
+        typeof tool !== "string"
+        && tool.name === "workspace"
+        && tool.arguments?.operation === "report",
+    );
+    const sync = cfg.expect.findIndex(
+      (tool) => typeof tool !== "string" && tool.name === "sync",
+    );
+    expect(report).toBeGreaterThanOrEqual(0);
+    expect(sync).toBeGreaterThan(report);
+    expect(scenario.config[0].vars.terminal.finalTool).toBeUndefined();
+  });
+
+  it("workspace revision preserves source boundaries in the new artifact", async () => {
+    const scenario = await loadScenario("workspace/revise-project.yaml");
+    const prompt = scenario.config[0].vars.prompt as string;
+    expect(prompt).toMatch(/sole evidence source/i);
+    expect(prompt).toMatch(/no supplied evidence\s+establishes the option's effect/i);
+    expect(prompt).toMatch(/do not add resource, scope, implementation/i);
+    expect(prompt).toMatch(/next steps may only\s+validate the two questions/i);
+    const judge = scenario.tests[0].assert.find(
+      (assertion: { value?: string }) => assertion.value === "file://assertions/judge.ts",
+    );
+    expect(judge.config.artifacts).toMatchObject({
+      extensions: [".md"],
+      includeTranscript: false,
+    });
+    expect(judge.config.criteria[0].text).toMatch(/does not add unsupported option effects/i);
+  });
+
+  it("presentation source boundaries distinguish facts from analysis", async () => {
+    const scenario = await loadScenario("workspace/create-presentation.yaml");
+    const prompt = scenario.config[0].vars.prompt as string;
+    expect(prompt).toMatch(/do not add a year or calculate any value/i);
+    expect(prompt).toMatch(/do not add a year/i);
+    expect(prompt).toMatch(/risks only as questions/i);
+    expect(prompt).toMatch(/do not derive an inactive-team count/i);
+    expect(prompt).toMatch(/do not characterize weekly activity as engagement/i);
+    const judge = scenario.tests[0].assert.find(
+      (assertion: { value?: string }) => assertion.value === "file://assertions/judge.ts",
+    );
+    const factual = judge.config.criteria.find(
+      (criterion: { id: string }) => criterion.id === "factual-fidelity",
+    );
+    expect(factual.text).toMatch(/questions about unknowns/i);
+    expect(factual.text).toMatch(/should not be penalized/i);
+    expect(judge.config.artifacts).toMatchObject({
+      extensions: [".md"],
+      includeTranscript: false,
+    });
+  });
+
+  it("concurrent-run refusal requires authoritative project inspection", async () => {
+    const scenario = await loadScenario("workspace/concurrent-run.yaml");
+    const prompt = scenario.config[0].vars.prompt as string;
+    expect(prompt).toMatch(/after every workspace search\s+completes/i);
+    expect(prompt).toMatch(/inspect the exact selected project state/i);
+  });
+
+  it("attention discovery forbids speculative workspace names", async () => {
+    const scenario = await loadScenario("workspace/cancel-attention.yaml");
+    const prompt = scenario.config[0].vars.prompt as string;
+    expect(prompt).toMatch(/first discover the exact workspaces/i);
+    expect(prompt).toMatch(/without guessing any\s+workspace names/i);
+  });
+
+  it("guided investigation waits for a durable checkpoint before sending preference", async () => {
+    const scenario = await loadScenario("workspace/guide-investigation.yaml");
+    const prompt = scenario.config[0].vars.prompt as string;
+    expect(prompt).toMatch(/before asking me[\s\S]*report the run paused and persist that checkpoint first/i);
+    const turns = scenario.config[0].vars.turns as Array<{
+      id: string;
+      after: string | string[];
+      when?: string;
+      send: string;
+    }>;
+    expect(turns).toEqual([
+      expect.objectContaining({
+        id: "reliability-guidance",
+        after: ["start", "checkpoint-reminder"],
+        when: expect.stringMatching(/checkpoint.*cost.*reliability.*risk/i),
+      }),
+      expect.objectContaining({
+        id: "checkpoint-reminder",
+        after: "start",
+      }),
+    ]);
+    expect(turns[0]!.when).toContain("\\?");
+    expect(scenario.config[0].vars.terminal.finalTool).toBeUndefined();
+    const cfg = toolsConfig(scenario);
+    expect(cfg.expect.every((tool) => typeof tool === "string" || !("turn" in tool))).toBe(true);
+  });
 
   it.each([
     ["remember/todo.yaml", "remember"],

@@ -1,0 +1,7 @@
+type: workspace
+description: Creates concise decision presentations and revises their immutable prior results.
+config:
+  lead: agents/lead
+  agents:
+    - agents/researcher
+    - agents/editor

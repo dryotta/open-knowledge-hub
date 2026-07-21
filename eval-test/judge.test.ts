@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, mkdir, writeFile } from "node:fs/promises";
+import { readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { makeTempDir } from "../test/helpers.js";
 import { extractJson, extractJsonArray, runJudgeCriteria, type JudgeTelemetry } from "../eval/judge.js";
@@ -113,6 +113,24 @@ describe("runJudgeCriteria", () => {
       if (prev === undefined) delete process.env.OKH_JUDGE_MODEL;
       else process.env.OKH_JUDGE_MODEL = prev;
     }
+  });
+
+  it("moves an oversized grading prompt from argv to isolated custom instructions", async () => {
+    const transcript = "grounded evidence\n".repeat(2_000);
+    let inlinePrompt = "";
+    let instructionPrompt = "";
+    const runner: CopilotRunner = async (opts) => {
+      inlinePrompt = opts.prompt;
+      expect(opts.loadCustomInstructions).toBe(true);
+      instructionPrompt = await readFile(join(opts.cwd, "AGENTS.md"), "utf8");
+      return { transcript: PASS_A, code: 0 };
+    };
+
+    await runJudgeCriteria([{ id: "a", text: "a" }], transcript, { k: 1, runner });
+
+    expect(inlinePrompt.length).toBeLessThan(1_000);
+    expect(instructionPrompt).toContain(transcript);
+    expect(instructionPrompt).toContain("Respond with ONLY a JSON array");
   });
 
   it("uses OKH_JUDGE_MODEL unless an explicit model is provided", async () => {
@@ -528,6 +546,19 @@ describe("buildArtifactsSection", () => {
     const out = await buildArtifactsSection({ containerPath: c }, { module: "mem" });
     expect(out).toContain("### mem/2026-01-01.md");
     expect(out).toContain("old entry");
+  });
+
+  it("filters artifacts by case-insensitive file extension", async () => {
+    const { c } = await pair();
+    await writeFile(join(c, "mem", "deck.MD"), "deck\n", "utf8");
+    await writeFile(join(c, "mem", "events.jsonl"), "event\n", "utf8");
+    const out = await buildArtifactsSection(
+      { containerPath: c },
+      { module: "mem", extensions: [".md"] },
+    );
+    expect(out).toContain("deck.MD");
+    expect(out).toContain("2026-01-01.md");
+    expect(out).not.toContain("events.jsonl");
   });
 
   it("returns empty string when nothing was written or config is incomplete", async () => {

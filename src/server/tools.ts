@@ -43,6 +43,8 @@ import { loadPromptFile } from "../prompts/templates.js";
 import type { OkhResourceRegistry } from "../resources/index.js";
 import { chunkResourceResult } from "../resources/embedding.js";
 import { renderUseAgentResult } from "./agentDelegation.js";
+import type { WorkspaceService } from "../workspaces/service.js";
+import { registerWorkspaceTool } from "./workspaceTool.js";
 
 /** Render the no-arg hub map with every runnable skill nested under its module. */
 function formatHub(r: HubMap): string {
@@ -57,6 +59,9 @@ function formatHub(r: HubMap): string {
     }
     if (moduleExample) break;
   }
+  const hasWorkspace = r.containers.some((container) =>
+    container.modules.some((module) => module.type === "workspace")
+  );
 
   const lines: string[] = [
     "# Hub",
@@ -70,6 +75,22 @@ function formatHub(r: HubMap): string {
     "`run` returns the skill's instructions for you to carry out — it does not do the work itself.",
     "",
   ];
+
+  if (hasWorkspace) {
+    lines.push(
+      "# Workspace project discovery",
+      "When an existing project is named without its exact container/module, call `workspace`",
+      "with `operation: \"list\"` and the project query in every workspace module.",
+      "Search all of them even after the first match. Select only after every workspace",
+      "responds; if more than one matches, ask the user to choose.",
+      "Never infer a project's location from its name, artifact type, or the first match.",
+      "After selecting one unique match, call `workspace:get` for that project before",
+      "deciding, acting, or refusing; list summaries are discovery-only.",
+      "Before project execution, run the workspace's `coordinate` skill. If `get` reports",
+      "an active run, never probe `start` for a concurrent run; explain the invariant.",
+      "",
+    );
+  }
 
   lines.push("# Module skills");
   lines.push("Every runnable skill is scoped to the module where it appears.");
@@ -279,6 +300,7 @@ export async function registerTools(
   service: ContainerService,
   paths: OkhPaths,
   todoService: TodoService,
+  workspaceService: WorkspaceService,
   resources: OkhResourceRegistry,
   options: RegisterToolsOptions = {},
 ): Promise<void> {
@@ -562,6 +584,7 @@ export async function registerTools(
   );
 
   await registerFlowTools(server, service, resources);
+  await registerWorkspaceTool(server, workspaceService);
   await registerTodoTools(server, todoService, {
     ...(options.todoWebUrl !== undefined ? { webUrl: options.todoWebUrl } : {}),
   });

@@ -1,0 +1,60 @@
+# workspace flow — restore an immutable prior result through explicit lifecycle operations.
+- config:
+    - vars:
+        env: workspace
+        prompt: |
+          hub, in `work-hub/presentations`, list archived projects tagged `launch`.
+          For `launch-readiness`, reopen it, restore successful run `2026-06-01-001`
+          as the current result, and archive it again. Do not start a run or modify any
+          result files. Tell me which result is current when finished.
+        terminal:
+          after: start
+          requiredTools: [workspace, sync]
+          finalTool: sync
+  tests:
+    - description: Workspace - restore a prior immutable result and archive the project again
+      assert:
+        - type: javascript
+          value: file://assertions/tools-called.ts
+          config:
+            ordered: true
+            expect:
+              - name: workspace
+                arguments:
+                  { operation: list, container: work-hub, module: presentations, status: archived, tags: [launch] }
+              - name: workspace
+                arguments:
+                  { operation: get, container: work-hub, module: presentations, project: launch-readiness }
+              - name: workspace
+                arguments:
+                  { operation: update, container: work-hub, module: presentations, project: launch-readiness, action: unarchive }
+              - name: workspace
+                arguments:
+                  { operation: update, container: work-hub, module: presentations, project: launch-readiness, action: restore, fromRun: 2026-06-01-001 }
+              - name: workspace
+                arguments:
+                  { operation: update, container: work-hub, module: presentations, project: launch-readiness, action: archive }
+              - name: sync
+                arguments: { container: work-hub }
+            forbid:
+              - use_agent
+              - name: workspace
+                arguments: { operation: start }
+              - name: workspace
+                arguments: { operation: report }
+              - name: workspace
+                arguments: { operation: intervene }
+              - name: workspace
+                arguments: { operation: create }
+        - type: javascript
+          value: file://assertions/workspace-mutations.ts
+        - type: javascript
+          value: file://assertions/workspace-state.ts
+          config: { mode: restored-archived }
+        - type: javascript
+          value: file://assertions/git-committed.ts
+        - type: javascript
+          value: file://assertions/transcript.ts
+          config:
+            source: final-message
+            mustContain: [2026-06-01-001, archived]

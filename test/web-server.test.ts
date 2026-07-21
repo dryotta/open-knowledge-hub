@@ -7,14 +7,22 @@ import { ContainerService } from "../src/container/service.js";
 import { Git } from "../src/git/git.js";
 import type { Gh } from "../src/git/gh.js";
 import { TodoService } from "../src/todos/service.js";
+import { workspaceLoader } from "../src/modules/loaders/workspace.js";
+import { WorkspaceService } from "../src/workspaces/service.js";
 import { startWebServer, tryStartWebServer, type WebServerHandle } from "../src/web/server.js";
 import type { TodoListResult, TodoMutationResult } from "../src/todos/types.js";
+import type { WorkspaceMutationResult } from "../src/workspaces/types.js";
 import type {
+  WebAgentsResponse,
+  WebAttentionResponse,
   WebContainersResponse,
   WebDirectoryResponse,
   WebFileResponse,
+  WebProjectDetailResponse,
+  WebWorkspaceDetailResponse,
+  WebWorkspacesResponse,
 } from "../src/web/types.js";
-import { makePaths, makeTempDir, testRun } from "./helpers.js";
+import { makePaths, makeTempDir, testRun, writeModule } from "./helpers.js";
 
 class FakeGh {
   async createRepo(): Promise<string> {
@@ -37,13 +45,15 @@ afterEach(async () => {
 async function createFixture(): Promise<{
   service: ContainerService;
   todos: TodoService;
+  workspaces: WorkspaceService;
   containerRoot: string;
 }> {
   const home = await makeTempDir();
   cleanups.push(home);
   const containerRoot = join(home, "workspace");
   await mkdir(containerRoot, { recursive: true });
-  const service = new ContainerService(makePaths(home), new Git(testRun), new FakeGh() as unknown as Gh);
+  const paths = makePaths(home);
+  const service = new ContainerService(paths, new Git(testRun), new FakeGh() as unknown as Gh);
   await service.addContainer({ source: containerRoot, name: "hub", create: true });
   await service.addModule({ container: "hub", path: "docs", type: "docs", description: "team docs", create: true });
   await service.addModule({ container: "hub", path: "memory", type: "memory", description: "team memory", create: true });
@@ -51,19 +61,59 @@ async function createFixture(): Promise<{
   await writeFile(join(containerRoot, "docs", "README.md"), "# Documentation\n", "utf8");
   await writeFile(join(containerRoot, "docs", "nested", "notes.txt"), "Nested notes\n", "utf8");
   await writeFile(join(containerRoot, "memory", "tasks.md"), "- [ ] Test the hosted UI #todo #web\n", "utf8");
+  await writeModule(containerRoot, "agents", {
+    type: "agents",
+    description: "Workspace agents",
+  });
+  await mkdir(join(containerRoot, "agents", ".github", "agents"), { recursive: true });
+  await writeFile(
+    join(containerRoot, "agents", ".github", "agents", "lead.agent.md"),
+    "---\ndescription: Coordinates projects\n---\n\nLead the work.\n",
+    "utf8",
+  );
+  await writeModule(containerRoot, "investigations", {
+    type: "workspace",
+    description: "Investigate evidence-based questions.",
+    config: { lead: "agents/lead", agents: [] },
+  });
+  await workspaceLoader.scaffold!(join(containerRoot, "investigations"));
 
   const todos = new TodoService(service, () => new Date("2026-07-11T12:00:00.000Z"));
-  return { service, todos, containerRoot };
+  let tick = Date.parse("2026-07-11T12:00:00.000Z");
+  const workspaces = new WorkspaceService(service, paths, () => {
+    tick += 1_000;
+    return new Date(tick);
+  });
+  await workspaces.create({
+    operation: "create",
+    container: "hub",
+    module: "investigations",
+    guidance: "Prefer primary evidence.",
+    acceptance: ["Cite material claims."],
+    commandId: "00000000-0000-4000-8000-000000000001",
+  });
+  await workspaces.create({
+    operation: "create",
+    container: "hub",
+    module: "investigations",
+    project: "supplier-risk",
+    title: "Supplier risk",
+    goal: "Recommend resilient alternatives.",
+    tags: ["sourcing"],
+    commandId: "00000000-0000-4000-8000-000000000002",
+  });
+  return { service, todos, workspaces, containerRoot };
 }
 
 async function setup(): Promise<{
   web: WebServerHandle;
   containerRoot: string;
+  workspaces: WorkspaceService;
 }> {
-  const { service, todos, containerRoot } = await createFixture();
-  const web = await startWebServer({ service, todos, port: 0 });
+  const { service, todos, workspaces, containerRoot } = await createFixture();
+  const web = await startWebServer({ service, todos, workspaces, port: 0 });
   webServers.push(web);
-  return { web, containerRoot };
+  return { web, containerRoot, workspaces };
 }
 
 async function requestWithHost(url: string, host: string): Promise<{ status: number; body: string }> {
@@ -127,11 +177,12 @@ describe("hosted web UI", () => {
     const warnings: string[] = [];
 
     try {
-      const { service, todos } = await createFixture();
+      const { service, todos, workspaces } = await createFixture();
       const web = await tryStartWebServer(
         {
           service,
           todos,
+          workspaces,
           env: { ...process.env, OKH_WEB_PORT: String(blockedPort) },
         },
         (message) => warnings.push(message),
@@ -189,6 +240,292 @@ describe("hosted web UI", () => {
     expect(traversal.status).toBe(400);
     expect(await traversal.json()).toMatchObject({
       error: { code: "INVALID_PATH" },
+    });
+  });
+
+  it("serves workspace, project, attention, and agent views", async () => {
+    const { web, workspaces } = await setup();
+    const initial = await workspaces.get({
+      operation: "get",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+    });
+    const started = await workspaces.start({
+      operation: "start",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+      etag: initial.etag,
+      commandId: "00000000-0000-4000-8000-000000000003",
+    });
+    await workspaces.report({
+      operation: "report",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+      run: started.resume!.runId,
+      state: "paused",
+      checkpoint: {
+        summary: "Evidence needs human confirmation.",
+        question: "Should regional sources be required?",
+      },
+      etag: started.etag,
+      commandId: "00000000-0000-4000-8000-000000000004",
+    });
+
+    const listResponse = await fetch(web.workspacesUrl);
+    expect(await listResponse.text()).toContain('data-app="open-knowledge-hub-web"');
+
+    const workspacesResponse = await fetch(`${web.origin}/api/workspaces`);
+    expect(await workspacesResponse.json() as WebWorkspacesResponse).toMatchObject({
+      workspaces: [{
+        container: "hub",
+        module: "investigations",
+        counts: { active: 1, attention: 1 },
+        agentHealth: "valid",
+      }],
+    });
+
+    const workspaceResponse = await fetch(`${web.origin}/api/workspaces/hub/investigations`);
+    expect(await workspaceResponse.json() as WebWorkspaceDetailResponse).toMatchObject({
+      detail: {
+        workspace: { lead: "agents/lead" },
+        counts: { activeRuns: 1, attention: 1 },
+      },
+      projects: [{ id: "supplier-risk", attention: { kind: "paused" } }],
+    });
+
+    const projectResponse = await fetch(
+      `${web.origin}/api/workspaces/hub/investigations/projects/supplier-risk`,
+    );
+    expect(await projectResponse.json() as WebProjectDetailResponse).toMatchObject({
+      detail: {
+        project: { id: "supplier-risk" },
+        resume: {
+          checkpoint: { question: "Should regional sources be required?" },
+        },
+      },
+      activity: expect.arrayContaining([
+        expect.objectContaining({ type: "run.paused" }),
+      ]),
+    });
+
+    const attentionResponse = await fetch(`${web.origin}/api/workspaces/attention`);
+    expect(await attentionResponse.json() as WebAttentionResponse).toMatchObject({
+      entries: [{
+        container: "hub",
+        module: "investigations",
+        project: { id: "supplier-risk" },
+      }],
+    });
+
+    const agentsResponse = await fetch(web.agentsUrl.replace("/agents", "/api/agents"));
+    expect(await agentsResponse.json() as WebAgentsResponse).toMatchObject({
+      agents: [{
+        id: "lead",
+        referencedBy: [{
+          container: "hub",
+          module: "investigations",
+          role: "lead",
+        }],
+      }],
+      issues: [],
+    });
+
+    const unsafeRoute = await fetch(`${web.origin}/api/workspaces/hub/docs%2F..`);
+    expect(unsafeRoute.status).toBe(400);
+    expect(await unsafeRoute.json()).toMatchObject({
+      error: { code: "INVALID_PATH" },
+    });
+  });
+
+  it("applies same-origin workspace review and lifecycle changes", async () => {
+    const { web, workspaces } = await setup();
+    const projectUrl = `${web.origin}/api/workspaces/hub/investigations/projects/supplier-risk`;
+    const initial = await workspaces.get({
+      operation: "get",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+    });
+    const started = await workspaces.start({
+      operation: "start",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+      etag: initial.etag,
+      commandId: "00000000-0000-4000-8000-000000000010",
+    });
+    const paused = await workspaces.report({
+      operation: "report",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+      run: started.resume!.runId,
+      state: "paused",
+      checkpoint: { summary: "Review source selection.", question: "Use regulator data?" },
+      etag: started.etag,
+      commandId: "00000000-0000-4000-8000-000000000011",
+    });
+
+    const blocked = await fetch(projectUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation: "intervene",
+        run: started.resume!.runId,
+        action: "guide",
+        guidance: "Use regulator data.",
+        etag: paused.etag,
+        commandId: "00000000-0000-4000-8000-000000000012",
+      }),
+    });
+    expect(blocked.status).toBe(403);
+
+    const guidedResponse = await fetch(projectUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "intervene",
+        run: started.resume!.runId,
+        action: "guide",
+        guidance: "Use regulator data.",
+        etag: paused.etag,
+        commandId: "00000000-0000-4000-8000-000000000012",
+      }),
+    });
+    expect(guidedResponse.status).toBe(200);
+    const guided = await guidedResponse.json() as WorkspaceMutationResult;
+    const guidedDetail = await workspaces.get({
+      operation: "get",
+      container: "hub",
+      module: "investigations",
+      project: "supplier-risk",
+      include: ["resume"],
+    });
+    expect(guidedDetail.resume?.guidance).toEqual([
+      expect.objectContaining({ text: "Use regulator data." }),
+    ]);
+
+    const cancelledResponse = await fetch(projectUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "intervene",
+        run: started.resume!.runId,
+        action: "cancel",
+        reason: "No longer required.",
+        etag: guided.etag,
+        commandId: "00000000-0000-4000-8000-000000000013",
+      }),
+    });
+    const cancelled = await cancelledResponse.json() as WorkspaceMutationResult;
+    expect(cancelled.project).toMatchObject({ activeRun: null });
+
+    const archivedResponse = await fetch(projectUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "update",
+        action: "archive",
+        etag: cancelled.etag,
+        commandId: "00000000-0000-4000-8000-000000000014",
+      }),
+    });
+    const archived = await archivedResponse.json() as WorkspaceMutationResult;
+    expect(archived.project).toMatchObject({ status: "archived" });
+
+    const staleResponse = await fetch(projectUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "update",
+        action: "unarchive",
+        etag: cancelled.etag,
+        commandId: "00000000-0000-4000-8000-000000000015",
+      }),
+    });
+    expect(staleResponse.status).toBe(409);
+
+    const unarchivedResponse = await fetch(projectUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "update",
+        action: "unarchive",
+        etag: archived.etag,
+        commandId: "00000000-0000-4000-8000-000000000016",
+      }),
+    });
+    expect(await unarchivedResponse.json()).toMatchObject({
+      project: { status: "active" },
+    });
+  });
+
+  it("creates projects and updates workspace configuration", async () => {
+    const { web } = await setup();
+    const workspaceUrl = `${web.origin}/api/workspaces/hub/investigations`;
+    const initialResponse = await fetch(workspaceUrl);
+    const initial = await initialResponse.json() as WebWorkspaceDetailResponse;
+
+    const configured = await fetch(workspaceUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "configure",
+        set: {
+          description: "Updated investigations.",
+          lead: "agents/lead",
+          agents: ["agents/lead"],
+        },
+      }),
+    });
+    expect(await configured.json()).toMatchObject({
+      workspace: {
+        description: "Updated investigations.",
+        agents: ["agents/lead"],
+      },
+    });
+
+    const updated = await fetch(workspaceUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "update",
+        patch: {
+          guidance: "Prefer current primary evidence.",
+          acceptance: ["Cite every material claim."],
+        },
+        etag: initial.detail.etag,
+        commandId: "00000000-0000-4000-8000-000000000020",
+      }),
+    });
+    expect(await updated.json()).toMatchObject({
+      workspace: {
+        guidance: "Prefer current primary evidence.",
+        acceptance: ["Cite every material claim."],
+      },
+    });
+
+    const created = await fetch(workspaceUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: web.origin },
+      body: JSON.stringify({
+        operation: "create",
+        project: "market-signals",
+        title: "Market signals",
+        goal: "Summarize current market signals.",
+        tags: ["market"],
+        commandId: "00000000-0000-4000-8000-000000000021",
+      }),
+    });
+    expect(await created.json()).toMatchObject({
+      project: {
+        id: "market-signals",
+        title: "Market signals",
+        tags: ["market"],
+      },
     });
   });
 

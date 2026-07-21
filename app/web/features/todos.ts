@@ -65,6 +65,7 @@ export const todosFeature: WebFeature = {
   label: "Todos",
   path: "/todos",
   title: "Todos",
+  routes: ["todos"],
   async mount({ root, signal, setStatus }) {
     let tasks: TodoRecord[] = [];
     let warnings: TodoWarning[] = [];

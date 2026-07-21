@@ -18,6 +18,7 @@ export const browseFeature: WebFeature = {
   label: "Browse",
   path: "/browse",
   title: "Browse containers",
+  routes: ["browse"],
   async mount({ root, signal, setStatus }) {
     root.innerHTML = `
       <section class="feature">

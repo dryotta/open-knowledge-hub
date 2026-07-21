@@ -6,6 +6,7 @@ prompts:
 providers:
   - file://scenarios/shared/provider.ts
 scenarios:
+  - file://scenarios/workspace/create-presentation.yaml
   - file://scenarios/ingest/into-existing-module.yaml
   - file://scenarios/write/into-wiki.yaml
   - file://scenarios/remember/todo.yaml

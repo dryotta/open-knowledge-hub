@@ -58,13 +58,14 @@ describe("manual testing helpers", () => {
 
   it("loads all scenario prompts and groups them by environment", async () => {
     const all = await loadScenarios();
-    expect(all).toHaveLength(29);
+    expect(all).toHaveLength(36);
     expect(await scenariosForEnv("local-and-git")).toHaveLength(13);
     expect(await scenariosForEnv("git")).toHaveLength(1);
     expect(await scenariosForEnv("empty")).toHaveLength(8);
     expect(await scenariosForEnv("custom")).toHaveLength(2);
     expect(await scenariosForEnv("wiki")).toHaveLength(3);
     expect(await scenariosForEnv("health")).toHaveLength(2);
+    expect(await scenariosForEnv("workspace")).toHaveLength(7);
     for (const scenario of all) {
       expect(scenario.prompt).not.toHaveLength(0);
       expect(scenario.checklist).not.toHaveLength(0);

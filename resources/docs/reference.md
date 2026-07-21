@@ -16,6 +16,7 @@ description: Complete current reference for OKH tools, resources, module types, 
 | `sync` | `container?`, `message?`, `action?` | Validate and synchronize; `publish-pr` is a shared-mode action. |
 | `config` | `set?`, `container?`, `module?` | View/edit global preferences or one module manifest. |
 | `todos` | operation plus filters/mutation fields | List, preview, create, or update memory-module todos. |
+| `workspace` | operation plus workspace/project/run fields | List/read workspaces and projects; create, start, report, update, or intervene at durable client-execution boundaries. |
 | `ask` | `container?`, `module?`, `question?` | Return instructions for answering from modules. |
 | `context` | `container?`, `task?` | Return instructions for selecting a working set. |
 | `run` | `container`, `module`, `skill`, `input?` | Return one module skill, links, and bounded embedded required resources. |
@@ -66,6 +67,7 @@ remain linked and are marked for `read_resource`.
 | `llmwiki` | OKF pages, index, log, link health | `initialize`, `write`, `lint` |
 | `skills` | Nested `SKILL.md` leaves and `index.md` | `initialize` |
 | `agents` | Direct `.github/agents/*.agent.md` and compatible `.md` profiles | `create` |
+| `workspace` | Workspace README plus project READMEs, CloudEvents journals, snapshots, and immutable results | `initialize`, `configure`, `create`, `coordinate` |
 | custom | Generic recursive file listing | None; use local skills |
 
 Common instructions live at:
@@ -95,6 +97,25 @@ manifests, while the `add_module` workflow requires a meaningful description.
 `config` is an optional arbitrary mapping. The module folder name is its identity.
 The `config` tool may update `description` and arbitrary config keys but cannot
 change `type`.
+
+### Workspace format
+
+A workspace manifest uses:
+
+```yaml
+type: workspace
+description: Investigate evidence-based questions and compare alternatives
+config:
+  lead: coordinators/orchestrator
+  agents:
+    - research-agents/researcher
+```
+
+`lead` is required and `agents` is optional. Workspace/project guidance lives in
+README files, not manifest schema. Projects are direct lowercase kebab-case folders
+under `projects/`, have only `active` or `archived` status, and at most one active run.
+Run snapshots and successful result directories are immutable. See
+[Workspaces and projects](okh://docs/workspaces.md) for the full client workflow.
 
 ### Agent profile format
 
@@ -151,6 +172,9 @@ Environment variables:
 | --- | --- |
 | `OKH_HOME` | Preferences, registry, and managed clone root; defaults to `~/.open-knowledge-hub`. |
 | `OKH_WEB_PORT` | Loopback web UI port; omit or set `0` for a dynamic port. |
+
+Client-writable workspace staging is machine-local under
+`$OKH_HOME/workspace-staging/<container>/<module>/<project>/<run>/` and never syncs.
 
 Global preferences are stored in `$OKH_HOME/preferences.json`. `wakePhrase` is the
 known built-in preference; unknown keys are preserved for extension. A `null`
