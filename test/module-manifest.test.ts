@@ -94,4 +94,50 @@ describe("module manifest", () => {
     const m = scaffoldModuleManifest("memory", "");
     expect(m).toEqual({ type: "memory", description: "" });
   });
+
+  it("round-trips the wiki-sync keys", async () => {
+    const dir = await tmp();
+    try {
+      await saveModuleManifest(dir, {
+        type: "knowledge",
+        description: "kb",
+        "wiki-sync": true,
+        "wiki-sync-reverse-mode": "direct",
+      });
+      const m = await loadModuleManifest(dir);
+      expect(m["wiki-sync"]).toBe(true);
+      expect(m["wiki-sync-reverse-mode"]).toBe("direct");
+      const raw = await readFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "utf8");
+      expect(raw).toContain("wiki-sync: true");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a manifest without the wiki-sync keys (both optional)", async () => {
+    const dir = await tmp();
+    try {
+      await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
+      await writeFile(join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME), "type: knowledge\ndescription: kb\n");
+      const m = await loadModuleManifest(dir);
+      expect(m["wiki-sync"]).toBeUndefined();
+      expect(m["wiki-sync-reverse-mode"]).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an invalid wiki-sync-reverse-mode value", async () => {
+    const dir = await tmp();
+    try {
+      await mkdir(join(dir, MODULE_OKH_DIR), { recursive: true });
+      await writeFile(
+        join(dir, MODULE_OKH_DIR, MODULE_MANIFEST_BASENAME),
+        "type: knowledge\nwiki-sync: true\nwiki-sync-reverse-mode: bogus\n",
+      );
+      await expect(loadModuleManifest(dir)).rejects.toMatchObject({ code: "INVALID_MANIFEST" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -8,13 +8,19 @@ import { OkhError } from "../errors.js";
 export const MODULE_OKH_DIR = ".okh";
 export const MODULE_MANIFEST_BASENAME = "module.yaml";
 
+const reverseModeSchema = z.enum(["pr", "direct", "off"]);
+
 const moduleManifestBodySchema = z
   .object({
     type: z.string().min(1),
     description: z.string().default(""),
     config: z.record(z.string(), z.unknown()).optional(),
+    "wiki-sync": z.boolean().optional(),
+    "wiki-sync-reverse-mode": reverseModeSchema.optional(),
   })
   .strict();
+
+export type WikiReverseMode = z.infer<typeof reverseModeSchema>;
 
 /**
  * A module's `.okh/module.yaml`. `name` was removed — a module's identity and
