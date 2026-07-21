@@ -1,54 +1,71 @@
 import { posix } from "node:path";
-import { OKF_RESERVED } from "../modules/loaders/okf.js";
 import { parseFrontmatter } from "../util/frontmatter.js";
 import type { WikiReverseMode } from "../modules/manifest.js";
 import { pathSlug } from "./slug.js";
 
 export type RenderConcept = { sourceRelPath: string; title: string; rawMarkdown: string };
 export type RenderAsset = { sourceRelPath: string; bytes: Buffer };
-export type RenderModule = {
+
+/** Enumerated content of a single module (title/concepts/assets), sync mode aside. */
+export type RenderModuleContent = {
   path: string;
+  title: string;
   description?: string;
   indexMarkdown?: string;
   concepts: RenderConcept[];
   assets: RenderAsset[];
 };
+
+/** A module as handed to the renderer: its content plus its sidebar/reverse config. */
+export type RenderModule = RenderModuleContent & {
+  reverseMode: WikiReverseMode;
+  /** Sidebar expand override; undefined means "default" (first module open). */
+  expanded?: boolean;
+};
+
 export type RenderContextInfo = {
   owner: string;
   repo: string;
   commit: string;
   timestamp: string;
   repoUrl: string;
-  /** Wiki title (module index H1 or title-cased folder name), computed upstream. */
+  /** Overall wiki landing title (the repository name). */
   title: string;
-  /** Reverse-sync mode, drives the header's edit-invitation phrasing. */
-  reverseMode: WikiReverseMode;
 };
-export type RenderInput = { module: RenderModule; context: RenderContextInfo };
+export type RenderInput = { modules: RenderModule[]; context: RenderContextInfo };
+
 export type WikiPage = { path: string; content: string };
 export type WikiAsset = { path: string; bytes: Buffer };
 export type RenderWarning = { kind: "collision" | "dangling-link" | "dangling-asset"; message: string };
+
+/** Where a wiki slug came from: which module, and the module-relative source path. */
+export type SlugSource = { module: string; sourceRel: string };
 export type WikiSite = {
   pages: WikiPage[];
   assets: WikiAsset[];
   warnings: RenderWarning[];
-  /** Wiki slug -> module-relative source path (plus "Home" -> "index.md"). Chrome excluded. */
-  slugToSource: Map<string, string>;
+  /** Wiki slug -> its source module + module-relative path. Chrome/Home excluded. */
+  slugToSource: Map<string, SlugSource>;
 };
 
 const HOME_SLUG = "Home";
-const INDEX_KEY = "index.md";
+const INDEX_REL = "index.md";
 
-type PageRec = { slug: string; title: string; path: string };
+type PageRec = { slug: string; title: string; sourceRel: string };
+type ModulePlan = {
+  module: RenderModule;
+  moduleSlug: string;
+  records: PageRec[];
+  pageIndex: Map<string, string>; // module-rel path (lowercased) -> slug (index.md -> moduleSlug)
+};
 type RewriteContext = {
-  currentDir: string; // POSIX dir of the current page's module-relative source (or "." at module root)
-  pageIndex: Map<string, string>; // module-rel path (lowercased) -> slug ("Home" for index.md)
+  modulePath: string;
+  currentDir: string;
+  pageIndex: Map<string, string>;
   assets: RenderAsset[];
 };
 
-/** Drop a leading YAML frontmatter block so published wiki pages stay clean. */
 const stripFrontmatter = (markdown: string): string => parseFrontmatter(markdown).body;
-
 const titleCase = (s: string): string => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 function splitAnchor(target: string): [string, string | undefined] {
@@ -64,25 +81,37 @@ function resolveTarget(pathPart: string, currentDir: string): string {
     : posix.normalize(posix.join(currentDir, pathPart));
 }
 
-/** Non-reserved concepts, sorted by module-relative path for deterministic output. */
-function orderedConcepts(module: RenderModule): RenderConcept[] {
-  return [...module.concepts]
-    .filter((c) => !OKF_RESERVED.has(c.sourceRelPath))
-    .sort((a, b) => a.sourceRelPath.localeCompare(b.sourceRelPath));
+/** Namespaced slug for a module-relative path, e.g. (telemetry, sources/eed.md) -> telemetry-sources-eed. */
+function namespacedSlug(modulePath: string, sourceRel: string): string {
+  return pathSlug(posix.join(modulePath, sourceRel));
 }
 
-/** Assign a unique flat slug per concept and build the module-relative -> slug index. */
-function buildPages(
-  module: RenderModule,
-): { records: PageRec[]; pageIndex: Map<string, string>; warnings: RenderWarning[] } {
-  const warnings: RenderWarning[] = [];
-  const pageIndex = new Map<string, string>();
-  pageIndex.set(INDEX_KEY, HOME_SLUG);
-  const used = new Set<string>();
-  const records: PageRec[] = [];
+/**
+ * Parse a module's index.md and return the order in which it references its own
+ * pages, so the sidebar/landing can mirror the author's intended sequence.
+ * Returns module-rel path (lowercased) -> first-appearance index.
+ */
+function indexOrder(module: RenderModule): Map<string, number> {
+  const order = new Map<string, number>();
+  if (!module.indexMarkdown) return order;
+  const body = stripFrontmatter(module.indexMarkdown);
+  const linkRe = /\]\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  let n = 0;
+  while ((m = linkRe.exec(body)) !== null) {
+    const target = m[1].trim();
+    if (/^[a-z]+:/i.test(target) || target.startsWith("#")) continue;
+    const [pathPart] = splitAnchor(target);
+    if (!pathPart.toLowerCase().endsWith(".md")) continue;
+    const rel = resolveTarget(pathPart, ".").toLowerCase();
+    if (!order.has(rel)) order.set(rel, n++);
+  }
+  return order;
+}
 
-  for (const c of orderedConcepts(module)) {
-    const desired = pathSlug(c.sourceRelPath);
+/** Assign namespaced slugs to a module's concepts (index.md -> moduleSlug). */
+function planModule(module: RenderModule, used: Set<string>, warnings: RenderWarning[]): ModulePlan {
+  const claim = (desired: string): string => {
     let slug = desired;
     let n = 1;
     while (used.has(slug.toLowerCase())) {
@@ -91,13 +120,23 @@ function buildPages(
       warnings.push({ kind: "collision", message: `Slug collision for ${desired}; using ${slug}` });
     }
     used.add(slug.toLowerCase());
+    return slug;
+  };
+
+  const moduleSlug = claim(pathSlug(module.path));
+  const pageIndex = new Map<string, string>();
+  pageIndex.set(INDEX_REL, moduleSlug);
+
+  const records: PageRec[] = [];
+  for (const c of [...module.concepts].sort((a, b) => a.sourceRelPath.localeCompare(b.sourceRelPath))) {
+    const slug = claim(namespacedSlug(module.path, c.sourceRelPath));
     pageIndex.set(c.sourceRelPath.toLowerCase(), slug);
-    records.push({ slug, title: c.title, path: c.sourceRelPath });
+    records.push({ slug, title: c.title, sourceRel: c.sourceRelPath });
   }
-  return { records, pageIndex, warnings };
+  return { module, moduleSlug, records, pageIndex };
 }
 
-/** Rewrite internal markdown links/assets to flat wiki slugs / filenames. */
+/** Rewrite internal markdown links/assets to namespaced wiki slugs / asset filenames. */
 function rewriteBody(
   rawBody: string,
   ctx: RewriteContext,
@@ -115,13 +154,12 @@ function rewriteBody(
     const suffix = anchor ? `#${anchor}` : "";
 
     if (!pathPart.toLowerCase().endsWith(".md")) {
-      // asset reference
       const asset = ctx.assets.find((a) => a.sourceRelPath === resolved);
       if (!asset) {
         warnings.push({ kind: "dangling-asset", message: `Missing asset ${target}` });
         return whole;
       }
-      const flat = pathSlug(asset.sourceRelPath);
+      const flat = namespacedSlug(ctx.modulePath, asset.sourceRelPath);
       collectedAssets.push({ path: flat, bytes: asset.bytes });
       return `${open}${flat}${suffix}${close}`;
     }
@@ -137,62 +175,97 @@ function rewriteBody(
   return { body, assets: collectedAssets, warnings };
 }
 
-function groupBySubfolder(recs: PageRec[]): { root: PageRec[]; groups: { name: string; items: PageRec[] }[] } {
+/** Group a module's records by first subfolder, ordered by the module's index.md. */
+function orderedGrouping(
+  records: PageRec[],
+  order: Map<string, number>,
+): { root: PageRec[]; groups: { name: string; items: PageRec[] }[] } {
+  const key = (r: PageRec): number => order.get(r.sourceRel.toLowerCase()) ?? Number.POSITIVE_INFINITY;
+  const cmp = (a: PageRec, b: PageRec): number => key(a) - key(b) || a.title.localeCompare(b.title);
+
   const root: PageRec[] = [];
   const byFolder = new Map<string, PageRec[]>();
-  for (const r of recs) {
-    const i = r.path.indexOf("/");
+  for (const r of records) {
+    const i = r.sourceRel.indexOf("/");
     if (i === -1) {
       root.push(r);
     } else {
-      const folder = r.path.slice(0, i);
+      const folder = r.sourceRel.slice(0, i);
       const bucket = byFolder.get(folder) ?? [];
       bucket.push(r);
       byFolder.set(folder, bucket);
     }
   }
+  root.sort(cmp);
   const groups = [...byFolder.entries()]
-    .map(([name, items]) => ({ name, items: [...items].sort((a, b) => a.title.localeCompare(b.title)) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  root.sort((a, b) => a.title.localeCompare(b.title));
+    .map(([name, items]) => ({ name, items: [...items].sort(cmp) }))
+    .sort((a, b) => {
+      const ak = Math.min(...a.items.map(key));
+      const bk = Math.min(...b.items.map(key));
+      return ak - bk || a.name.localeCompare(b.name);
+    });
   return { root, groups };
 }
 
-function renderSidebar(records: PageRec[]): WikiPage {
-  const { root, groups } = groupBySubfolder(records);
-  const lines: string[] = ["[🏠 Home](Home)", ""];
-  for (const r of root) lines.push(`- [${r.title}](${r.slug})`);
+/** One module's block inside the sidebar: a <details> section with its TOC. */
+function sidebarSection(plan: ModulePlan, open: boolean): string[] {
+  const { module, moduleSlug, records } = plan;
+  const { root, groups } = orderedGrouping(records, indexOrder(module));
+  const lines: string[] = [
+    `<details${open ? " open" : ""}><summary><b>${module.title}</b></summary>`,
+    "",
+    `- [${module.title}](${moduleSlug})`,
+  ];
   if (root.length > 0) lines.push("");
+  for (const r of root) lines.push(`- [${r.title}](${r.slug})`);
   for (const g of groups) {
-    lines.push(`<details open><summary><b>${titleCase(g.name)}</b> (${g.items.length})</summary>`, "");
+    lines.push("", `**${titleCase(g.name)}**`);
     for (const r of g.items) lines.push(`- [${r.title}](${r.slug})`);
-    lines.push("", "</details>", "");
   }
+  lines.push("", "</details>", "");
+  return lines;
+}
+
+function renderSidebar(plans: ModulePlan[]): WikiPage {
+  const lines: string[] = ["[🏠 Home](Home)", ""];
+  plans.forEach((plan, i) => {
+    const open = plan.module.expanded ?? i === 0;
+    lines.push(...sidebarSection(plan, open));
+  });
   return { path: "_Sidebar.md", content: lines.join("\n").trimEnd() + "\n" };
 }
 
-function renderHome(
-  module: RenderModule,
-  ctx: RenderContextInfo,
-  records: PageRec[],
-  pageIndex: Map<string, string>,
+/** Generated landing page: the repo title and one entry per published module. */
+function renderHome(plans: ModulePlan[], ctx: RenderContextInfo): WikiPage {
+  const lines: string[] = [`# ${ctx.title}`, "", "Modules published to this wiki:", ""];
+  for (const plan of plans) {
+    const desc = plan.module.description ? ` — ${plan.module.description}` : "";
+    lines.push(`- **[${plan.module.title}](${plan.moduleSlug})**${desc}`);
+  }
+  return { path: "Home.md", content: lines.join("\n").trimEnd() + "\n" };
+}
+
+/** A module's landing page: its index.md (rewritten) or a generated contents list. */
+function renderModuleLanding(
+  plan: ModulePlan,
 ): { page: WikiPage; assets: WikiAsset[]; warnings: RenderWarning[] } {
+  const { module, moduleSlug } = plan;
   if (module.indexMarkdown) {
     const rewritten = rewriteBody(stripFrontmatter(module.indexMarkdown), {
+      modulePath: module.path,
       currentDir: ".",
-      pageIndex,
+      pageIndex: plan.pageIndex,
       assets: module.assets,
     });
     return {
-      page: { path: "Home.md", content: rewritten.body.trimEnd() + "\n" },
+      page: { path: `${moduleSlug}.md`, content: rewritten.body.trimEnd() + "\n" },
       assets: rewritten.assets,
       warnings: rewritten.warnings,
     };
   }
-  const title = ctx.title;
-  const lines: string[] = [`# ${title}`, ""];
+  const lines: string[] = [`# ${module.title}`, ""];
   if (module.description) lines.push(module.description, "");
-  const { root, groups } = groupBySubfolder(records);
+  const { root, groups } = orderedGrouping(plan.records, indexOrder(module));
   for (const r of root) lines.push(`- [${r.title}](${r.slug})`);
   if (root.length > 0) lines.push("");
   for (const g of groups) {
@@ -200,28 +273,22 @@ function renderHome(
     for (const r of g.items) lines.push(`- [${r.title}](${r.slug})`);
     lines.push("");
   }
-  return { page: { path: "Home.md", content: lines.join("\n").trimEnd() + "\n" }, assets: [], warnings: [] };
+  return { page: { path: `${moduleSlug}.md`, content: lines.join("\n").trimEnd() + "\n" }, assets: [], warnings: [] };
 }
 
-/** Global `_Header.md`: wiki title + provenance + a reverse-mode-aware invitation. */
-function renderHeader(module: RenderModule, ctx: RenderContextInfo): WikiPage {
-  const source = `This wiki is generated from [\`${ctx.owner}/${ctx.repo}\`](${ctx.repoUrl}) · module \`${module.path}\`.`;
-  const invite =
-    ctx.reverseMode === "pr"
-      ? " Edits here open a pull request back to the source."
-      : ctx.reverseMode === "direct"
-        ? " Edits here commit back to the source."
-        : " For reference only — edit the source repository.";
-  const lines = [`# ${ctx.title}`, "", `_${source}${invite}_`];
-  return { path: "_Header.md", content: lines.join("\n") + "\n" };
+/** Global `_Header.md`: provenance shared by every page. */
+function renderHeader(ctx: RenderContextInfo): WikiPage {
+  const line =
+    `_Generated from [\`${ctx.owner}/${ctx.repo}\`](${ctx.repoUrl}). ` +
+    `Human edits here may sync back to the source._`;
+  return { path: "_Header.md", content: line + "\n" };
 }
 
 function renderFooter(ctx: RenderContextInfo): WikiPage {
-  const shortCommit = ctx.commit.slice(0, 7);
   const content =
     `---\n` +
     `_Generated by [Open Knowledge Hub](https://github.com/dryotta/open-knowledge-hub) from ` +
-    `[\`${ctx.owner}/${ctx.repo}@${shortCommit}\`](${ctx.repoUrl}/tree/${ctx.commit}) on ${ctx.timestamp}._\n`;
+    `[\`${ctx.owner}/${ctx.repo}@${ctx.commit.slice(0, 7)}\`](${ctx.repoUrl}/tree/${ctx.commit}) on ${ctx.timestamp}._\n`;
   return { path: "_Footer.md", content };
 }
 
@@ -237,39 +304,50 @@ function dedupeAssets(assets: WikiAsset[]): WikiAsset[] {
 }
 
 export function renderWikiSite(input: RenderInput): WikiSite {
-  const { module, context } = input;
-  const { records, pageIndex, warnings } = buildPages(module);
+  const { modules, context } = input;
+  const used = new Set<string>([HOME_SLUG.toLowerCase()]);
+  const warnings: RenderWarning[] = [];
+  const plans = modules.map((module) => planModule(module, used, warnings));
+
   const pages: WikiPage[] = [];
   let assets: WikiAsset[] = [];
-  const allWarnings: RenderWarning[] = [...warnings];
+  const slugToSource = new Map<string, SlugSource>();
 
-  const conceptByPath = new Map(module.concepts.map((c) => [c.sourceRelPath, c] as const));
-  for (const rec of records) {
-    const concept = conceptByPath.get(rec.path)!;
-    const rewritten = rewriteBody(stripFrontmatter(concept.rawMarkdown), {
-      currentDir: posix.dirname(rec.path),
-      pageIndex,
-      assets: module.assets,
-    });
-    allWarnings.push(...rewritten.warnings);
-    assets.push(...rewritten.assets);
-    pages.push({ path: `${rec.slug}.md`, content: rewritten.body.trimEnd() + "\n" });
+  for (const plan of plans) {
+    const { module, moduleSlug } = plan;
+    slugToSource.set(moduleSlug, { module: module.path, sourceRel: INDEX_REL });
+
+    // Concept pages.
+    const conceptByRel = new Map(module.concepts.map((c) => [c.sourceRelPath, c] as const));
+    for (const rec of plan.records) {
+      const concept = conceptByRel.get(rec.sourceRel)!;
+      const rewritten = rewriteBody(stripFrontmatter(concept.rawMarkdown), {
+        modulePath: module.path,
+        currentDir: posix.dirname(rec.sourceRel),
+        pageIndex: plan.pageIndex,
+        assets: module.assets,
+      });
+      warnings.push(...rewritten.warnings);
+      assets.push(...rewritten.assets);
+      pages.push({ path: `${rec.slug}.md`, content: rewritten.body.trimEnd() + "\n" });
+      slugToSource.set(rec.slug, { module: module.path, sourceRel: rec.sourceRel });
+    }
+
+    // Module landing.
+    const landing = renderModuleLanding(plan);
+    warnings.push(...landing.warnings);
+    assets.push(...landing.assets);
+    pages.push(landing.page);
   }
 
-  const home = renderHome(module, context, records, pageIndex);
-  allWarnings.push(...home.warnings);
-  assets.push(...home.assets);
-  pages.push(home.page);
-  pages.push(renderHeader(module, context));
-  pages.push(renderSidebar(records));
+  pages.push(renderHome(plans, context));
+  pages.push(renderHeader(context));
+  pages.push(renderSidebar(plans));
   pages.push(renderFooter(context));
 
   assets = dedupeAssets(assets);
   pages.sort((a, b) => a.path.localeCompare(b.path));
   assets.sort((a, b) => a.path.localeCompare(b.path));
 
-  const slugToSource = new Map<string, string>([[HOME_SLUG, INDEX_KEY]]);
-  for (const rec of records) slugToSource.set(rec.slug, rec.path);
-
-  return { pages, assets, warnings: allWarnings, slugToSource };
+  return { pages, assets, warnings, slugToSource };
 }

@@ -131,6 +131,12 @@ export class Git {
     await this.git(["add", "-A"], cwd);
   }
 
+  /** Stage only the given repo-relative pathspecs (records deletions too). */
+  async stagePaths(cwd: string, paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    await this.git(["add", "--", ...paths], cwd);
+  }
+
   async commit(cwd: string, message: string): Promise<void> {
     await this.git(["commit", "-m", message], cwd);
   }

@@ -17,4 +17,4 @@ View or edit OKH configuration. The scope is chosen by whether `container`/`modu
 
 **Container config** ({ container }, no `module`) — stored in the registry:
 - With no `set`, view the container's wiki publishing state.
-- Pass { container, set: { wiki: { enabled: true|false } } } to turn GitHub wiki publishing on or off. Enabling scaffolds a version-pinned `.github/workflows/okh-wiki.yml` plus a starter `.okh/wiki.yml`; disabling removes them. Run `sync` afterward to commit the change — publishing then runs in CI on every push to `main`. The repo's Wikis feature must be enabled once in Settings → Features.
+- Pass { container, set: { wiki: { enabled: true|false } } } to turn GitHub wiki sync on or off. Enabling scaffolds a version-pinned `.github/workflows/okh-wiki.yml`; disabling removes it. Run `sync` afterward to commit the change — publishing then runs in CI on every push to `main`, and reverse sync runs when the wiki is edited. Choose which modules to publish per module via `wiki-sync: true` (plus optional `wiki-sync-reverse-mode` and `wiki-sync-expanded`) in each `.okh/module.yaml`. The repo's Wikis feature must be enabled once in Settings → Features.

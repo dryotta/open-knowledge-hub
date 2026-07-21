@@ -1,16 +1,16 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Git } from "../git/git.js";
 import { OkhError } from "../errors.js";
-import { okfEnumerate } from "../modules/loaders/okf.js";
 import { walkFiles } from "../modules/fs.js";
 import { parseFrontmatter } from "../util/frontmatter.js";
 import { WIKI_BOT_EMAIL, WIKI_BOT_NAME } from "./constants.js";
-import { selectWikiModule } from "./select.js";
+import { selectWikiModules, type SelectedWikiModule } from "./select.js";
 import {
   renderWikiSite,
   type RenderModule,
+  type RenderModuleContent,
   type RenderConcept,
   type RenderAsset,
   type RenderWarning,
@@ -22,6 +22,7 @@ export type WikiPublishOutcome = "published" | "up-to-date" | "dry-run";
 export type WikiPublishResult = {
   outcome: WikiPublishOutcome;
   wikiUrl?: string;
+  modules: number;
   pages: number;
   assets: number;
   warnings: RenderWarning[];
@@ -60,44 +61,65 @@ async function defaultResolve(repoRoot: string, git: Git): Promise<ResolveResult
   };
 }
 
+const firstH1 = (body: string): string | undefined => body.match(/^#\s+(.+?)\s*$/m)?.[1].trim();
+
+const titleFromFilename = (name: string): string =>
+  name
+    .replace(/\.md$/i, "")
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+
+/** Module title: its index.md's first H1 if present, else the title-cased folder name. */
+export function deriveModuleTitle(content: Pick<RenderModuleContent, "path" | "indexMarkdown">): string {
+  if (content.indexMarkdown) {
+    const h1 = firstH1(parseFrontmatter(content.indexMarkdown).body);
+    if (h1) return h1;
+  }
+  return titleFromFilename(content.path);
+}
+
+/** Enumerate a module generically: every `.md` becomes a concept (index.md is the landing). */
 export async function buildRenderModule(
   moduleRoot: string,
   name: string,
   description?: string,
-): Promise<RenderModule> {
+): Promise<RenderModuleContent> {
   let indexMarkdown: string | undefined;
   try {
     indexMarkdown = await readFile(join(moduleRoot, "index.md"), "utf8");
   } catch {
     indexMarkdown = undefined;
   }
-  const items = await okfEnumerate(moduleRoot, "knowledge");
+
+  const mdPaths = await walkFiles(
+    moduleRoot,
+    (n) => n.toLowerCase().endsWith(".md") && !n.startsWith("_"),
+  );
   const concepts: RenderConcept[] = [];
-  for (const item of items) {
-    const rawMarkdown = await readFile(join(moduleRoot, item.path), "utf8");
-    concepts.push({ sourceRelPath: item.path, title: item.title, rawMarkdown });
+  for (const rel of mdPaths) {
+    if (rel.toLowerCase() === "index.md") continue; // module landing, not a concept
+    const rawMarkdown = await readFile(join(moduleRoot, rel), "utf8");
+    const title = firstH1(parseFrontmatter(rawMarkdown).body) ?? titleFromFilename(basename(rel));
+    concepts.push({ sourceRelPath: rel, title, rawMarkdown });
   }
+
   const assets: RenderAsset[] = [];
   const assetPaths = await walkFiles(moduleRoot, (n) => !n.toLowerCase().endsWith(".md"));
   for (const rel of assetPaths) {
-    const bytes = await readFile(join(moduleRoot, rel));
-    assets.push({ sourceRelPath: rel, bytes });
+    assets.push({ sourceRelPath: rel, bytes: await readFile(join(moduleRoot, rel)) });
   }
-  return { path: name, description, indexMarkdown, concepts, assets };
+
+  const content: RenderModuleContent = { path: name, description, indexMarkdown, concepts, assets, title: "" };
+  content.title = deriveModuleTitle(content);
+  return content;
 }
 
-/** Wiki title: the module index.md's first H1 if present, else the title-cased folder name. */
-export function deriveWikiTitle(module: RenderModule): string {
-  if (module.indexMarkdown) {
-    const body = parseFrontmatter(module.indexMarkdown).body;
-    const h1 = body.match(/^#\s+(.+?)\s*$/m);
-    if (h1) return h1[1].trim();
-  }
-  return module.path
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
+/** Combine a selected module's config with its enumerated content for the renderer. */
+export async function toRenderModule(selected: SelectedWikiModule): Promise<RenderModule> {
+  const content = await buildRenderModule(selected.moduleRoot, selected.name, selected.manifest.description);
+  return { ...content, reverseMode: selected.reverseMode, expanded: selected.expanded };
 }
 
 export async function buildAndPublishWiki(
@@ -108,25 +130,19 @@ export async function buildAndPublishWiki(
   const resolve = opts.resolve ?? defaultResolve;
   const info = await resolve(repoRoot, git);
 
-  const selected = await selectWikiModule(repoRoot);
-  const moduleModel = await buildRenderModule(
-    selected.moduleRoot,
-    selected.name,
-    selected.manifest.description,
-  );
-  const title = deriveWikiTitle(moduleModel);
+  const selected = await selectWikiModules(repoRoot);
+  const modules = await Promise.all(selected.map(toRenderModule));
 
   const timestamp = (opts.now?.() ?? new Date()).toISOString();
   const site = renderWikiSite({
-    module: moduleModel,
+    modules,
     context: {
       owner: info.owner,
       repo: info.repo,
       commit: info.commit,
       timestamp,
       repoUrl: info.repoUrl,
-      title,
-      reverseMode: selected.reverseMode,
+      title: info.repo,
     },
   });
 
@@ -135,6 +151,7 @@ export async function buildAndPublishWiki(
     return {
       outcome: "dry-run",
       wikiUrl,
+      modules: modules.length,
       pages: site.pages.length,
       assets: site.assets.length,
       warnings: site.warnings,
@@ -157,6 +174,7 @@ export async function buildAndPublishWiki(
   return {
     outcome: result.outcome,
     wikiUrl,
+    modules: modules.length,
     pages: site.pages.length,
     assets: site.assets.length,
     warnings: site.warnings,

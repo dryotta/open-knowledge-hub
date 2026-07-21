@@ -46,7 +46,7 @@ async function runPublish(repo: string, dryRun: boolean): Promise<number> {
   try {
     const res = await buildAndPublishWiki(repo, { dryRun, token: token() });
     process.stdout.write(
-      `wiki ${res.outcome}: ${res.pages} pages, ${res.assets} assets` +
+      `wiki ${res.outcome}: ${res.modules} modules, ${res.pages} pages, ${res.assets} assets` +
         (res.warnings.length ? `, ${res.warnings.length} warnings` : "") +
         (res.wikiUrl ? ` -> ${res.wikiUrl}` : "") +
         "\n",

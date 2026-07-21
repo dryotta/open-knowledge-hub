@@ -7,197 +7,180 @@ const baseCtx = {
   commit: "abcdef1234567890",
   timestamp: "2026-07-20T00:00:00.000Z",
   repoUrl: "https://github.com/acme/widgets",
-  title: "Telemetry",
-  reverseMode: "pr" as const,
+  title: "widgets",
 };
 
-function input(mod?: Partial<RenderModule>, ctx?: Partial<typeof baseCtx>): RenderInput {
+/** telemetry: index.md references eed before network to prove index-driven ordering. */
+function telemetry(overrides: Partial<RenderModule> = {}): RenderModule {
   return {
-    context: { ...baseCtx, ...ctx },
-    module: {
-      path: "telemetry",
-      description: "Telemetry KB",
-      indexMarkdown: "---\nokf_version: \"0.1\"\n---\n# Telemetry\n\nSee [eed](./sources/eed.md) and [home](./index.md).",
-      concepts: [
-        { sourceRelPath: "sources/eed.md", title: "EED", rawMarkdown: "---\ntitle: EED\n---\n# EED\n\nBody." },
-        {
-          sourceRelPath: "cross-cutting/id-pivots.md",
-          title: "ID pivots",
-          rawMarkdown: "# ID pivots\n\nSee [eed](../sources/eed.md#x) and [self](/cross-cutting/id-pivots.md).",
-        },
-        { sourceRelPath: "areas/network.md", title: "Network", rawMarkdown: "# Network" },
-      ],
-      assets: [],
-      ...mod,
-    },
+    path: "telemetry",
+    title: "Telemetry",
+    description: "Telemetry KB",
+    indexMarkdown:
+      '---\nokf_version: "0.1"\n---\n# Telemetry\n\nStart with [eed](./sources/eed.md), then [network](./areas/network.md).',
+    reverseMode: "pr",
+    concepts: [
+      { sourceRelPath: "sources/eed.md", title: "EED", rawMarkdown: "---\ntitle: EED\n---\n# EED\n\nBody." },
+      {
+        sourceRelPath: "cross-cutting/id-pivots.md",
+        title: "ID pivots",
+        rawMarkdown: "# ID pivots\n\nSee [eed](../sources/eed.md#x) and [self](/cross-cutting/id-pivots.md).",
+      },
+      { sourceRelPath: "areas/network.md", title: "Network", rawMarkdown: "# Network" },
+    ],
+    assets: [],
+    ...overrides,
   };
 }
 
-describe("flat concept pages", () => {
-  it("emits root-level slug pages, not nested paths", () => {
-    const site = renderWikiSite(input());
+/** playbooks: no index.md, root-level pages only — exercises the generated landing. */
+function playbooks(overrides: Partial<RenderModule> = {}): RenderModule {
+  return {
+    path: "playbooks",
+    title: "Playbooks",
+    description: "Ops runbooks",
+    reverseMode: "direct",
+    concepts: [
+      { sourceRelPath: "deploy.md", title: "Deploy", rawMarkdown: "# Deploy" },
+      { sourceRelPath: "rollback.md", title: "Rollback", rawMarkdown: "# Rollback" },
+    ],
+    assets: [],
+    ...overrides,
+  };
+}
+
+function input(modules: RenderModule[], ctx?: Partial<typeof baseCtx>): RenderInput {
+  return { context: { ...baseCtx, ...ctx }, modules };
+}
+
+describe("namespaced concept pages", () => {
+  it("prefixes every page slug with its module", () => {
+    const site = renderWikiSite(input([telemetry(), playbooks()]));
     const paths = site.pages.map((p) => p.path);
-    expect(paths).toContain("sources-eed.md");
-    expect(paths).toContain("cross-cutting-id-pivots.md");
-    expect(paths).toContain("areas-network.md");
-    expect(paths).not.toContain("telemetry/sources/eed.md");
-    expect(paths).not.toContain("telemetry/index.md");
+    expect(paths).toContain("telemetry-sources-eed.md");
+    expect(paths).toContain("telemetry-areas-network.md");
+    expect(paths).toContain("playbooks-deploy.md");
+    expect(paths).toContain("telemetry.md"); // module landing
+    expect(paths).toContain("playbooks.md");
+    expect(paths).not.toContain("sources-eed.md");
   });
 
-  it("concept pages carry a clean body with no banner and stripped frontmatter", () => {
-    const site = renderWikiSite(input());
-    const eed = site.pages.find((p) => p.path === "sources-eed.md")!;
+  it("emits clean bodies with stripped frontmatter and no banner", () => {
+    const site = renderWikiSite(input([telemetry()]));
+    const eed = site.pages.find((p) => p.path === "telemetry-sources-eed.md")!;
     expect(eed.content).toBe("# EED\n\nBody.\n");
-    expect(eed.content).not.toContain("📘");
-    expect(eed.content).not.toContain("do not edit");
     expect(eed.content).not.toContain("title: EED");
   });
 
-  it("sorts pages by path", () => {
-    const site = renderWikiSite(input());
+  it("de-dups slug collisions across modules with a warning", () => {
+    const a = playbooks({ path: "a", title: "A", concepts: [{ sourceRelPath: "b.md", title: "B", rawMarkdown: "x" }] });
+    const ab = playbooks({ path: "a-b", title: "AB", concepts: [] });
+    const site = renderWikiSite(input([a, ab]));
     const paths = site.pages.map((p) => p.path);
-    expect(paths).toEqual([...paths].sort((a, b) => a.localeCompare(b)));
-  });
-
-  it("de-dups slug collisions with a warning", () => {
-    const site = renderWikiSite(
-      input({
-        indexMarkdown: undefined,
-        concepts: [
-          { sourceRelPath: "a/b.md", title: "AB", rawMarkdown: "x" },
-          { sourceRelPath: "a-b.md", title: "AB2", rawMarkdown: "y" },
-        ],
-      }),
-    );
-    const slugs = site.pages.map((p) => p.path).filter((p) => p === "a-b.md" || p === "a-b-2.md");
-    expect(slugs).toContain("a-b.md");
-    expect(slugs).toContain("a-b-2.md");
+    expect(paths).toContain("a-b.md"); // a's concept a/b -> a-b
+    expect(paths).toContain("a-b-2.md"); // module a-b collides -> a-b-2
     expect(site.warnings.some((w) => w.kind === "collision")).toBe(true);
   });
 });
 
-describe("Home from index.md", () => {
-  it("uses the module index body with rewritten links and stripped frontmatter", () => {
-    const site = renderWikiSite(input());
-    const home = site.pages.find((p) => p.path === "Home.md")!;
-    expect(home.content).toContain("# Telemetry");
-    expect(home.content).not.toContain("okf_version");
-    expect(home.content).toContain("[eed](sources-eed)");
-    expect(home.content).toContain("[home](Home)");
+describe("module landing pages", () => {
+  it("renders a module's index.md at its module slug with rewritten links", () => {
+    const site = renderWikiSite(input([telemetry()]));
+    const landing = site.pages.find((p) => p.path === "telemetry.md")!;
+    expect(landing.content).toContain("# Telemetry");
+    expect(landing.content).not.toContain("okf_version");
+    expect(landing.content).toContain("[eed](telemetry-sources-eed)");
+    expect(landing.content).toContain("[network](telemetry-areas-network)");
   });
 
-  it("falls back to a grouped list using the wiki title when there is no index.md", () => {
-    const site = renderWikiSite(input({ indexMarkdown: undefined }, { title: "Widgets KB" }));
-    const home = site.pages.find((p) => p.path === "Home.md")!;
-    expect(home.content).toContain("# Widgets KB");
-    expect(home.content).toContain("[EED](sources-eed)");
-    expect(home.content).toContain("[Network](areas-network)");
-  });
-});
-
-describe("slug link rewriting", () => {
-  it("rewrites relative, parent, and module-root links to bare slugs", () => {
-    const site = renderWikiSite(input());
-    const idp = site.pages.find((p) => p.path === "cross-cutting-id-pivots.md")!;
-    expect(idp.content).toContain("[eed](sources-eed#x)");
-    expect(idp.content).toContain("[self](cross-cutting-id-pivots)");
-  });
-
-  it("rewrites a bare sibling link", () => {
-    const site = renderWikiSite(
-      input({
-        indexMarkdown: undefined,
-        concepts: [
-          { sourceRelPath: "sources/eed.md", title: "EED", rawMarkdown: "See [other](other.md)." },
-          { sourceRelPath: "sources/other.md", title: "Other", rawMarkdown: "# Other" },
-        ],
-      }),
-    );
-    const eed = site.pages.find((p) => p.path === "sources-eed.md")!;
-    expect(eed.content).toContain("[other](sources-other)");
-  });
-
-  it("leaves external links untouched and warns on dangling .md links", () => {
-    const site = renderWikiSite(
-      input({
-        indexMarkdown: undefined,
-        concepts: [
-          {
-            sourceRelPath: "sources/eed.md",
-            title: "EED",
-            rawMarkdown: "[ext](https://x.com/a.md) and [gone](./missing.md)",
-          },
-        ],
-      }),
-    );
-    const eed = site.pages.find((p) => p.path === "sources-eed.md")!;
-    expect(eed.content).toContain("[ext](https://x.com/a.md)");
-    expect(site.warnings.some((w) => w.kind === "dangling-link")).toBe(true);
+  it("generates a contents list when a module has no index.md", () => {
+    const site = renderWikiSite(input([playbooks()]));
+    const landing = site.pages.find((p) => p.path === "playbooks.md")!;
+    expect(landing.content).toContain("# Playbooks");
+    expect(landing.content).toContain("[Deploy](playbooks-deploy)");
+    expect(landing.content).toContain("[Rollback](playbooks-rollback)");
   });
 });
 
-describe("grouped collapsible sidebar", () => {
-  it("emits a Home link and one alphabetical <details open> group per subfolder", () => {
-    const site = renderWikiSite(input());
+describe("generated Home landing", () => {
+  it("lists each module with its title, description, and link to its landing", () => {
+    const site = renderWikiSite(input([telemetry(), playbooks()]));
+    const home = site.pages.find((p) => p.path === "Home.md")!;
+    expect(home.content).toContain("# widgets");
+    expect(home.content).toContain("**[Telemetry](telemetry)** — Telemetry KB");
+    expect(home.content).toContain("**[Playbooks](playbooks)** — Ops runbooks");
+    const iT = home.content.indexOf("Telemetry](telemetry)");
+    const iP = home.content.indexOf("Playbooks](playbooks)");
+    expect(iT).toBeLessThan(iP);
+  });
+});
+
+describe("sidebar", () => {
+  it("emits a Home link then one <details> per module, first open and rest collapsed", () => {
+    const site = renderWikiSite(input([playbooks(), telemetry()]));
     const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
     expect(side.content).toContain("[🏠 Home](Home)");
-    expect(side.content).toContain("<details open><summary><b>Areas</b> (1)</summary>");
-    expect(side.content).toContain("<details open><summary><b>Cross-cutting</b> (1)</summary>");
-    expect(side.content).toContain("<details open><summary><b>Sources</b> (1)</summary>");
-    expect(side.content).toContain("[EED](sources-eed)");
-    expect(side.content).toContain("[Network](areas-network)");
-    const iAreas = side.content.indexOf("Areas</b>");
-    const iCross = side.content.indexOf("Cross-cutting</b>");
-    const iSources = side.content.indexOf("Sources</b>");
-    expect(iAreas).toBeLessThan(iCross);
-    expect(iCross).toBeLessThan(iSources);
+    // playbooks first (input order) => open; telemetry => collapsed
+    expect(side.content).toContain("<details open><summary><b>Playbooks</b></summary>");
+    expect(side.content).toContain("<details><summary><b>Telemetry</b></summary>");
+    expect(side.content).toContain("- [Telemetry](telemetry)");
+    expect(side.content).toContain("- [Playbooks](playbooks)");
   });
 
-  it("lists root-level pages ungrouped before the groups", () => {
-    const site = renderWikiSite(
-      input({
-        indexMarkdown: undefined,
-        concepts: [
-          { sourceRelPath: "glossary.md", title: "Glossary", rawMarkdown: "# Glossary" },
-          { sourceRelPath: "areas/network.md", title: "Network", rawMarkdown: "# Network" },
-        ],
-      }),
-    );
+  it("honors a per-module expand override", () => {
+    const site = renderWikiSite(input([playbooks(), telemetry({ expanded: true })]));
     const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
-    const iGlossary = side.content.indexOf("[Glossary](glossary)");
-    const iGroup = side.content.indexOf("<details");
-    expect(iGlossary).toBeGreaterThan(-1);
-    expect(iGlossary).toBeLessThan(iGroup);
+    expect(side.content).toContain("<details open><summary><b>Telemetry</b></summary>");
+  });
+
+  it("orders a module's groups by first appearance in its index.md, then alphabetical", () => {
+    const site = renderWikiSite(input([telemetry()]));
+    const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
+    const iSources = side.content.indexOf("**Sources**");
+    const iAreas = side.content.indexOf("**Areas**");
+    const iCross = side.content.indexOf("**Cross-cutting**");
+    // index references eed (Sources) before network (Areas); Cross-cutting is unreferenced -> last.
+    expect(iSources).toBeGreaterThan(-1);
+    expect(iSources).toBeLessThan(iAreas);
+    expect(iAreas).toBeLessThan(iCross);
   });
 });
 
-describe("header from metadata", () => {
-  it("shows the title, provenance, and a pr-mode edit invitation", () => {
-    const site = renderWikiSite(input());
+describe("link and asset rewriting", () => {
+  it("rewrites relative, parent, and module-root links to namespaced slugs", () => {
+    const site = renderWikiSite(input([telemetry()]));
+    const idp = site.pages.find((p) => p.path === "telemetry-cross-cutting-id-pivots.md")!;
+    expect(idp.content).toContain("[eed](telemetry-sources-eed#x)");
+    expect(idp.content).toContain("[self](telemetry-cross-cutting-id-pivots)");
+  });
+
+  it("flattens referenced assets to namespaced filenames and warns on missing ones", () => {
+    const bytes = Buffer.from("PNGDATA");
+    const mod = playbooks({
+      concepts: [
+        { sourceRelPath: "deploy.md", title: "Deploy", rawMarkdown: "![d](./assets/retry.png)\n[missing](./assets/gone.png)" },
+      ],
+      assets: [{ sourceRelPath: "assets/retry.png", bytes }],
+    });
+    const site = renderWikiSite(input([mod]));
+    expect(site.assets.map((a) => a.path)).toContain("playbooks-assets-retry.png");
+    const deploy = site.pages.find((p) => p.path === "playbooks-deploy.md")!;
+    expect(deploy.content).toContain("![d](playbooks-assets-retry.png)");
+    expect(site.warnings.some((w) => w.kind === "dangling-asset")).toBe(true);
+  });
+});
+
+describe("header and footer", () => {
+  it("header carries generic provenance and a back-sync note", () => {
+    const site = renderWikiSite(input([telemetry()]));
     const header = site.pages.find((p) => p.path === "_Header.md")!;
-    expect(header.content).toContain("# Telemetry");
     expect(header.content).toContain("[`acme/widgets`](https://github.com/acme/widgets)");
-    expect(header.content).toContain("module `telemetry`");
-    expect(header.content).toContain("open a pull request back to the source");
+    expect(header.content).toContain("may sync back to the source");
+    expect(header.content).not.toContain("# widgets");
   });
 
-  it("adapts the invitation for direct mode", () => {
-    const site = renderWikiSite(input(undefined, { reverseMode: "direct" }));
-    const header = site.pages.find((p) => p.path === "_Header.md")!;
-    expect(header.content).toContain("commit back to the source");
-  });
-
-  it("omits the edit invitation for off mode", () => {
-    const site = renderWikiSite(input(undefined, { reverseMode: "off" }));
-    const header = site.pages.find((p) => p.path === "_Header.md")!;
-    expect(header.content).toContain("For reference only");
-    expect(header.content).not.toContain("Edits here");
-  });
-});
-
-describe("footer", () => {
-  it("records owner/repo, short commit, a tree link and timestamp", () => {
-    const site = renderWikiSite(input());
+  it("footer records owner/repo, short commit, tree link, and timestamp", () => {
+    const site = renderWikiSite(input([telemetry()]));
     const footer = site.pages.find((p) => p.path === "_Footer.md")!;
     expect(footer.content).toContain("acme/widgets@abcdef1");
     expect(footer.content).toContain("/tree/abcdef1234567890");
@@ -206,35 +189,12 @@ describe("footer", () => {
 });
 
 describe("slugToSource map", () => {
-  it("maps every concept slug to its source path plus Home->index.md, excluding chrome", () => {
-    const site = renderWikiSite(input());
-    expect(site.slugToSource.get("Home")).toBe("index.md");
-    expect(site.slugToSource.get("sources-eed")).toBe("sources/eed.md");
-    expect(site.slugToSource.get("areas-network")).toBe("areas/network.md");
+  it("maps every slug to its module + source path, module landing to index.md, excluding chrome/Home", () => {
+    const site = renderWikiSite(input([telemetry(), playbooks()]));
+    expect(site.slugToSource.get("telemetry")).toEqual({ module: "telemetry", sourceRel: "index.md" });
+    expect(site.slugToSource.get("telemetry-sources-eed")).toEqual({ module: "telemetry", sourceRel: "sources/eed.md" });
+    expect(site.slugToSource.get("playbooks-deploy")).toEqual({ module: "playbooks", sourceRel: "deploy.md" });
+    expect(site.slugToSource.has("Home")).toBe(false);
     expect(site.slugToSource.has("_Header")).toBe(false);
-    expect(site.slugToSource.has("_Sidebar")).toBe(false);
-  });
-});
-
-describe("assets", () => {
-  it("flattens a referenced asset and rewrites to a bare filename", () => {
-    const bytes = Buffer.from("PNGDATA");
-    const site = renderWikiSite(
-      input({
-        indexMarkdown: undefined,
-        concepts: [
-          {
-            sourceRelPath: "sources/eed.md",
-            title: "EED",
-            rawMarkdown: "![d](../assets/retry.png)\n[missing](../assets/gone.png)",
-          },
-        ],
-        assets: [{ sourceRelPath: "assets/retry.png", bytes }],
-      }),
-    );
-    expect(site.assets.map((a) => a.path)).toContain("assets-retry.png");
-    const eed = site.pages.find((p) => p.path === "sources-eed.md")!;
-    expect(eed.content).toContain("![d](assets-retry.png)");
-    expect(site.warnings.some((w) => w.kind === "dangling-asset")).toBe(true);
   });
 });

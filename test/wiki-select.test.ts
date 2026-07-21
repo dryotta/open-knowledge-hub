@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { selectWikiModule } from "../src/wiki/select.js";
+import { selectWikiModules } from "../src/wiki/select.js";
 import { saveModuleManifest, type ModuleManifest } from "../src/modules/manifest.js";
 
 async function repoWith(mods: Record<string, ModuleManifest>): Promise<string> {
@@ -14,54 +14,50 @@ async function repoWith(mods: Record<string, ModuleManifest>): Promise<string> {
   return dir;
 }
 
-describe("selectWikiModule", () => {
-  it("returns the sole knowledge module flagged wiki-sync: true", async () => {
+describe("selectWikiModules", () => {
+  it("returns every flagged module, of any type, sorted alphabetically", async () => {
     const dir = await repoWith({
       telemetry: { type: "knowledge", description: "T", "wiki-sync": true },
-      skills: { type: "skills", description: "S" },
-      other: { type: "knowledge", description: "O" },
+      playbooks: { type: "skills", description: "P", "wiki-sync": true } as ModuleManifest,
+      skipped: { type: "knowledge", description: "O" },
     });
     try {
-      const sel = await selectWikiModule(dir);
-      expect(sel.name).toBe("telemetry");
-      expect(sel.moduleRoot).toBe(join(dir, "telemetry"));
-      expect(sel.reverseMode).toBe("pr");
-      expect(sel.manifest.type).toBe("knowledge");
+      const sel = await selectWikiModules(dir);
+      expect(sel.map((m) => m.name)).toEqual(["playbooks", "telemetry"]);
+      expect(sel[0].moduleRoot).toBe(join(dir, "playbooks"));
+      expect(sel[0].reverseMode).toBe("pr");
+      expect(sel[0].expanded).toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("resolves the reverse mode from the manifest, defaulting to pr", async () => {
+  it("resolves reverse mode and expand override from the manifest", async () => {
     const dir = await repoWith({
-      a: { type: "knowledge", description: "A", "wiki-sync": true, "wiki-sync-reverse-mode": "direct" },
+      a: {
+        type: "knowledge",
+        description: "A",
+        "wiki-sync": true,
+        "wiki-sync-reverse-mode": "direct",
+        "wiki-sync-expanded": true,
+      },
     });
     try {
-      expect((await selectWikiModule(dir)).reverseMode).toBe("direct");
+      const [m] = await selectWikiModules(dir);
+      expect(m.reverseMode).toBe("direct");
+      expect(m.expanded).toBe(true);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("rejects when no knowledge module is flagged", async () => {
+  it("rejects when no module is flagged", async () => {
     const dir = await repoWith({
       telemetry: { type: "knowledge", description: "T" },
-      skills: { type: "skills", description: "S", "wiki-sync": true } as ModuleManifest,
+      skills: { type: "skills", description: "S" },
     });
     try {
-      await expect(selectWikiModule(dir)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects when more than one knowledge module is flagged (flat namespace)", async () => {
-    const dir = await repoWith({
-      a: { type: "knowledge", description: "A", "wiki-sync": true },
-      b: { type: "knowledge", description: "B", "wiki-sync": true },
-    });
-    try {
-      await expect(selectWikiModule(dir)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+      await expect(selectWikiModules(dir)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

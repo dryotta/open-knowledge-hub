@@ -39,27 +39,25 @@ afterEach(async () => {
 const exists = (p: string) => stat(p).then(() => true).catch(() => false);
 
 describe("setContainerWikiEnabled", () => {
-  it("enable scaffolds workflow + config and flips the registry flag", async () => {
+  it("enable scaffolds the workflow and flips the registry flag", async () => {
     const { service, paths, clone } = await seed("git", "https://github.com/acme/widgets.git");
     const res = await service.setContainerWikiEnabled("widgets", true);
     expect(res.changed).toBe(true);
     expect(res.entry.wiki).toEqual({ enabled: true });
     const wf = join(clone, ".github", "workflows", "okh-wiki.yml");
     expect(await exists(wf)).toBe(true);
-    expect(await exists(join(clone, ".okh", "wiki.yml"))).toBe(true);
     const text = await readFile(wf, "utf8");
     expect(text).not.toContain("__OKH_VERSION__");
     expect(text).toContain(`open-knowledge-hub@${okhVersion()}`);
     expect((await loadRegistry(paths)).containers[0].wiki).toEqual({ enabled: true });
   });
 
-  it("disable removes both files and clears the flag", async () => {
+  it("disable removes the workflow and clears the flag", async () => {
     const { service, clone } = await seed("git", "https://github.com/acme/widgets.git");
     await service.setContainerWikiEnabled("widgets", true);
     const res = await service.setContainerWikiEnabled("widgets", false);
     expect(res.entry.wiki).toEqual({ enabled: false });
     expect(await exists(join(clone, ".github", "workflows", "okh-wiki.yml"))).toBe(false);
-    expect(await exists(join(clone, ".okh", "wiki.yml"))).toBe(false);
   });
 
   it("rejects a non-git container", async () => {

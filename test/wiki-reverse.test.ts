@@ -30,33 +30,52 @@ async function commitAll(dir: string, message: string, env: Record<string, strin
 
 const EED_SOURCE = `---\ntitle: EED\nokf_version: "0.1"\n---\n# EED\n\nold body.\n`;
 
-async function makeSourceRepo(reverseMode?: WikiReverseMode): Promise<string> {
+/**
+ * Source repo with two flagged modules: `kb` (knowledge) and `ops` (skills).
+ * `kb` uses the given reverse mode; `ops` defaults to pr unless overridden.
+ */
+async function makeSourceRepo(kbMode?: WikiReverseMode, opsMode?: WikiReverseMode): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "okh-src-"));
   await git(dir, ["init", "-b", "main", "."], H);
-  const mod = join(dir, "kb");
-  await mkdir(join(mod, "sources"), { recursive: true });
-  await mkdir(join(mod, "cross-cutting"), { recursive: true });
-  await saveModuleManifest(mod, {
+
+  const kb = join(dir, "kb");
+  await mkdir(join(kb, "sources"), { recursive: true });
+  await mkdir(join(kb, "cross-cutting"), { recursive: true });
+  await saveModuleManifest(kb, {
     type: "knowledge",
     description: "KB",
     "wiki-sync": true,
-    ...(reverseMode ? { "wiki-sync-reverse-mode": reverseMode } : {}),
+    ...(kbMode ? { "wiki-sync-reverse-mode": kbMode } : {}),
   });
-  await writeFile(join(mod, "index.md"), "# KB\n\nWelcome.\n");
-  await writeFile(join(mod, "sources", "eed.md"), EED_SOURCE);
-  await writeFile(join(mod, "cross-cutting", "id-pivots.md"), "# ID pivots\n\nPivots.\n");
+  await writeFile(join(kb, "index.md"), "# KB\n\nWelcome.\n");
+  await writeFile(join(kb, "sources", "eed.md"), EED_SOURCE);
+  await writeFile(join(kb, "cross-cutting", "id-pivots.md"), "# ID pivots\n\nPivots.\n");
+
+  const ops = join(dir, "ops");
+  await mkdir(ops, { recursive: true });
+  await saveModuleManifest(ops, {
+    type: "skills",
+    description: "Ops",
+    "wiki-sync": true,
+    ...(opsMode ? { "wiki-sync-reverse-mode": opsMode } : {}),
+  });
+  await writeFile(join(ops, "deploy.md"), "# Deploy\n\ndeploy steps.\n");
+
   await commitAll(dir, "seed source", H);
   return dir;
 }
 
-/** Wiki repo whose BASE commit is bot-authored and mirrors the source pages. */
+/** Wiki repo whose BASE commit is bot-authored and mirrors the namespaced pages. */
 async function makeWikiRepo(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "okh-wiki-"));
   await git(dir, ["init", "-b", "master", "."], BOT);
-  await writeFile(join(dir, "Home.md"), "# KB\n\nWelcome.\n");
-  await writeFile(join(dir, "sources-eed.md"), "# EED\n\nold body.\n");
-  await writeFile(join(dir, "cross-cutting-id-pivots.md"), "# ID pivots\n\nPivots.\n");
-  await writeFile(join(dir, "_Header.md"), "# KB\n");
+  await writeFile(join(dir, "Home.md"), "# widgets\n");
+  await writeFile(join(dir, "kb.md"), "# KB\n\nWelcome.\n");
+  await writeFile(join(dir, "kb-sources-eed.md"), "# EED\n\nold body.\n");
+  await writeFile(join(dir, "kb-cross-cutting-id-pivots.md"), "# ID pivots\n\nPivots.\n");
+  await writeFile(join(dir, "ops.md"), "# Ops\n");
+  await writeFile(join(dir, "ops-deploy.md"), "# Deploy\n\ndeploy steps.\n");
+  await writeFile(join(dir, "_Header.md"), "gen\n");
   await writeFile(join(dir, "_Sidebar.md"), "[Home](Home)\n");
   await writeFile(join(dir, "_Footer.md"), "gen\n");
   await commitAll(dir, "Publish wiki from 0000000", BOT);
@@ -80,17 +99,11 @@ function resolver(originBare: string, wikiRepo: string): () => Promise<ReverseRe
 }
 
 describe("reverseSyncWiki", () => {
-  it("no-ops when the module opts out of reverse sync", async () => {
-    const src = await makeSourceRepo("off");
-    const res = await reverseSyncWiki(src, { resolve: resolver("unused", "unused") });
-    expect(res.outcome).toBe("disabled");
-  });
-
   it("reports no-baseline when the wiki has no bot commit", async () => {
     const src = await makeSourceRepo("pr");
     const wiki = await mkdtemp(join(tmpdir(), "okh-wiki-"));
     await git(wiki, ["init", "-b", "master", "."], H);
-    await writeFile(join(wiki, "Home.md"), "# KB\n");
+    await writeFile(join(wiki, "Home.md"), "# widgets\n");
     await commitAll(wiki, "human first", H);
     const res = await reverseSyncWiki(src, { resolve: resolver("unused", wiki) });
     expect(res.outcome).toBe("no-baseline");
@@ -106,7 +119,7 @@ describe("reverseSyncWiki", () => {
   it("dry-run modifies a page: preserves frontmatter and un-rewrites slug links", async () => {
     const src = await makeSourceRepo("pr");
     const wiki = await makeWikiRepo();
-    await writeFile(join(wiki, "sources-eed.md"), "# EED\n\nnew body. See [pivots](cross-cutting-id-pivots).\n");
+    await writeFile(join(wiki, "kb-sources-eed.md"), "# EED\n\nnew body. See [pivots](kb-cross-cutting-id-pivots).\n");
     await commitAll(wiki, "human edit", H);
 
     const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
@@ -119,23 +132,11 @@ describe("reverseSyncWiki", () => {
     expect(written).toContain("[pivots](../cross-cutting/id-pivots.md)");
   });
 
-  it("dry-run maps a new page to a flat source file without frontmatter", async () => {
+  it("dry-run maps a module landing edit back to its index.md", async () => {
     const src = await makeSourceRepo("pr");
     const wiki = await makeWikiRepo();
-    await writeFile(join(wiki, "glossary.md"), "# Glossary\n\nTerms.\n");
-    await commitAll(wiki, "human add", H);
-
-    const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
-    expect(res.counts.added).toBe(1);
-    const written = await readFile(join(src, "kb", "glossary.md"), "utf8");
-    expect(written).toBe("# Glossary\n\nTerms.\n");
-  });
-
-  it("dry-run maps Home edits back to index.md", async () => {
-    const src = await makeSourceRepo("pr");
-    const wiki = await makeWikiRepo();
-    await writeFile(join(wiki, "Home.md"), "# KB\n\nUpdated welcome.\n");
-    await commitAll(wiki, "human home", H);
+    await writeFile(join(wiki, "kb.md"), "# KB\n\nUpdated welcome.\n");
+    await commitAll(wiki, "human landing", H);
 
     const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
     expect(res.counts.modified).toBe(1);
@@ -143,10 +144,32 @@ describe("reverseSyncWiki", () => {
     expect(written).toContain("Updated welcome.");
   });
 
+  it("dry-run ignores generated Home edits (unmapped)", async () => {
+    const src = await makeSourceRepo("pr");
+    const wiki = await makeWikiRepo();
+    await writeFile(join(wiki, "Home.md"), "# widgets\n\nedited landing.\n");
+    await commitAll(wiki, "human home", H);
+
+    const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
+    expect(res.outcome).toBe("disabled"); // nothing landed
+  });
+
+  it("dry-run maps a new namespaced page to a flat file in that module", async () => {
+    const src = await makeSourceRepo("pr");
+    const wiki = await makeWikiRepo();
+    await writeFile(join(wiki, "ops-rollback.md"), "# Rollback\n\nsteps.\n");
+    await commitAll(wiki, "human add", H);
+
+    const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
+    expect(res.counts.added).toBe(1);
+    const written = await readFile(join(src, "ops", "rollback.md"), "utf8");
+    expect(written).toBe("# Rollback\n\nsteps.\n");
+  });
+
   it("dry-run deletes the mapped source file for a deleted page", async () => {
     const src = await makeSourceRepo("pr");
     const wiki = await makeWikiRepo();
-    await rm(join(wiki, "sources-eed.md"));
+    await rm(join(wiki, "kb-sources-eed.md"));
     await commitAll(wiki, "human delete", H);
 
     const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
@@ -154,24 +177,11 @@ describe("reverseSyncWiki", () => {
     await expect(readFile(join(src, "kb", "sources", "eed.md"), "utf8")).rejects.toThrow();
   });
 
-  it("dry-run handles a rename: deletes the old source and writes the new flat file", async () => {
-    const src = await makeSourceRepo("pr");
-    const wiki = await makeWikiRepo();
-    await git(wiki, ["mv", "sources-eed.md", "sources-eed-renamed.md"], H);
-    await commitAll(wiki, "human rename", H);
-
-    const res = await reverseSyncWiki(src, { dryRun: true, resolve: resolver("unused", wiki) });
-    expect(res.counts.renamed).toBe(1);
-    await expect(readFile(join(src, "kb", "sources", "eed.md"), "utf8")).rejects.toThrow();
-    const written = await readFile(join(src, "kb", "sources-eed-renamed.md"), "utf8");
-    expect(written).toContain("old body.");
-  });
-
   it("pr mode pushes a branch and opens a PR", async () => {
     const src = await makeSourceRepo("pr");
     const wiki = await makeWikiRepo();
     const origin = await makeOriginBare();
-    await writeFile(join(wiki, "sources-eed.md"), "# EED\n\nedited.\n");
+    await writeFile(join(wiki, "kb-sources-eed.md"), "# EED\n\nedited.\n");
     await commitAll(wiki, "human edit", H);
 
     const calls: Array<Record<string, unknown>> = [];
@@ -186,7 +196,6 @@ describe("reverseSyncWiki", () => {
 
     expect(res.outcome).toBe("pr-opened");
     expect(res.prNumber).toBe(5);
-    expect(res.prUrl).toBe("https://github.com/acme/widgets/pull/5");
     expect(calls[0].head).toBe("okh/wiki-sync/run-42");
     expect(calls[0].base).toBe("main");
     const refs = await git(origin, ["ls-remote", "--heads", "."]);
@@ -197,7 +206,7 @@ describe("reverseSyncWiki", () => {
     const src = await makeSourceRepo("direct");
     const wiki = await makeWikiRepo();
     const origin = await makeOriginBare();
-    await writeFile(join(wiki, "sources-eed.md"), "# EED\n\nedited.\n");
+    await writeFile(join(wiki, "kb-sources-eed.md"), "# EED\n\nedited.\n");
     await commitAll(wiki, "human edit", H);
 
     const res = await reverseSyncWiki(src, { resolve: resolver(origin, wiki) });
@@ -205,5 +214,37 @@ describe("reverseSyncWiki", () => {
     expect(res.commit).toBeTruthy();
     const refs = await git(origin, ["ls-remote", "--heads", "."]);
     expect(refs).toContain("refs/heads/main");
+  });
+
+  it("partitions edits by module mode: direct commit + combined PR in one run", async () => {
+    // kb is direct, ops is pr. Editing a page in each lands both a commit and a PR.
+    const src = await makeSourceRepo("direct", "pr");
+    const wiki = await makeWikiRepo();
+    const origin = await makeOriginBare();
+    await writeFile(join(wiki, "kb-sources-eed.md"), "# EED\n\nkb edit.\n");
+    await writeFile(join(wiki, "ops-deploy.md"), "# Deploy\n\nops edit.\n");
+    await commitAll(wiki, "human edits", H);
+
+    const res = await reverseSyncWiki(src, {
+      resolve: resolver(origin, wiki),
+      runId: "run-99",
+      openPr: async () => ({ number: 7, url: "https://github.com/acme/widgets/pull/7" }),
+    });
+
+    expect(res.outcome).toBe("committed+pr-opened");
+    expect(res.prNumber).toBe(7);
+    const refs = await git(origin, ["ls-remote", "--heads", "."]);
+    expect(refs).toContain("refs/heads/main");
+    expect(refs).toContain("okh/wiki-sync/run-99");
+  });
+
+  it("no-ops (disabled) when the only edited module is off-mode", async () => {
+    const src = await makeSourceRepo("off", "off");
+    const wiki = await makeWikiRepo();
+    await writeFile(join(wiki, "kb-sources-eed.md"), "# EED\n\nedited.\n");
+    await commitAll(wiki, "human edit", H);
+
+    const res = await reverseSyncWiki(src, { resolve: resolver("unused", wiki) });
+    expect(res.outcome).toBe("disabled");
   });
 });

@@ -986,11 +986,13 @@ export class ContainerService {
   }
 
   /**
-   * Enable or disable GitHub-wiki publishing for a container. Requires a
-   * git-backed container with a github.com origin. Scaffolds (enable) or removes
-   * (disable) `.github/workflows/okh-wiki.yml` and `.okh/wiki.yml` in the clone,
-   * then records `wiki.enabled` in the registry. The scaffolded files are
-   * committed by the user's next `sync`.
+   * Enable or disable GitHub-wiki sync for a container. Requires a git-backed
+   * container with a github.com origin. Scaffolds (enable) or removes (disable)
+   * `.github/workflows/okh-wiki.yml` in the clone, then records `wiki.enabled`
+   * in the registry. Selecting which modules to publish is a separate, explicit
+   * author action (`wiki-sync: true` in each module's `.okh/module.yaml`; any
+   * module type may opt in). The scaffolded workflow is committed by the user's
+   * next `sync`.
    */
   setContainerWikiEnabled(
     name: string,
@@ -1021,33 +1023,18 @@ export class ContainerService {
     });
   }
 
-  /** Write the version-pinned workflow + a starter `.okh/wiki.yml` (kept if present). */
+  /** Write the version-pinned two-way sync workflow. */
   private async scaffoldWikiFiles(containerRoot: string): Promise<void> {
     const template = await readFile(new URL("../../resources/wiki/workflow.yml", import.meta.url), "utf8");
     const rendered = template.replaceAll("__OKH_VERSION__", okhVersion());
     const workflowPath = join(containerRoot, ".github", "workflows", "okh-wiki.yml");
     await mkdir(dirname(workflowPath), { recursive: true });
     await writeFile(workflowPath, rendered, "utf8");
-
-    const configPath = join(containerRoot, ".okh", "wiki.yml");
-    await mkdir(dirname(configPath), { recursive: true });
-    const configExists = await stat(configPath).then(() => true).catch(() => false);
-    if (!configExists) {
-      await writeFile(
-        configPath,
-        "# Open Knowledge Hub wiki config\n" +
-          "# module: <knowledge-module-folder>   # required: the single knowledge module to publish\n" +
-          "# title: My Knowledge Base\n" +
-          "# footer: (c) My Org\n",
-        "utf8",
-      );
-    }
   }
 
-  /** Remove the scaffolded workflow + config (idempotent). */
+  /** Remove the scaffolded workflow (idempotent). */
   private async removeWikiFiles(containerRoot: string): Promise<void> {
     await rm(join(containerRoot, ".github", "workflows", "okh-wiki.yml"), { force: true });
-    await rm(join(containerRoot, ".okh", "wiki.yml"), { force: true });
   }
 
   /** Absolute path to a module root, guarded against traversal outside the container. */

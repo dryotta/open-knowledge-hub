@@ -3,12 +3,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { Git } from "../git/git.js";
 import { OkhError } from "../errors.js";
+import type { WikiReverseMode } from "../modules/manifest.js";
 import { parseFrontmatter } from "../util/frontmatter.js";
 import { WIKI_BOT_EMAIL, WIKI_BOT_NAME, WIKI_CHROME } from "./constants.js";
 import { openPr as defaultOpenPr, type OpenPrResult } from "./github.js";
-import { buildRenderModule, deriveWikiTitle } from "./publish.js";
-import { renderWikiSite } from "./renderer.js";
-import { selectWikiModule } from "./select.js";
+import { toRenderModule } from "./publish.js";
+import { renderWikiSite, type SlugSource } from "./renderer.js";
+import { selectWikiModules, type SelectedWikiModule } from "./select.js";
+import { pathSlug } from "./slug.js";
 import { injectToken, parseGitHubRepo, repoBrowseUrl, wikiRemoteUrl } from "./url.js";
 
 export type ReverseOutcome =
@@ -17,6 +19,7 @@ export type ReverseOutcome =
   | "up-to-date"
   | "pr-opened"
   | "committed"
+  | "committed+pr-opened"
   | "dry-run";
 
 export type ReverseCounts = { added: number; modified: number; deleted: number; renamed: number };
@@ -70,6 +73,11 @@ async function defaultReverseResolve(repoRoot: string, git: Git): Promise<Revers
   };
 }
 
+function basename(p: string): string {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? p : p.slice(i + 1);
+}
+
 /** Parse `git diff --name-status -M` output into typed changes (chrome dropped). */
 function parseChanges(raw: string): Change[] {
   const changes: Change[] = [];
@@ -84,22 +92,14 @@ function parseChanges(raw: string): Change[] {
       changes.push({ status: code, newPath: parts[1] });
     }
   }
-  return changes.filter((c) => !WIKI_CHROME.has(basename(c.newPath)) && !(c.oldPath && WIKI_CHROME.has(basename(c.oldPath))));
+  return changes.filter(
+    (c) => !WIKI_CHROME.has(basename(c.newPath)) && !(c.oldPath && WIKI_CHROME.has(basename(c.oldPath))),
+  );
 }
 
-function basename(p: string): string {
-  const i = p.lastIndexOf("/");
-  return i === -1 ? p : p.slice(i + 1);
-}
-
-/** Wiki page filename (flat, e.g. `sources-eed.md`) -> its slug. */
+/** Wiki page filename (flat, e.g. `telemetry-sources-eed.md`) -> its slug. */
 function slugOfWikiPage(wikiPath: string): string {
   return basename(wikiPath).replace(/\.md$/i, "");
-}
-
-/** Map a wiki slug to a module-relative source path. Unknown slugs land flat at the module root. */
-function mapSlugToSourceRel(slug: string, slugToSource: Map<string, string>): string {
-  return slugToSource.get(slug) ?? `${slug}.md`;
 }
 
 /** Drop a defensive legacy "generated" banner if a wiki page still carries one. */
@@ -115,8 +115,8 @@ function stripLegacyBanner(body: string): string {
   return body;
 }
 
-/** Rewrite bare wiki slug links back to source-relative `.md` paths. */
-function unrewriteLinks(body: string, destDir: string, slugToSource: Map<string, string>): string {
+/** Rewrite bare wiki slug links back to source-relative `.md` paths within the module. */
+function unrewriteLinks(body: string, destDir: string, slugToRel: Map<string, string>): string {
   return body.replace(/(\]\()([^)]+)(\))/g, (whole, open, rawTarget, close) => {
     const target = rawTarget.trim();
     if (/^[a-z]+:/i.test(target) || target.startsWith("#")) return whole;
@@ -124,7 +124,7 @@ function unrewriteLinks(body: string, destDir: string, slugToSource: Map<string,
     const slug = hash === -1 ? target : target.slice(0, hash);
     const anchor = hash === -1 ? "" : target.slice(hash);
     if (slug.toLowerCase().endsWith(".md") || slug === "") return whole;
-    const sourceRel = slugToSource.get(slug);
+    const sourceRel = slugToRel.get(slug);
     if (!sourceRel) return whole;
     let rel = posix.relative(destDir === "" ? "." : destDir, sourceRel);
     if (!rel.startsWith(".")) rel = `./${rel}`;
@@ -145,10 +145,10 @@ async function transformToSource(
   wikiContent: string,
   destAbs: string,
   destRel: string,
-  slugToSource: Map<string, string>,
+  slugToRel: Map<string, string>,
 ): Promise<string> {
   let body = stripLegacyBanner(wikiContent);
-  body = unrewriteLinks(body, posix.dirname(destRel), slugToSource);
+  body = unrewriteLinks(body, posix.dirname(destRel), slugToRel);
   const existing = await readMaybe(destAbs);
   if (existing !== undefined) {
     const parsed = parseFrontmatter(existing);
@@ -157,6 +157,12 @@ async function transformToSource(
   }
   return body;
 }
+
+type ModuleTarget = {
+  selected: SelectedWikiModule;
+  /** Wiki slug (within this module) -> module-relative source path, for link back-rewrite. */
+  slugToRel: Map<string, string>;
+};
 
 export async function reverseSyncWiki(
   repoRoot: string,
@@ -167,11 +173,36 @@ export async function reverseSyncWiki(
   const openPr = opts.openPr ?? defaultOpenPr;
   const zero: ReverseCounts = { added: 0, modified: 0, deleted: 0, renamed: 0 };
 
-  const selected = await selectWikiModule(repoRoot);
-  if (selected.reverseMode === "off") {
+  const selected = await selectWikiModules(repoRoot);
+  if (selected.every((s) => s.reverseMode === "off")) {
     return { outcome: "disabled", changed: 0, counts: zero };
   }
   const info = await resolve(repoRoot, git);
+
+  // Render all selected modules to map every wiki slug -> its source module + path.
+  const modules = await Promise.all(selected.map(toRenderModule));
+  const site = renderWikiSite({
+    modules,
+    context: {
+      owner: info.owner,
+      repo: info.repo,
+      commit: "0".repeat(40),
+      timestamp: new Date(0).toISOString(),
+      repoUrl: info.repoUrl,
+      title: info.repo,
+    },
+  });
+  const slugToSource = site.slugToSource;
+
+  const byName = new Map<string, ModuleTarget>();
+  for (const sel of selected) byName.set(sel.name, { selected: sel, slugToRel: new Map() });
+  for (const [slug, src] of slugToSource) byName.get(src.module)?.slugToRel.set(slug, src.sourceRel);
+
+  // For attributing brand-new wiki pages (no existing source) to a module, match
+  // the longest module-slug prefix. Longer slugs first so `a-b` beats `a`.
+  const moduleSlugs = selected
+    .map((sel) => ({ name: sel.name, slug: pathSlug(sel.name) }))
+    .sort((x, y) => y.slug.length - x.slug.length);
 
   // Clone the wiki and find the last bot-authored commit as the diff base.
   const wikiDir = opts.wikiWorkdir ?? (await mkdtemp(join(tmpdir(), "okh-wiki-rev-")));
@@ -184,114 +215,158 @@ export async function reverseSyncWiki(
   const changes = parseChanges(await git.nameStatus(wikiDir, `${base}..HEAD`));
   if (changes.length === 0) return { outcome: "up-to-date", changed: 0, counts: zero };
 
-  // Render the current source module to map existing wiki slugs -> source paths.
-  const moduleModel = await buildRenderModule(selected.moduleRoot, selected.name, selected.manifest.description);
-  const site = renderWikiSite({
-    module: moduleModel,
-    context: {
-      owner: info.owner,
-      repo: info.repo,
-      commit: "0".repeat(40),
-      timestamp: new Date(0).toISOString(),
-      repoUrl: info.repoUrl,
-      title: deriveWikiTitle(moduleModel),
-      reverseMode: selected.reverseMode,
-    },
-  });
-  const slugToSource = site.slugToSource;
-
   const counts: ReverseCounts = { ...zero };
-  const touched: string[] = [];
+  /** Repo-relative paths touched, grouped by the owning module's reverse mode. */
+  const touchedByMode = new Map<WikiReverseMode, string[]>([
+    ["direct", []],
+    ["pr", []],
+    ["off", []],
+  ]);
 
-  const applyUpsert = async (wikiPath: string, destRel: string): Promise<void> => {
-    const destAbs = join(selected.moduleRoot, destRel);
-    const wikiContent = await readFile(join(wikiDir, wikiPath), "utf8");
-    const content = await transformToSource(wikiContent, destAbs, destRel, slugToSource);
-    await mkdir(dirname(destAbs), { recursive: true });
-    await writeFile(destAbs, content, "utf8");
-    touched.push(join(selected.name, destRel));
+  const resolveSlug = (slug: string): { target: ModuleTarget; destRel: string } | undefined => {
+    const src: SlugSource | undefined = slugToSource.get(slug);
+    if (src) {
+      const target = byName.get(src.module);
+      return target ? { target, destRel: src.sourceRel } : undefined;
+    }
+    // Brand-new page: attribute to the module whose slug is the longest prefix and
+    // land it flat at that module's root (the slug->path map is not reversible).
+    for (const m of moduleSlugs) {
+      if (slug === m.slug || slug.startsWith(`${m.slug}-`)) {
+        const target = byName.get(m.name);
+        if (!target) continue;
+        const remainder = slug === m.slug ? m.slug : slug.slice(m.slug.length + 1);
+        return { target, destRel: `${remainder}.md` };
+      }
+    }
+    return undefined;
   };
 
-  const applyDelete = async (destRel: string): Promise<void> => {
-    const destAbs = join(selected.moduleRoot, destRel);
+  const applyUpsert = async (wikiPath: string, target: ModuleTarget, destRel: string): Promise<void> => {
+    const destAbs = join(target.selected.moduleRoot, destRel);
+    const wikiContent = await readFile(join(wikiDir, wikiPath), "utf8");
+    const content = await transformToSource(wikiContent, destAbs, destRel, target.slugToRel);
+    await mkdir(dirname(destAbs), { recursive: true });
+    await writeFile(destAbs, content, "utf8");
+    touchedByMode.get(target.selected.reverseMode)!.push(join(target.selected.name, destRel));
+  };
+
+  const applyDelete = async (target: ModuleTarget, destRel: string): Promise<void> => {
+    const destAbs = join(target.selected.moduleRoot, destRel);
     if ((await readMaybe(destAbs)) !== undefined) {
       await rm(destAbs, { force: true });
-      touched.push(join(selected.name, destRel));
+      touchedByMode.get(target.selected.reverseMode)!.push(join(target.selected.name, destRel));
     }
   };
 
   for (const change of changes) {
     if (change.status === "A" || change.status === "M") {
-      const destRel = mapSlugToSourceRel(slugOfWikiPage(change.newPath), slugToSource);
-      await applyUpsert(change.newPath, destRel);
+      const r = resolveSlug(slugOfWikiPage(change.newPath));
+      if (!r) continue; // unknown slug (e.g. Home or a new page for no module) — skip
+      await applyUpsert(change.newPath, r.target, r.destRel);
       if (change.status === "A") counts.added += 1;
       else counts.modified += 1;
     } else if (change.status === "D") {
-      const destRel = mapSlugToSourceRel(slugOfWikiPage(change.newPath), slugToSource);
-      await applyDelete(destRel);
+      const r = resolveSlug(slugOfWikiPage(change.newPath));
+      if (!r) continue;
+      await applyDelete(r.target, r.destRel);
       counts.deleted += 1;
     } else {
-      const oldRel = mapSlugToSourceRel(slugOfWikiPage(change.oldPath!), slugToSource);
-      const newRel = mapSlugToSourceRel(slugOfWikiPage(change.newPath), slugToSource);
-      if (oldRel !== newRel) await applyDelete(oldRel);
-      await applyUpsert(change.newPath, newRel);
+      const oldR = resolveSlug(slugOfWikiPage(change.oldPath!));
+      const newR = resolveSlug(slugOfWikiPage(change.newPath));
+      if (!newR) continue;
+      if (oldR && (oldR.target !== newR.target || oldR.destRel !== newR.destRel)) {
+        await applyDelete(oldR.target, oldR.destRel);
+      }
+      await applyUpsert(change.newPath, newR.target, newR.destRel);
       counts.renamed += 1;
     }
   }
 
-  // Stage in the source checkout; an empty net diff means nothing to land.
-  await git.stageAll(repoRoot);
-  if (!(await git.hasStagedChanges(repoRoot))) {
-    return { outcome: "up-to-date", changed: 0, counts };
+  const directPaths = touchedByMode.get("direct")!;
+  const prPaths = touchedByMode.get("pr")!;
+  const landed = directPaths.length + prPaths.length;
+
+  if (landed === 0) {
+    // Every change fell into an off-mode module (or mapped to nothing).
+    return { outcome: "disabled", changed: 0, counts };
   }
-  const changed = touched.length;
-  const message = `Sync wiki edits (${changed} page${changed === 1 ? "" : "s"})`;
 
   if (opts.dryRun) {
-    return { outcome: "dry-run", changed, counts };
+    return { outcome: "dry-run", changed: landed, counts };
   }
 
   const pushUrl = injectToken(info.repoUrl, opts.token);
+  let committedDirect = false;
+  let prResult: OpenPrResult | undefined;
+  let lastCommit: string | undefined;
 
-  if (selected.reverseMode === "direct") {
-    await git.commitAs(repoRoot, message, WIKI_BOT_NAME, WIKI_BOT_EMAIL);
-    const commit = await git.currentCommit(repoRoot);
-    try {
-      await git.pushUrl(repoRoot, pushUrl, `HEAD:refs/heads/${info.defaultBranch}`);
-    } catch (err) {
-      throw new OkhError(
-        "GIT_ERROR",
-        `Failed to push wiki edits to ${info.defaultBranch}. Another commit may have landed first; re-run to retry.\n${(err as Error).message.split(opts.token ?? "\u0000").join("***")}`,
-      );
+  // Land direct-mode edits first so any PR branches off the updated default branch.
+  if (directPaths.length > 0) {
+    await git.stagePaths(repoRoot, directPaths);
+    if (await git.hasStagedChanges(repoRoot)) {
+      const message = commitMessage(directPaths.length);
+      await git.commitAs(repoRoot, message, WIKI_BOT_NAME, WIKI_BOT_EMAIL);
+      lastCommit = await git.currentCommit(repoRoot);
+      try {
+        await git.pushUrl(repoRoot, pushUrl, `HEAD:refs/heads/${info.defaultBranch}`);
+      } catch (err) {
+        throw new OkhError(
+          "GIT_ERROR",
+          `Failed to push wiki edits to ${info.defaultBranch}. Another commit may have landed first; re-run to retry.\n${redact((err as Error).message, opts.token)}`,
+        );
+      }
+      committedDirect = true;
     }
-    return { outcome: "committed", changed, counts, commit };
   }
 
-  // pr mode
-  const stamp = opts.runId ?? (opts.now?.() ?? new Date()).toISOString().replace(/[:.]/g, "-");
-  const branch = `okh/wiki-sync/${stamp}`;
-  await git.createBranch(repoRoot, branch);
-  await git.commitAs(repoRoot, message, WIKI_BOT_NAME, WIKI_BOT_EMAIL);
-  const commit = await git.currentCommit(repoRoot);
-  await git.pushUrl(repoRoot, pushUrl, `HEAD:refs/heads/${branch}`);
+  // Gather all pr-mode edits into a single combined PR.
+  if (prPaths.length > 0) {
+    const stamp = opts.runId ?? (opts.now?.() ?? new Date()).toISOString().replace(/[:.]/g, "-");
+    const branch = `okh/wiki-sync/${stamp}`;
+    await git.createBranch(repoRoot, branch);
+    await git.stagePaths(repoRoot, prPaths);
+    if (await git.hasStagedChanges(repoRoot)) {
+      const message = commitMessage(prPaths.length);
+      await git.commitAs(repoRoot, message, WIKI_BOT_NAME, WIKI_BOT_EMAIL);
+      lastCommit = await git.currentCommit(repoRoot);
+      await git.pushUrl(repoRoot, pushUrl, `HEAD:refs/heads/${branch}`);
+      prResult = await openPr({
+        owner: info.owner,
+        repo: info.repo,
+        token: opts.token ?? "",
+        head: branch,
+        base: info.defaultBranch,
+        title: message,
+        body: prBody(counts, prPaths),
+        apiBase: opts.apiBase,
+      });
+    }
+  }
 
-  const body = prBody(counts, touched);
-  const pr = await openPr({
-    owner: info.owner,
-    repo: info.repo,
-    token: opts.token ?? "",
-    head: branch,
-    base: info.defaultBranch,
-    title: message,
-    body,
-    apiBase: opts.apiBase,
-  });
-  return { outcome: "pr-opened", changed, counts, commit, prUrl: pr.url, prNumber: pr.number };
+  const outcome: ReverseOutcome =
+    committedDirect && prResult ? "committed+pr-opened" : prResult ? "pr-opened" : "committed";
+  return {
+    outcome,
+    changed: landed,
+    counts,
+    commit: lastCommit,
+    prUrl: prResult?.url,
+    prNumber: prResult?.number,
+  };
+}
+
+function commitMessage(n: number): string {
+  return `Sync wiki edits (${n} page${n === 1 ? "" : "s"})`;
+}
+
+function redact(message: string, token?: string): string {
+  return token ? message.split(token).join("***") : message;
 }
 
 function prBody(counts: ReverseCounts, touched: string[]): string {
   const lines = [
-    "Automated sync of human wiki edits back into the source module.",
+    "Automated sync of human wiki edits back into the source modules.",
     "",
     `- Added: ${counts.added}`,
     `- Modified: ${counts.modified}`,
