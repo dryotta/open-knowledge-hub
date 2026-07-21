@@ -115,6 +115,7 @@ function renderModulePages(
 
 function rewriteBody(rawBody: string, ctx: RewriteContext): RewriteResult {
   const warnings: RenderWarning[] = [];
+  const collectedAssets: WikiAsset[] = [];
   const currentDir = posix.dirname(ctx.currentWikiPath); // e.g. "design/patterns"
   const linkRe = /(\]\()([^)]+)(\))/g;
 
@@ -122,7 +123,22 @@ function rewriteBody(rawBody: string, ctx: RewriteContext): RewriteResult {
     const target = rawTarget.trim();
     if (/^[a-z]+:/i.test(target) || target.startsWith("/") || target.startsWith("#")) return whole;
     const [pathPart, anchor] = splitAnchor(target);
-    if (!pathPart.toLowerCase().endsWith(".md")) return whole;
+    if (!pathPart.toLowerCase().endsWith(".md")) {
+      // asset reference
+      const resolved = posix.normalize(posix.join(currentDir, pathPart)); // e.g. design/assets/retry.png
+      const moduleRel = resolved.startsWith(`${ctx.moduleName}/`)
+        ? resolved.slice(ctx.moduleName.length + 1)
+        : resolved;
+      const asset = ctx.moduleAssets.find((a) => a.sourceRelPath === moduleRel);
+      if (!asset) {
+        warnings.push({ kind: "dangling-asset", message: `Missing asset ${target} in ${ctx.currentWikiPath}` });
+        return whole;
+      }
+      const wikiAssetPath = `${ctx.moduleName}/${asset.sourceRelPath}`;
+      collectedAssets.push({ path: wikiAssetPath, bytes: asset.bytes });
+      const rel = relativePosix(currentDir, wikiAssetPath);
+      return `${open}${rel}${anchor ? `#${anchor}` : ""}${close}`;
+    }
     // resolve relative to current page's source dir (same as wiki dir)
     const resolved = posix.normalize(posix.join(currentDir, pathPart));
     const key = resolved.toLowerCase();
@@ -135,7 +151,7 @@ function rewriteBody(rawBody: string, ctx: RewriteContext): RewriteResult {
     return `${open}${rel}${anchor ? `#${anchor}` : ""}${close}`;
   });
 
-  return { body, assets: [], warnings };
+  return { body, assets: collectedAssets, warnings };
 }
 
 function splitAnchor(target: string): [string, string | undefined] {

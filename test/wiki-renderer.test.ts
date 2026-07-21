@@ -153,3 +153,37 @@ describe("link rewriting", () => {
     expect(site.warnings.some((w) => w.kind === "dangling-link")).toBe(true);
   });
 });
+
+describe("asset collection", () => {
+  function assetInput(): RenderInput {
+    const bytes = Buffer.from("PNGDATA");
+    return {
+      context: baseCtx,
+      modules: [
+        {
+          path: "design",
+          concepts: [
+            {
+              sourceRelPath: "patterns/retry.md",
+              title: "Retry",
+              rawMarkdown: "![diagram](../assets/retry.png)\n[missing](../assets/gone.png)",
+            },
+          ],
+          assets: [{ sourceRelPath: "assets/retry.png", bytes }],
+        },
+      ],
+    };
+  }
+
+  it("collects referenced asset and rewrites the path", () => {
+    const site = renderWikiSite(assetInput());
+    expect(site.assets.map((a) => a.path)).toContain("design/assets/retry.png");
+    const retry = site.pages.find((p) => p.path === "design/patterns/retry.md")!;
+    expect(retry.content).toContain("![diagram](../assets/retry.png)");
+  });
+
+  it("warns on missing asset", () => {
+    const site = renderWikiSite(assetInput());
+    expect(site.warnings.some((w) => w.kind === "dangling-asset")).toBe(true);
+  });
+});
