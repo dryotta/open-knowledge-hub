@@ -10,6 +10,7 @@ import type {
 } from "../container/service.js";
 import type { OkhPaths } from "../config.js";
 import type { ModuleManifest } from "../modules/manifest.js";
+import type { ContainerEntry } from "../registry/schema.js";
 import {
   configFieldMeta,
   configKeys,
@@ -243,6 +244,19 @@ function formatModuleConfig(container: string, module: string, m: ModuleManifest
   return lines.join("\n");
 }
 
+function formatContainerConfig(container: string, entry: ContainerEntry): string {
+  const lines = [`Container config — ${container}:`];
+  lines.push(`- backend: ${entry.backend.type}`);
+  lines.push(`- sync: ${entry.sync.mode}`);
+  const enabled = entry.wiki?.enabled === true;
+  lines.push(`- wiki.enabled: ${enabled} — publish knowledge modules to the GitHub wiki (runs in CI on push to main)`);
+  return lines.join("\n");
+}
+
+const containerWikiSetSchema = z
+  .object({ wiki: z.object({ enabled: z.boolean() }).strict() })
+  .strict();
+
 function describeConfigError(err: z.ZodError): string {
   for (const issue of err.issues) {
     if (issue.code === "unrecognized_keys") {
@@ -377,15 +391,13 @@ export async function registerTools(
     "config",
     { ...(await toolReg("config", { vars: { configKeys: configKeys.join(", ") } })), annotations: { readOnlyHint: false, openWorldHint: false } },
     handler(async (args: { set?: Record<string, unknown>; container?: string; module?: string }) => {
-      const moduleScope = !isBlank(args.container ?? "") || !isBlank(args.module ?? "");
+      const hasContainer = !isBlank(args.container ?? "");
+      const hasModule = !isBlank(args.module ?? "");
 
       // Module scope: view or edit a module's manifest config.
-      if (moduleScope) {
-        if (isBlank(args.container ?? "")) {
+      if (hasModule) {
+        if (!hasContainer) {
           return fail("container is required to view or edit a module's config.");
-        }
-        if (isBlank(args.module ?? "")) {
-          return fail("module is required to view or edit a module's config (module names are not unique across containers).");
         }
         const container = args.container!;
         const module = args.module!;
@@ -410,6 +422,28 @@ export async function registerTools(
           `Updated ${changed.join(", ")} for module "${module}" in container "${container}".\n\n${formatModuleConfig(container, module, manifest)}`,
           { container, module, changed, manifest },
         );
+      }
+
+      // Container scope: view or edit a container's wiki publishing flag.
+      if (hasContainer) {
+        const container = args.container!;
+        if (args.set === undefined) {
+          const entry = await service.getContainerEntry(container);
+          return ok(formatContainerConfig(container, entry), { container, entry });
+        }
+        if (Object.keys(args.set).length === 0) {
+          return fail("config { set } must include at least one key.");
+        }
+        const parsed = containerWikiSetSchema.safeParse(args.set);
+        if (!parsed.success) {
+          return fail('Container config only supports { wiki: { enabled: <boolean> } }.');
+        }
+        const { entry, changed } = await service.setContainerWikiEnabled(container, parsed.data.wiki.enabled);
+        const state = parsed.data.wiki.enabled ? "enabled" : "disabled";
+        const note = changed
+          ? `Wiki publishing ${state} for "${container}". Run \`sync\` to commit the workflow change; publishing then runs in CI on push to main.`
+          : `Wiki publishing already ${state} for "${container}".`;
+        return ok(`${note}\n\n${formatContainerConfig(container, entry)}`, { container, changed, entry });
       }
 
       // Global scope: view or edit preferences.
