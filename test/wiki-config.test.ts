@@ -17,6 +17,9 @@ describe("parseWikiConfig", () => {
   it("returns empty for empty text", () => {
     expect(parseWikiConfig("")).toEqual({});
   });
+  it("reads the module key", () => {
+    expect(parseWikiConfig("module: telemetry\ntitle: T\n")).toEqual({ module: "telemetry", title: "T" });
+  });
 });
 
 describe("loadWikiConfig", () => {

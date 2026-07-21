@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type WikiConfig = { title?: string; footer?: string };
+export type WikiConfig = { title?: string; footer?: string; module?: string };
 
 const unquote = (v: string): string => {
   const t = v.trim();
@@ -23,6 +23,7 @@ export function parseWikiConfig(text: string): WikiConfig {
     if (!value) continue;
     if (key === "title") cfg.title = value;
     else if (key === "footer") cfg.footer = value;
+    else if (key === "module") cfg.module = value;
   }
   return cfg;
 }
