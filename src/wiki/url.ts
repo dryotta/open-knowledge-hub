@@ -30,3 +30,11 @@ export function repoBrowseUrl(r: GitHubRepo): string {
 export function wikiRemoteUrl(r: GitHubRepo): string {
   return `https://github.com/${r.owner}/${r.repo}.wiki.git`;
 }
+
+/** Embed an installation token into a github.com https URL for push/clone. */
+export function injectToken(url: string, token?: string): string {
+  if (!token) return url;
+  const prefix = "https://github.com/";
+  if (!url.startsWith(prefix)) return url;
+  return `https://x-access-token:${token}@github.com/${url.slice(prefix.length)}`;
+}

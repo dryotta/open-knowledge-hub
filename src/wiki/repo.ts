@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { Git } from "../git/git.js";
 import { OkhError } from "../errors.js";
 import { WIKI_BOT_EMAIL, WIKI_BOT_NAME } from "./constants.js";
+import { injectToken } from "./url.js";
 import type { WikiSite } from "./renderer.js";
 
 export type PublishOutcome = "published" | "up-to-date";
@@ -17,13 +18,6 @@ export type PublishOptions = {
   botEmail?: string;
 };
 export type PublishResult = { outcome: PublishOutcome; commit?: string; branch: string };
-
-function injectToken(url: string, token?: string): string {
-  if (!token) return url;
-  const prefix = "https://github.com/";
-  if (!url.startsWith(prefix)) return url;
-  return `https://x-access-token:${token}@github.com/${url.slice(prefix.length)}`;
-}
 
 function redact(message: string, token?: string): string {
   if (!token) return message;
