@@ -1,5 +1,6 @@
 import { posix } from "node:path";
 import { OKF_RESERVED } from "../modules/loaders/okf.js";
+import { parseFrontmatter } from "../util/frontmatter.js";
 import type { WikiConfig } from "./config.js";
 
 export type RenderConcept = { sourceRelPath: string; title: string; rawMarkdown: string };
@@ -41,6 +42,9 @@ type RawPage = { path: string; banner?: string; body: string };
 type NavEntry = { module: string; landingPath: string; concepts: { title: string; path: string }[] };
 
 const stripMd = (p: string): string => p.replace(/\.md$/, "");
+
+/** Drop a leading YAML frontmatter block so published wiki pages stay clean. */
+const stripFrontmatter = (markdown: string): string => parseFrontmatter(markdown).body;
 
 function sortedModules(input: RenderInput): RenderModule[] {
   return [...input.modules].sort((a, b) => a.path.localeCompare(b.path));
@@ -95,7 +99,7 @@ function renderModulePages(
   const nav: NavEntry = { module: m.path, landingPath, concepts: [] };
   const landingParts: string[] = [`# ${m.path}`];
   if (m.description) landingParts.push("", m.description);
-  if (m.indexMarkdown) landingParts.push("", m.indexMarkdown);
+  if (m.indexMarkdown) landingParts.push("", stripFrontmatter(m.indexMarkdown));
   pages.push({
     path: landingPath,
     banner: bannerFor(ctx.repo, m.path, m.path),
@@ -107,7 +111,7 @@ function renderModulePages(
     .sort((a, b) => a.sourceRelPath.localeCompare(b.sourceRelPath));
   for (const c of concepts) {
     const path = claim(`${m.path}/${c.sourceRelPath}`);
-    pages.push({ path, banner: bannerFor(ctx.repo, m.path, c.title), body: c.rawMarkdown });
+    pages.push({ path, banner: bannerFor(ctx.repo, m.path, c.title), body: stripFrontmatter(c.rawMarkdown) });
     nav.concepts.push({ title: c.title, path });
   }
   return { pages, warnings, nav };
@@ -121,11 +125,15 @@ function rewriteBody(rawBody: string, ctx: RewriteContext): RewriteResult {
 
   const body = rawBody.replace(linkRe, (whole, open, rawTarget, close) => {
     const target = rawTarget.trim();
-    if (/^[a-z]+:/i.test(target) || target.startsWith("/") || target.startsWith("#")) return whole;
+    if (/^[a-z]+:/i.test(target) || target.startsWith("#")) return whole;
     const [pathPart, anchor] = splitAnchor(target);
+    if (pathPart === "") return whole;
+    // A leading slash is module-root-relative; otherwise resolve against the current page dir.
+    const resolved = pathPart.startsWith("/")
+      ? posix.normalize(posix.join(ctx.moduleName, pathPart.slice(1)))
+      : posix.normalize(posix.join(currentDir, pathPart));
     if (!pathPart.toLowerCase().endsWith(".md")) {
       // asset reference
-      const resolved = posix.normalize(posix.join(currentDir, pathPart)); // e.g. design/assets/retry.png
       const moduleRel = resolved.startsWith(`${ctx.moduleName}/`)
         ? resolved.slice(ctx.moduleName.length + 1)
         : resolved;
@@ -140,7 +148,6 @@ function rewriteBody(rawBody: string, ctx: RewriteContext): RewriteResult {
       return `${open}${rel}${anchor ? `#${anchor}` : ""}${close}`;
     }
     // resolve relative to current page's source dir (same as wiki dir)
-    const resolved = posix.normalize(posix.join(currentDir, pathPart));
     const key = resolved.toLowerCase();
     const wikiTarget = ctx.pageIndex.get(key);
     if (!wikiTarget) {

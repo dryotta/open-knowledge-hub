@@ -187,3 +187,90 @@ describe("asset collection", () => {
     expect(site.warnings.some((w) => w.kind === "dangling-asset")).toBe(true);
   });
 });
+
+describe("module-root-relative (leading-slash) links", () => {
+  it("rewrites leading-slash .md links relative to the module root", () => {
+    const inp: RenderInput = {
+      context: baseCtx,
+      modules: [
+        {
+          path: "design",
+          concepts: [
+            {
+              sourceRelPath: "patterns/retry.md",
+              title: "Retry",
+              rawMarkdown: "See [timeout](/patterns/timeout.md) and [gloss](/glossary.md#term).",
+            },
+            { sourceRelPath: "patterns/timeout.md", title: "Timeout", rawMarkdown: "# Timeout" },
+            { sourceRelPath: "glossary.md", title: "Glossary", rawMarkdown: "# Glossary" },
+          ],
+          assets: [],
+        },
+      ],
+    };
+    const site = renderWikiSite(inp);
+    const retry = site.pages.find((p) => p.path === "design/patterns/retry.md")!;
+    expect(retry.content).toContain("[timeout](timeout)");
+    expect(retry.content).toContain("[gloss](../glossary#term)");
+  });
+
+  it("warns on a dangling leading-slash link", () => {
+    const inp: RenderInput = {
+      context: baseCtx,
+      modules: [
+        { path: "design", concepts: [{ sourceRelPath: "a.md", title: "A", rawMarkdown: "[x](/missing.md)" }], assets: [] },
+      ],
+    };
+    const site = renderWikiSite(inp);
+    expect(site.warnings.some((w) => w.kind === "dangling-link")).toBe(true);
+  });
+
+  it("resolves leading-slash asset links relative to the module root", () => {
+    const bytes = Buffer.from("PNG");
+    const inp: RenderInput = {
+      context: baseCtx,
+      modules: [
+        {
+          path: "design",
+          concepts: [
+            { sourceRelPath: "patterns/retry.md", title: "Retry", rawMarkdown: "![d](/assets/retry.png)" },
+          ],
+          assets: [{ sourceRelPath: "assets/retry.png", bytes }],
+        },
+      ],
+    };
+    const site = renderWikiSite(inp);
+    expect(site.assets.map((a) => a.path)).toContain("design/assets/retry.png");
+    const retry = site.pages.find((p) => p.path === "design/patterns/retry.md")!;
+    expect(retry.content).toContain("![d](../assets/retry.png)");
+  });
+});
+
+describe("frontmatter stripping", () => {
+  it("strips leading YAML frontmatter from concept and landing bodies", () => {
+    const inp: RenderInput = {
+      context: baseCtx,
+      modules: [
+        {
+          path: "design",
+          indexMarkdown: '---\nokf_version: "0.1"\n---\n# Landing\n\nHi.',
+          concepts: [
+            {
+              sourceRelPath: "a.md",
+              title: "A",
+              rawMarkdown: "---\ntype: reference\ntitle: A\n---\n# Body\n\nText.",
+            },
+          ],
+          assets: [],
+        },
+      ],
+    };
+    const site = renderWikiSite(inp);
+    const concept = site.pages.find((p) => p.path === "design/a.md")!;
+    expect(concept.content).not.toContain("type: reference");
+    expect(concept.content).toContain("# Body");
+    const landing = site.pages.find((p) => p.path === "design/index.md")!;
+    expect(landing.content).not.toContain("okf_version");
+    expect(landing.content).toContain("# Landing");
+  });
+});
