@@ -17,6 +17,8 @@ async function ghRepo(): Promise<string> {
   await mkdir(join(dir, "design"), { recursive: true });
   await saveModuleManifest(join(dir, "design"), { type: "knowledge", description: "D" });
   await writeFile(join(dir, "design", "index.md"), "# Design");
+  await mkdir(join(dir, ".okh"), { recursive: true });
+  await writeFile(join(dir, ".okh", "wiki.yml"), "module: design\n");
   await exec("git", ["add", "-A"], { cwd: dir, env: GIT_ENV });
   await exec("git", ["commit", "-m", "init"], { cwd: dir, env: GIT_ENV });
   return dir;
