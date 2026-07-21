@@ -19,7 +19,7 @@ export type RenderModuleContent = {
 /** A module as handed to the renderer: its content plus its sidebar/reverse config. */
 export type RenderModule = RenderModuleContent & {
   reverseMode: WikiReverseMode;
-  /** Sidebar expand override; undefined means "default" (first module open). */
+  /** Sidebar expand state; undefined defaults to open. Set false to start collapsed. */
   expanded?: boolean;
 };
 
@@ -207,31 +207,36 @@ function orderedGrouping(
   return { root, groups };
 }
 
-/** One module's block inside the sidebar: a <details> section with its TOC. */
+/** HTML-escape text placed inside <summary>/<a> so titles with & or <> stay valid. */
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** One module's block inside the sidebar: an open <details> whose title links to
+ *  the module landing, with each subfolder as a nested, open-by-default <details>. */
 function sidebarSection(plan: ModulePlan, open: boolean): string[] {
   const { module, moduleSlug, records } = plan;
   const { root, groups } = orderedGrouping(records, indexOrder(module));
-  const lines: string[] = [
-    `<details${open ? " open" : ""}><summary><b>${module.title}</b></summary>`,
-    "",
-    `- [${module.title}](${moduleSlug})`,
-  ];
-  if (root.length > 0) lines.push("");
+  const summary = `<summary><b><a href="${moduleSlug}">${escHtml(module.title)}</a></b></summary>`;
+  const lines: string[] = [`<details${open ? " open" : ""}>${summary}`, ""];
   for (const r of root) lines.push(`- [${r.title}](${r.slug})`);
+  if (root.length > 0) lines.push("");
   for (const g of groups) {
-    lines.push("", `**${titleCase(g.name)}**`);
+    lines.push(`<details open><summary>${escHtml(titleCase(g.name))}</summary>`, "");
     for (const r of g.items) lines.push(`- [${r.title}](${r.slug})`);
+    lines.push("", "</details>");
   }
-  lines.push("", "</details>", "");
+  lines.push("</details>", "");
   return lines;
 }
 
 function renderSidebar(plans: ModulePlan[]): WikiPage {
   const lines: string[] = ["[🏠 Home](Home)", ""];
-  plans.forEach((plan, i) => {
-    const open = plan.module.expanded ?? i === 0;
+  for (const plan of plans) {
+    // Modules are open by default; `wiki-sync-expanded: false` opts a module out.
+    const open = plan.module.expanded ?? true;
     lines.push(...sidebarSection(plan, open));
-  });
+  }
   return { path: "_Sidebar.md", content: lines.join("\n").trimEnd() + "\n" };
 }
 

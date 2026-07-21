@@ -116,29 +116,45 @@ describe("generated Home landing", () => {
 });
 
 describe("sidebar", () => {
-  it("emits a Home link then one <details> per module, first open and rest collapsed", () => {
+  it("emits a Home link then one open <details> per module by default", () => {
     const site = renderWikiSite(input([playbooks(), telemetry()]));
     const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
     expect(side.content).toContain("[🏠 Home](Home)");
-    // playbooks first (input order) => open; telemetry => collapsed
-    expect(side.content).toContain("<details open><summary><b>Playbooks</b></summary>");
-    expect(side.content).toContain("<details><summary><b>Telemetry</b></summary>");
-    expect(side.content).toContain("- [Telemetry](telemetry)");
-    expect(side.content).toContain("- [Playbooks](playbooks)");
+    // Every module is open by default (state can't persist across wiki navigation).
+    // The module title is the link (no duplicate landing bullet).
+    expect(side.content).toContain('<details open><summary><b><a href="playbooks">Playbooks</a></b></summary>');
+    expect(side.content).toContain('<details open><summary><b><a href="telemetry">Telemetry</a></b></summary>');
+    // The old duplicate landing bullet is gone now that the title links.
+    expect(side.content).not.toContain("- [Telemetry](telemetry)");
+    // playbooks' root-level pages are listed directly under the module.
+    expect(side.content).toContain("- [Deploy](playbooks-deploy)");
+    expect(side.content).toContain("- [Rollback](playbooks-rollback)");
   });
 
-  it("honors a per-module expand override", () => {
-    const site = renderWikiSite(input([playbooks(), telemetry({ expanded: true })]));
+  it("lets a module opt out of the open default with wiki-sync-expanded: false", () => {
+    const site = renderWikiSite(input([playbooks(), telemetry({ expanded: false })]));
     const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
-    expect(side.content).toContain("<details open><summary><b>Telemetry</b></summary>");
+    // Collapsed form has no ` open` on the module <details>.
+    expect(side.content).toContain('<details><summary><b><a href="telemetry">Telemetry</a></b></summary>');
+  });
+
+  it("renders each subfolder as an expandable, open-by-default nested <details>", () => {
+    const site = renderWikiSite(input([telemetry()]));
+    const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
+    expect(side.content).toContain("<details open><summary>Sources</summary>");
+    expect(side.content).toContain("<details open><summary>Areas</summary>");
+    expect(side.content).toContain("<details open><summary>Cross-cutting</summary>");
+    expect(side.content).toContain("- [EED](telemetry-sources-eed)");
+    // No bold-label headings anymore.
+    expect(side.content).not.toContain("**Sources**");
   });
 
   it("orders a module's groups by first appearance in its index.md, then alphabetical", () => {
     const site = renderWikiSite(input([telemetry()]));
     const side = site.pages.find((p) => p.path === "_Sidebar.md")!;
-    const iSources = side.content.indexOf("**Sources**");
-    const iAreas = side.content.indexOf("**Areas**");
-    const iCross = side.content.indexOf("**Cross-cutting**");
+    const iSources = side.content.indexOf("<summary>Sources</summary>");
+    const iAreas = side.content.indexOf("<summary>Areas</summary>");
+    const iCross = side.content.indexOf("<summary>Cross-cutting</summary>");
     // index references eed (Sources) before network (Areas); Cross-cutting is unreferenced -> last.
     expect(iSources).toBeGreaterThan(-1);
     expect(iSources).toBeLessThan(iAreas);

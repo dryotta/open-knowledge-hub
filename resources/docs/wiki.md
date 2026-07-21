@@ -13,7 +13,7 @@ type: knowledge
 description: Telemetry knowledge base
 wiki-sync: true                 # publish this module to the wiki
 wiki-sync-reverse-mode: pr      # how human wiki edits flow back: pr | direct | off
-wiki-sync-expanded: true        # optional: force this module's sidebar section open
+wiki-sync-expanded: false       # optional: start this module's sidebar section collapsed
 ```
 
 - **`wiki-sync`** (`true`/`false`) — include this module. Every opted-in module is
@@ -23,8 +23,9 @@ wiki-sync-expanded: true        # optional: force this module's sidebar section 
     default branch.
   - `direct` — commit the edits straight to the default branch.
   - `off` — one-way only; wiki edits to this module are ignored.
-- **`wiki-sync-expanded`** (optional) — override the sidebar open/closed default.
-  When unset, the first module (alphabetical) is expanded and the rest collapsed.
+- **`wiki-sync-expanded`** (optional) — sidebar open/closed default for this module.
+  Modules (and their subfolders) are expanded by default so navigating the wiki never
+  hides the section you are in; set `false` to start this module collapsed.
 
 ## How it works
 
