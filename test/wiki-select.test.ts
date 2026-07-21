@@ -51,6 +51,20 @@ describe("selectWikiModules", () => {
     }
   });
 
+  it("treats an absent flag and wiki-sync: false identically — both stay opt-out", async () => {
+    const dir = await repoWith({
+      on: { type: "knowledge", description: "on", "wiki-sync": true },
+      off: { type: "knowledge", description: "off", "wiki-sync": false },
+      absent: { type: "knowledge", description: "absent" },
+    });
+    try {
+      const sel = await selectWikiModules(dir);
+      expect(sel.map((m) => m.name)).toEqual(["on"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects when no module is flagged", async () => {
     const dir = await repoWith({
       telemetry: { type: "knowledge", description: "T" },
