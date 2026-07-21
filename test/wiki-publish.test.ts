@@ -6,26 +6,41 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { buildAndPublishWiki } from "../src/wiki/publish.js";
 import { saveModuleManifest } from "../src/modules/manifest.js";
+import type { WikiReverseMode } from "../src/modules/manifest.js";
 
 const exec = promisify(execFile);
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 
-async function writeWikiConfig(dir: string, body: string): Promise<void> {
-  await mkdir(join(dir, ".okh"), { recursive: true });
-  await writeFile(join(dir, ".okh", "wiki.yml"), body);
-}
+type FixtureOpts = { wikiSync?: boolean; reverseMode?: WikiReverseMode; secondSync?: boolean };
 
-async function fixtureRepo(configBody?: string): Promise<string> {
+async function fixtureRepo(opts: FixtureOpts = {}): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "okh-repo-"));
   await exec("git", ["init", "-b", "main", dir], { env: GIT_ENV });
+
   await mkdir(join(dir, "design"), { recursive: true });
-  await saveModuleManifest(join(dir, "design"), { type: "knowledge", description: "Design docs" });
+  await saveModuleManifest(join(dir, "design"), {
+    type: "knowledge",
+    description: "Design docs",
+    ...(opts.wikiSync ? { "wiki-sync": true } : {}),
+    ...(opts.reverseMode ? { "wiki-sync-reverse-mode": opts.reverseMode } : {}),
+  });
   await writeFile(join(dir, "design", "index.md"), "# Design\n\nOverview.");
   await writeFile(join(dir, "design", "retry.md"), "---\ntitle: Retry\n---\n# Retry\n\nBody.");
+
   await mkdir(join(dir, "skills"), { recursive: true });
   await saveModuleManifest(join(dir, "skills"), { type: "skills", description: "S" });
   await writeFile(join(dir, "skills", "index.md"), "# Skills");
-  if (configBody !== undefined) await writeWikiConfig(dir, configBody);
+
+  if (opts.secondSync) {
+    await mkdir(join(dir, "playbooks"), { recursive: true });
+    await saveModuleManifest(join(dir, "playbooks"), {
+      type: "knowledge",
+      description: "Playbooks",
+      "wiki-sync": true,
+    });
+    await writeFile(join(dir, "playbooks", "index.md"), "# Playbooks");
+  }
+
   await exec("git", ["add", "-A"], { cwd: dir, env: GIT_ENV });
   await exec("git", ["commit", "-m", "init"], { cwd: dir, env: GIT_ENV });
   return dir;
@@ -35,31 +50,31 @@ const resolveStub = async () => ({
   owner: "acme",
   repo: "widgets",
   repoUrl: "https://github.com/acme/widgets",
-  wikiRemoteUrl: "",
+  wikiRemoteUrl: "unused",
   commit: "abcdef1234567",
 });
 
 describe("buildAndPublishWiki module selection", () => {
-  it("rejects when no module is configured", async () => {
+  it("rejects when no module opts in with wiki-sync", async () => {
     const repo = await fixtureRepo();
     await expect(
-      buildAndPublishWiki(repo, { dryRun: true, resolve: async () => ({ ...(await resolveStub()), wikiRemoteUrl: "unused" }) }),
-    ).rejects.toThrow(/module:/);
+      buildAndPublishWiki(repo, { dryRun: true, resolve: resolveStub }),
+    ).rejects.toThrow(/wiki-sync/);
   });
 
-  it("rejects an unknown module and lists the available ones", async () => {
-    const repo = await fixtureRepo("module: nope\n");
+  it("rejects when more than one knowledge module sets wiki-sync", async () => {
+    const repo = await fixtureRepo({ wikiSync: true, secondSync: true });
     await expect(
-      buildAndPublishWiki(repo, { dryRun: true, resolve: async () => ({ ...(await resolveStub()), wikiRemoteUrl: "unused" }) }),
-    ).rejects.toThrow(/design/);
+      buildAndPublishWiki(repo, { dryRun: true, resolve: resolveStub }),
+    ).rejects.toThrow(/Multiple/);
   });
 
-  it("dry-run renders the selected knowledge module", async () => {
-    const repo = await fixtureRepo("module: design\n");
+  it("dry-run renders the opted-in knowledge module", async () => {
+    const repo = await fixtureRepo({ wikiSync: true });
     const res = await buildAndPublishWiki(repo, {
       dryRun: true,
       now: () => new Date("2026-07-20T00:00:00Z"),
-      resolve: async () => ({ ...(await resolveStub()), wikiRemoteUrl: "unused" }),
+      resolve: resolveStub,
     });
     expect(res.outcome).toBe("dry-run");
     expect(res.pages).toBeGreaterThanOrEqual(3);
@@ -67,7 +82,7 @@ describe("buildAndPublishWiki module selection", () => {
   });
 
   it("publishes to a bare wiki remote", async () => {
-    const repo = await fixtureRepo("module: design\n");
+    const repo = await fixtureRepo({ wikiSync: true });
     const wiki = await mkdtemp(join(tmpdir(), "okh-wiki-"));
     await exec("git", ["init", "--bare", "-b", "master", wiki], { env: GIT_ENV });
     const res = await buildAndPublishWiki(repo, {

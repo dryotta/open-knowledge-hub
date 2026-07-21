@@ -2,6 +2,7 @@ import { mkdir, rm, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Git } from "../git/git.js";
 import { OkhError } from "../errors.js";
+import { WIKI_BOT_EMAIL, WIKI_BOT_NAME } from "./constants.js";
 import type { WikiSite } from "./renderer.js";
 
 export type PublishOutcome = "published" | "up-to-date";
@@ -12,6 +13,8 @@ export type PublishOptions = {
   message: string;
   workdir: string;
   git?: Git;
+  botName?: string;
+  botEmail?: string;
 };
 export type PublishResult = { outcome: PublishOutcome; commit?: string; branch: string };
 
@@ -65,7 +68,7 @@ export async function publishWikiSite(opts: PublishOptions): Promise<PublishResu
     if (!(await git.hasStagedChanges(opts.workdir))) {
       return { outcome: "up-to-date", branch };
     }
-    await git.commit(opts.workdir, opts.message);
+    await git.commitAs(opts.workdir, opts.message, opts.botName ?? WIKI_BOT_NAME, opts.botEmail ?? WIKI_BOT_EMAIL);
     const commit = await git.currentCommit(opts.workdir);
     try {
       await git.pushUrl(opts.workdir, tokenUrl, `HEAD:refs/heads/${branch}`);

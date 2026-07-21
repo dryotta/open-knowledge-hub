@@ -1,12 +1,13 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { Git } from "../git/git.js";
 import { OkhError } from "../errors.js";
-import { discoverModules } from "../modules/discovery.js";
 import { okfEnumerate } from "../modules/loaders/okf.js";
 import { walkFiles } from "../modules/fs.js";
-import { loadWikiConfig } from "./config.js";
+import { parseFrontmatter } from "../util/frontmatter.js";
+import { WIKI_BOT_EMAIL, WIKI_BOT_NAME } from "./constants.js";
+import { selectWikiModule } from "./select.js";
 import {
   renderWikiSite,
   type RenderModule,
@@ -59,7 +60,11 @@ async function defaultResolve(repoRoot: string, git: Git): Promise<ResolveResult
   };
 }
 
-async function buildRenderModule(moduleRoot: string, name: string, description?: string): Promise<RenderModule> {
+export async function buildRenderModule(
+  moduleRoot: string,
+  name: string,
+  description?: string,
+): Promise<RenderModule> {
   let indexMarkdown: string | undefined;
   try {
     indexMarkdown = await readFile(join(moduleRoot, "index.md"), "utf8");
@@ -81,6 +86,20 @@ async function buildRenderModule(moduleRoot: string, name: string, description?:
   return { path: name, description, indexMarkdown, concepts, assets };
 }
 
+/** Wiki title: the module index.md's first H1 if present, else the title-cased folder name. */
+export function deriveWikiTitle(module: RenderModule): string {
+  if (module.indexMarkdown) {
+    const body = parseFrontmatter(module.indexMarkdown).body;
+    const h1 = body.match(/^#\s+(.+?)\s*$/m);
+    if (h1) return h1[1].trim();
+  }
+  return module.path
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export async function buildAndPublishWiki(
   repoRoot: string,
   opts: BuildAndPublishOptions = {},
@@ -89,29 +108,13 @@ export async function buildAndPublishWiki(
   const resolve = opts.resolve ?? defaultResolve;
   const info = await resolve(repoRoot, git);
 
-  const config = await loadWikiConfig(repoRoot);
-  if (!config.module) {
-    throw new OkhError(
-      "INVALID_ARGUMENT",
-      "Set 'module:' in .okh/wiki.yml to the knowledge module to publish (e.g. module: telemetry).",
-    );
-  }
-
-  const discovered = await discoverModules(repoRoot);
-  const knowledge = discovered.filter((m) => m.manifest?.type === "knowledge");
-  const picked = knowledge.find((m) => basename(m.path) === config.module);
-  if (!picked || picked.manifest?.type !== "knowledge") {
-    const avail = knowledge.map((m) => basename(m.path)).join(", ") || "(none)";
-    throw new OkhError(
-      "INVALID_ARGUMENT",
-      `Knowledge module '${config.module}' not found. Available knowledge modules: ${avail}.`,
-    );
-  }
+  const selected = await selectWikiModule(repoRoot);
   const moduleModel = await buildRenderModule(
-    join(repoRoot, picked.path),
-    basename(picked.path),
-    picked.manifest.description,
+    selected.moduleRoot,
+    selected.name,
+    selected.manifest.description,
   );
+  const title = deriveWikiTitle(moduleModel);
 
   const timestamp = (opts.now?.() ?? new Date()).toISOString();
   const site = renderWikiSite({
@@ -122,7 +125,8 @@ export async function buildAndPublishWiki(
       commit: info.commit,
       timestamp,
       repoUrl: info.repoUrl,
-      config,
+      title,
+      reverseMode: selected.reverseMode,
     },
   });
 
@@ -146,6 +150,8 @@ export async function buildAndPublishWiki(
     message: `Publish wiki from ${short}`,
     workdir,
     git,
+    botName: WIKI_BOT_NAME,
+    botEmail: WIKI_BOT_EMAIL,
   });
 
   return {
