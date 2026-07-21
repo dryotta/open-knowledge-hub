@@ -56,6 +56,7 @@ export const containerEntrySchema = z
     localPath: z.string().min(1),
     sync: syncDescriptorSchema.default({ mode: "auto", config: {} }),
     addedAt: z.string().datetime(),
+    wiki: z.object({ enabled: z.boolean() }).strict().optional(),
   })
   .strict();
 export type ContainerEntry = z.infer<typeof containerEntrySchema>;
