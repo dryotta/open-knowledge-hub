@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, open, realpath } from "node:fs/promises";
+import { lstat, open, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isPathWithin } from "./pathSafety.js";
 
@@ -49,26 +49,44 @@ export async function readModuleAgentsFile(moduleRoot: string): Promise<AgentsFi
     return { status: "unsafe", reason: "the file resolves outside the module root" };
   }
 
+  let bytes: Buffer;
   let handle;
   try {
     const noFollow = process.platform === "win32" ? 0 : (constants.O_NOFOLLOW ?? 0);
     handle = await open(candidateReal, constants.O_RDONLY | noFollow);
-    const openedInfo = await handle.stat();
-    if (!openedInfo.isFile()) return { status: "unsafe", reason: "AGENTS.md is not a regular file" };
+    const [openedInfo, currentLinkInfo, currentReal] = await Promise.all([
+      handle.stat(),
+      lstat(path),
+      realpath(path),
+    ]);
+    if (
+      currentLinkInfo.isSymbolicLink()
+      || !openedInfo.isFile()
+      || !isPathWithin(moduleRootReal, currentReal)
+    ) {
+      return { status: "unsafe", reason: "AGENTS.md changed to an unsafe path while loading" };
+    }
+    const currentInfo = await stat(currentReal);
+    if (currentInfo.dev !== openedInfo.dev || currentInfo.ino !== openedInfo.ino) {
+      return { status: "unsafe", reason: "AGENTS.md changed while loading" };
+    }
     if (openedInfo.size > MAX_AGENTS_FILE_BYTES) {
       return { status: "unsafe", reason: `AGENTS.md exceeds the ${MAX_AGENTS_FILE_BYTES}-byte limit` };
     }
-    const bytes = await handle.readFile();
-    let content: string;
-    try {
-      content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-    } catch {
-      return { status: "unsafe", reason: "AGENTS.md is not valid UTF-8" };
-    }
-    return { status: "present", content };
+    bytes = await handle.readFile();
   } catch {
     return { status: "unsafe", reason: "AGENTS.md could not be read safely" };
   } finally {
     await handle?.close().catch(() => undefined);
   }
+  if (bytes.byteLength > MAX_AGENTS_FILE_BYTES) {
+    return { status: "unsafe", reason: `AGENTS.md exceeds the ${MAX_AGENTS_FILE_BYTES}-byte limit` };
+  }
+  let content: string;
+  try {
+    content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return { status: "unsafe", reason: "AGENTS.md is not valid UTF-8" };
+  }
+  return { status: "present", content };
 }
