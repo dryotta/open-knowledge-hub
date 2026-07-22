@@ -5,7 +5,8 @@ import { makeTempDir } from "./helpers.js";
 import { folderLoader } from "../src/modules/loaders/folder.js";
 import { getLoader } from "../src/modules/registry.js";
 import { isBuiltinType } from "../src/modules/types.js";
-import { discoverModuleSkills, skillRootsForType, FOLDER_SKILL_ROOTS } from "../src/modules/skills.js";
+import { discoverModuleSkills, skillRootsForType, FOLDER_SKILL_ROOTS, mergeSkills } from "../src/modules/skills.js";
+import { vendoredSkills } from "../src/modules/vendored.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -105,5 +106,26 @@ describe("folder skill roots", () => {
     const root = await tmp();
     await write(root, ".agents/skills/ok/SKILL.md", "---\nname: ok\ndescription: fine\n---\nbody");
     expect(await folderLoader.validate!(root)).toEqual([]);
+  });
+});
+
+describe("folder vendored initialize skill", () => {
+  it("ships an initialize skill that declares the agents-md doc dependency", async () => {
+    const vendored = await vendoredSkills("folder");
+    const init = vendored.find((s) => s.name === "initialize");
+    expect(init).toBeDefined();
+    expect(init!.resourceUris ?? []).toContain("okh://docs/agents-md.md");
+  });
+
+  it("a local initialize skill overrides the vendored one", async () => {
+    const root = await tmp();
+    await write(root, ".agents/skills/initialize/SKILL.md", "---\nname: initialize\ndescription: local override\n---\nlocal body");
+    const merged = mergeSkills(
+      await vendoredSkills("folder"),
+      await discoverModuleSkills(root, skillRootsForType("folder")),
+    );
+    const inits = merged.filter((s) => s.name === "initialize");
+    expect(inits).toHaveLength(1);
+    expect(inits[0]!.description).toBe("local override");
   });
 });
