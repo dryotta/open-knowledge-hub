@@ -20,6 +20,7 @@ description: Complete current reference for OKH tools, resources, module types, 
 | `ask` | `container?`, `module?`, `question?` | Return instructions for answering from modules. |
 | `context` | `container?`, `task?` | Return instructions for selecting a working set. |
 | `run` | `container`, `module`, `skill`, `input?` | Return one module skill, links, and bounded embedded required resources. |
+| `enter` | container, module | Declare a module as the working folder; load its `AGENTS.md` (when present) and skills into context. |
 | `onboard` | none | Return first-run setup guidance. |
 | `dream` | `container?`, `module?` | Return description-consolidation guidance. |
 | `help` | `question?` | Search canonical docs/common instructions and return bounded embedded matches plus links. |
@@ -68,6 +69,7 @@ remain linked and are marked for `read_resource`.
 | `skills` | Nested `SKILL.md` leaves and `index.md` | `initialize` |
 | `agents` | Direct `.github/agents/*.agent.md` and compatible `.md` profiles | `create` |
 | `workspace` | Workspace README plus project READMEs, CloudEvents journals, snapshots, and immutable results | `initialize`, `configure`, `create`, `coordinate` |
+| `folder` | Optional root `AGENTS.md`, top-level work files, cross-agent skills | `initialize` |
 | custom | Generic recursive file listing | None; use local skills |
 
 Common instructions live at:
