@@ -24,6 +24,7 @@ import {
   buildAsk,
   buildContext,
   buildDream,
+  buildEnter,
   buildHelp,
   buildOnboard,
   buildRun,
@@ -43,6 +44,7 @@ import { loadPromptFile } from "../prompts/templates.js";
 import type { OkhResourceRegistry } from "../resources/index.js";
 import { chunkResourceResult } from "../resources/embedding.js";
 import { renderUseAgentResult } from "./agentDelegation.js";
+import { readModuleAgentsFile } from "../modules/agentsFile.js";
 import type { WorkspaceService } from "../workspaces/service.js";
 import { registerWorkspaceTool } from "./workspaceTool.js";
 
@@ -677,6 +679,24 @@ async function registerFlowTools(
       }
       const targets = await service.resolveTargets(args.container, args.module);
       return ok(await buildDream(targets));
+    }),
+  );
+
+  server.registerTool(
+    "enter",
+    { ...(await toolReg("enter")), annotations: { readOnlyHint: true } },
+    handler(async (args: { container: string; module: string }) => {
+      if (isBlank(args.container)) return fail("container cannot be empty.");
+      if (isBlank(args.module)) return fail("module cannot be empty.");
+      const targets = await service.resolveTargets(args.container, args.module);
+      const target = targets[0];
+      const mod = target?.modules.find((m) => m.path === args.module);
+      if (!target || !mod) return fail(`Container "${args.container}" has no module "${args.module}".`);
+      const [skills, agents] = await Promise.all([
+        service.effectiveSkills(args.container, args.module),
+        readModuleAgentsFile(mod.absPath),
+      ]);
+      return ok(await buildEnter(target, mod, skills, agents));
     }),
   );
 }
