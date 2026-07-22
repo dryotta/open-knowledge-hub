@@ -3,6 +3,10 @@ import { rm, writeFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "./helpers.js";
 import { readModuleAgentsFile, MAX_AGENTS_FILE_BYTES } from "../src/modules/agentsFile.js";
+import { buildEnter } from "../src/prompts/index.js";
+import type { ResolvedContainer, ResolvedModule } from "../src/container/service.js";
+import type { Skill } from "../src/modules/skills.js";
+import type { AgentsFileResult } from "../src/modules/agentsFile.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -43,11 +47,6 @@ describe("readModuleAgentsFile", () => {
     expect(result.status).toBe("unsafe");
   });
 });
-
-import { buildEnter } from "../src/prompts/index.js";
-import type { ResolvedContainer, ResolvedModule } from "../src/container/service.js";
-import type { Skill } from "../src/modules/skills.js";
-import type { AgentsFileResult } from "../src/modules/agentsFile.js";
 
 function fakeTarget(): ResolvedContainer {
   return {

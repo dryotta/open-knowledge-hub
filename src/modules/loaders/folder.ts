@@ -10,14 +10,11 @@ const AGENTS_SKELETON_URL = new URL(
   import.meta.url,
 );
 
-// Top-level entries never surfaced as work items: the entry-point file, the reserved
-// skill/config roots, and common build/dependency noise.
+// Top-level entries never surfaced as work items: the entry-point file and common
+// build/dependency noise. Dot-prefixed roots (.okh, .agents, .claude, .github) are
+// already excluded by the startsWith(".") guard in enumerate.
 const EXCLUDED_ENTRIES = new Set([
   "AGENTS.md",
-  ".okh",
-  ".agents",
-  ".claude",
-  ".github",
   "node_modules",
   "__pycache__",
   "vendor",

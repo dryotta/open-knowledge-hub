@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { rm, mkdir, writeFile } from "node:fs/promises";
+import { rm, mkdir, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "./helpers.js";
 import { folderLoader } from "../src/modules/loaders/folder.js";
@@ -66,6 +66,8 @@ describe("folder loader", () => {
     const overview = await folderLoader.overview(root);
     expect(overview.length).toBeGreaterThan(0);
     expect(overview).not.toMatch(/Run the initialize skill/i); // real skeleton, not the placeholder
+    const skillsDir = await stat(join(root, ".agents/skills"));
+    expect(skillsDir.isDirectory()).toBe(true);
     const items = await folderLoader.enumerate(root); // .agents is excluded from enumeration
     expect(items.map((i) => i.path)).not.toContain(".agents");
   });

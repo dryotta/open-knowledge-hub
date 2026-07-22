@@ -21,8 +21,8 @@ focused question at a time when a decision materially changes the guidance.
 
 ## Stage 2 — Write AGENTS.md
 
-Write a concise `AGENTS.md` at the module root covering the six core areas from the
-embedded best-practices doc where they apply to this folder:
+Write a concise `AGENTS.md` at the module root covering the folder's purpose plus the
+six core areas from the embedded best-practices doc where they apply to this folder:
 
 1. **Purpose** — what the folder is for and who relies on it.
 2. **Commands** — exact build/run/format commands, most-used first, with flags.
