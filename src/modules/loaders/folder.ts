@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Item, Loader } from "../types.js";
+import { validateModuleSkills, FOLDER_SKILL_ROOTS } from "../skills.js";
 
 // Starter AGENTS.md written into a new folder module; resolves from src (tsx) and dist (built).
 const AGENTS_SKELETON_URL = new URL(
@@ -67,9 +68,14 @@ async function scaffold(moduleRoot: string): Promise<void> {
   await writeFile(join(moduleRoot, "AGENTS.md"), skeleton, { encoding: "utf8", flag: "wx" });
 }
 
+async function validate(moduleRoot: string): Promise<string[]> {
+  return validateModuleSkills(moduleRoot, FOLDER_SKILL_ROOTS);
+}
+
 export const folderLoader: Loader = {
   enumerate,
   overview,
   requiredFiles: [],
   scaffold,
+  validate,
 };

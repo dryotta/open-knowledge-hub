@@ -5,6 +5,7 @@ import { makeTempDir } from "./helpers.js";
 import { folderLoader } from "../src/modules/loaders/folder.js";
 import { getLoader } from "../src/modules/registry.js";
 import { isBuiltinType } from "../src/modules/types.js";
+import { discoverModuleSkills, skillRootsForType, FOLDER_SKILL_ROOTS } from "../src/modules/skills.js";
 
 const cleanups: string[] = [];
 afterEach(async () => {
@@ -66,5 +67,43 @@ describe("folder loader", () => {
     expect(overview).not.toMatch(/Run the initialize skill/i); // real skeleton, not the placeholder
     const items = await folderLoader.enumerate(root); // .agents is excluded from enumeration
     expect(items.map((i) => i.path)).not.toContain(".agents");
+  });
+});
+
+describe("folder skill roots", () => {
+  it("skillRootsForType('folder') returns the cross-agent roots in precedence order", () => {
+    expect(skillRootsForType("folder")).toEqual([
+      ".agents/skills",
+      ".claude/skills",
+      ".github/skills",
+    ]);
+    expect(FOLDER_SKILL_ROOTS).toEqual([".agents/skills", ".claude/skills", ".github/skills"]);
+  });
+
+  it("discovers skills from all three roots, with .agents winning name collisions", async () => {
+    const root = await tmp();
+    await write(root, ".agents/skills/shared/SKILL.md", "---\nname: shared\ndescription: from agents\n---\nA");
+    await write(root, ".claude/skills/shared/SKILL.md", "---\nname: shared\ndescription: from claude\n---\nB");
+    await write(root, ".github/skills/only-gh/SKILL.md", "---\nname: only-gh\ndescription: gh\n---\nC");
+
+    const skills = await discoverModuleSkills(root, skillRootsForType("folder"));
+    const byName = Object.fromEntries(skills.map((s) => [s.name, s.description]));
+    expect(byName["shared"]).toBe("from agents");
+    expect(byName["only-gh"]).toBe("gh");
+  });
+
+  it("validate surfaces a malformed SKILL.md via the skill-scan machinery", async () => {
+    const root = await tmp();
+    // A directory named like a skill leaf but with a non-file SKILL.md is malformed.
+    await mkdir(join(root, ".agents/skills/broken/SKILL.md"), { recursive: true });
+    const issues = await folderLoader.validate!(root);
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.join(" ")).toMatch(/broken/);
+  });
+
+  it("validate returns no issues for a clean folder", async () => {
+    const root = await tmp();
+    await write(root, ".agents/skills/ok/SKILL.md", "---\nname: ok\ndescription: fine\n---\nbody");
+    expect(await folderLoader.validate!(root)).toEqual([]);
   });
 });
