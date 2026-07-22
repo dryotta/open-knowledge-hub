@@ -22,6 +22,11 @@ export interface Skill {
  * earlier root (native `.okh/skills`) wins over a later one (external `.claude/skills`). */
 export const MODULE_SKILL_ROOTS = [".okh/skills", ".claude/skills"] as const;
 
+/** Cross-agent skill roots for `folder` modules, in precedence order: `.agents/skills`
+ * (canonical) shadows `.claude/skills`, which shadows `.github/skills`. No native
+ * `.okh/skills` — a folder is deliberately portable to Claude Code / Copilot on disk. */
+export const FOLDER_SKILL_ROOTS = [".agents/skills", ".claude/skills", ".github/skills"] as const;
+
 /** Sentinel skill root meaning "the module folder itself" (skills live at
  * `<module>/<name>/SKILL.md`). Used for `skills`-type modules, whose primary
  * layout places each skill directly under the module root. */
@@ -35,9 +40,9 @@ export const MODULE_ROOT_SKILL_ROOT = "";
  * `.claude/skills` roots keep precedence so an explicit override still wins.
  */
 export function skillRootsForType(moduleType: string): readonly string[] {
-  return moduleType === "skills"
-    ? [...MODULE_SKILL_ROOTS, MODULE_ROOT_SKILL_ROOT]
-    : MODULE_SKILL_ROOTS;
+  if (moduleType === "skills") return [...MODULE_SKILL_ROOTS, MODULE_ROOT_SKILL_ROOT];
+  if (moduleType === "folder") return FOLDER_SKILL_ROOTS;
+  return MODULE_SKILL_ROOTS;
 }
 
 export interface SkillRootScan {

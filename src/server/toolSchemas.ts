@@ -84,6 +84,7 @@ export const toolShapes = {
     input: z.string().optional(),
   },
   dream: { container, module: moduleArg },
+  enter: { container: z.string(), module: z.string() },
   todos: {
     operation: z.enum(["list", "create", "update"]).optional(),
     container,

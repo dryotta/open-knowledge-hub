@@ -6,6 +6,7 @@ import { memoryLoader } from "./loaders/memory.js";
 import { llmwikiLoader } from "./loaders/llmwiki.js";
 import { agentsLoader } from "./loaders/agents.js";
 import { workspaceLoader } from "./loaders/workspace.js";
+import { folderLoader } from "./loaders/folder.js";
 import { fileListingLoader } from "./loaders/file-listing.js";
 
 const LOADERS: Record<ModuleType, Loader> = {
@@ -15,6 +16,7 @@ const LOADERS: Record<ModuleType, Loader> = {
   llmwiki: llmwikiLoader,
   agents: agentsLoader,
   workspace: workspaceLoader,
+  folder: folderLoader,
 };
 
 const customLoader = fileListingLoader("custom", "Module");

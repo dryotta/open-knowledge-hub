@@ -40,9 +40,11 @@ graph TD
 
 ## Module types
 
-Built-in types are `knowledge`, `memory`, `llmwiki`, `skills`, `agents`, and
-`workspace`. Any other
-non-empty type is custom and uses the generic file-listing loader.
+Built-in types are `knowledge`, `memory`, `llmwiki`, `skills`, `agents`,
+`workspace`, and `folder`. A `folder` module is an agent-ready space for unstructured
+work: freeform files at the top level, an optional `AGENTS.md`, and skills under
+`.agents/skills/`, `.claude/skills/`, or `.github/skills/`. Any other non-empty type is
+custom and uses the generic file-listing loader.
 
 Modules must be direct children of a container. The folder name is the module
 identity; modules do not have a separate `name` field.
@@ -55,6 +57,8 @@ A module's effective skills are:
 2. Skills discovered inside the module from `.okh/skills/` and
    `.claude/skills/`.
 3. For a `skills` module, skills rooted directly in its area tree.
+4. For a `folder` module, skills from `.agents/skills/`, `.claude/skills/`, and
+   `.github/skills/` (in that precedence order) instead of `.okh/skills/`.
 
 A local skill with the same name as a module-type skill overrides it. Skill names
 must be unique within one module but may repeat in another module because every
@@ -91,6 +95,9 @@ specific module required to run it; there is no independent skill catalog.
   `workspace` directly with the corresponding operation.
 - Ingest source documents: call `help { question: "ingest" }`, apply its embedded
   instructions, confirm the routing plan, then run the target module's writing skill.
+- Start working in a module (any type): call `enter { container, module }`. It declares
+  the module's path as the working folder, inlines its `AGENTS.md` when present, and
+  lists its skills.
 - Explain OKH: call `help`.
 
 After writes, call `sync` for each changed container. In `shared` mode, `sync`
