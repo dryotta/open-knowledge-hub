@@ -1,5 +1,6 @@
 import type { ResolvedContainer, ResolvedModule } from "../container/service.js";
 import type { Skill } from "../modules/skills.js";
+import type { AgentsFileResult } from "../modules/agentsFile.js";
 import { renderTemplate } from "./templates.js";
 import { formatSyncDescriptor } from "../util/syncFormat.js";
 
@@ -79,6 +80,45 @@ export function buildRun(
         requiredResources,
         "_This skill declares no required MCP resources._",
       ),
+    },
+  });
+}
+
+function renderEnterSkills(skills: readonly Skill[]): string {
+  if (skills.length === 0) return "_This module has no skills._";
+  return skills
+    .map((s) => `- \`${s.name}\`${s.description ? ` — ${s.description}` : ""}`)
+    .join("\n");
+}
+
+function renderEnterAgents(agents: AgentsFileResult, module: ResolvedModule): string {
+  if (agents.status === "present") return agents.content.trim();
+  if (agents.status === "unsafe") {
+    return `_An \`AGENTS.md\` exists at the module root but was not loaded: ${agents.reason}._`;
+  }
+  const hint =
+    module.type === "folder"
+      ? ' Run `run { container, module, skill: "initialize" }` to author one.'
+      : "";
+  return `_No \`AGENTS.md\` at the module root._${hint}`;
+}
+
+/** Render the "enter" result: working-folder declaration + AGENTS.md + skills + write policy. */
+export function buildEnter(
+  target: ResolvedContainer,
+  module: ResolvedModule,
+  skills: readonly Skill[],
+  agents: AgentsFileResult,
+): Promise<string> {
+  const targetBlock =
+    `# Target\n`
+    + `- Module: ${module.type} · \`${module.path}\` → \`${module.absPath}\`\n`
+    + `- Container: ${target.name} (${target.backend}, sync: ${formatSyncDescriptor(target.sync)}) — \`${target.root}\`\n\n`;
+  return renderTemplate("enter", {
+    vars: {
+      target: targetBlock,
+      agents: renderEnterAgents(agents, module),
+      skills: renderEnterSkills(skills),
     },
   });
 }

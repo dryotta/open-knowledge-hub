@@ -43,3 +43,68 @@ describe("readModuleAgentsFile", () => {
     expect(result.status).toBe("unsafe");
   });
 });
+
+import { buildEnter } from "../src/prompts/index.js";
+import type { ResolvedContainer, ResolvedModule } from "../src/container/service.js";
+import type { Skill } from "../src/modules/skills.js";
+import type { AgentsFileResult } from "../src/modules/agentsFile.js";
+
+function fakeTarget(): ResolvedContainer {
+  return {
+    name: "hub",
+    backend: "local",
+    sync: { mode: "auto", config: {} },
+    syncActions: [],
+    root: "/abs/hub",
+    modules: [],
+  };
+}
+function fakeModule(type = "folder"): ResolvedModule {
+  return { type, path: "work", description: "", absPath: "/abs/hub/work" };
+}
+const skill = (name: string, description = ""): Skill => ({ name, description, body: "b", source: "vendored" });
+
+describe("buildEnter", () => {
+  it("declares the working folder and appends the write policy", async () => {
+    const text = await buildEnter(fakeTarget(), fakeModule(), [], { status: "absent" });
+    expect(text).toContain("/abs/hub/work");
+    expect(text).toMatch(/working directory/i);
+    expect(text).toMatch(/Write policy/i);
+    expect(text).toMatch(/sync/i);
+  });
+
+  it("inlines AGENTS.md content when present", async () => {
+    const agents: AgentsFileResult = { status: "present", content: "# Folder Guide\nDo the thing." };
+    const text = await buildEnter(fakeTarget(), fakeModule(), [], agents);
+    expect(text).toContain("# Folder Guide");
+    expect(text).toContain("Do the thing.");
+  });
+
+  it("notes an absent AGENTS.md and hints initialize for folder modules", async () => {
+    const text = await buildEnter(fakeTarget(), fakeModule("folder"), [], { status: "absent" });
+    expect(text).toMatch(/No .*AGENTS\.md/i);
+    expect(text).toMatch(/initialize/i);
+  });
+
+  it("omits the initialize hint for non-folder modules", async () => {
+    const text = await buildEnter(fakeTarget(), fakeModule("knowledge"), [], { status: "absent" });
+    expect(text).toMatch(/No .*AGENTS\.md/i);
+    expect(text).not.toMatch(/skill: "initialize"/);
+  });
+
+  it("reports an unsafe AGENTS.md with its reason and does not inline it", async () => {
+    const agents: AgentsFileResult = { status: "unsafe", reason: "symbolic links are not allowed" };
+    const text = await buildEnter(fakeTarget(), fakeModule(), [], agents);
+    expect(text).toMatch(/not loaded|not read|could not/i);
+    expect(text).toContain("symbolic links are not allowed");
+  });
+
+  it("lists the module's skills, and states none when empty", async () => {
+    const withSkills = await buildEnter(fakeTarget(), fakeModule(), [skill("initialize", "author AGENTS.md")], { status: "absent" });
+    expect(withSkills).toContain("initialize");
+    expect(withSkills).toContain("author AGENTS.md");
+
+    const noSkills = await buildEnter(fakeTarget(), fakeModule(), [], { status: "absent" });
+    expect(noSkills).toMatch(/no skills/i);
+  });
+});

@@ -10,6 +10,7 @@ export type TemplateName =
   | "context"
   | "onboard"
   | "run"
+  | "enter"
   | "help"
   | "instructions"
   | "add_module"
